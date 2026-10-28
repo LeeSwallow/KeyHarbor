@@ -47,11 +47,7 @@ impl Masker {
     pub fn build(values: impl IntoIterator<Item = (PlaceholderRef, Zeroizing<String>)>) -> Self {
         let mut patterns: Vec<(Zeroizing<String>, String)> = Vec::new();
         for (reference, value) in values {
-            let placeholder = format!(
-                "{{{{secret:{}.{}}}}}",
-                reference.item.as_str(),
-                reference.field.as_str()
-            );
+            let placeholder = reference.to_string();
             for variant in variants(&value) {
                 patterns.push((variant, placeholder.clone()));
             }

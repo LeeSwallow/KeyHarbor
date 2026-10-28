@@ -29,12 +29,35 @@ fn active(state: State) -> bool {
     )
 }
 
-/// The state to show: `recovery_required` when the DB says active but no supervisor holds the lock.
-pub fn display_state(runtime: &dyn SessionRuntime, row: &SessionRow) -> &'static str {
+/// The state a session is shown in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DisplayState {
+    Stored(State),
+    /// The store says active but no supervisor holds the lock; the user must recover it.
+    RecoveryRequired,
+}
+
+impl DisplayState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stored(state) => state.as_str(),
+            Self::RecoveryRequired => "recovery_required",
+        }
+    }
+}
+
+impl std::fmt::Display for DisplayState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The state to show for `row`, given whether its supervisor runs.
+pub fn display_state(runtime: &dyn SessionRuntime, row: &SessionRow) -> DisplayState {
     if active(row.state) && !runtime.is_alive(row.id) {
-        "recovery_required"
+        DisplayState::RecoveryRequired
     } else {
-        row.state.as_str()
+        DisplayState::Stored(row.state)
     }
 }
 

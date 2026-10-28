@@ -84,6 +84,30 @@ pub fn parse_agent(value: &str) -> Result<String, InvalidValue> {
     Ok(value.to_owned())
 }
 
+/// The name a requester acts as: an MCP server's `--agent`, `keyharbor run --agent`, a
+/// control-socket caller. Valid as for `parse_agent`, but never `*`: as a requester it would
+/// match only the `*` rules and dodge those written for a real name.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentName(String);
+
+impl AgentName {
+    pub fn parse(value: &str) -> Result<Self, InvalidValue> {
+        if value == ANY {
+            return Err(InvalidValue(
+                "agent name * is reserved for rules that apply to every agent",
+            ));
+        }
+        Ok(Self(parse_agent(value)?))
+    }
+    /// The local user (`cli`).
+    pub fn local() -> Self {
+        Self(LOCAL_AGENT.to_owned())
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rule {
     pub agent: String,
@@ -148,6 +172,16 @@ pub fn normalize_target(resource: Resource, target: &str) -> Result<String, Inva
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_requester_is_never_every_agent() {
+        assert_eq!(AgentName::parse("claude").unwrap().as_str(), "claude");
+        assert_eq!(AgentName::local().as_str(), LOCAL_AGENT);
+        assert_eq!(
+            AgentName::parse("*").unwrap_err().to_string(),
+            "agent name * is reserved for rules that apply to every agent"
+        );
+        assert!(AgentName::parse("").is_err() && AgentName::parse("a b").is_err());
+    }
     #[test]
     fn rules_validate_agent_and_target() {
         let id = SessionId::new().to_string();

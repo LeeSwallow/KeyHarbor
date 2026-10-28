@@ -7,10 +7,10 @@ use clap::Subcommand;
 use keyharbor_broker::{DEFAULT_BROWSER, supervisor};
 use keyharbor_core::{
     LOCAL_AGENT,
-    session::{self as lifecycle, OpenOptions, SessionView},
+    session::{self as lifecycle, DisplayState, OpenOptions, SessionView},
 };
 use keyharbor_domain::{
-    Generation, SessionId, SessionName,
+    Generation, SessionId, SessionName, State,
     ports::{SessionRuntime, Store},
     vault::Description,
 };
@@ -97,7 +97,7 @@ fn session_id(value: &str) -> Result<SessionId> {
 /// `id  name  state[  cdp][  description]`.
 fn view_line(view: &SessionView) -> String {
     let row = &view.row;
-    let cdp = if row.cdp && view.state != "stopped" {
+    let cdp = if row.cdp && view.state != DisplayState::Stored(State::Stopped) {
         "\tcdp"
     } else {
         ""
@@ -183,21 +183,22 @@ impl Ports {
                     origin.as_deref(),
                     LOCAL_AGENT,
                 )?;
-                println!("{id}\tawaiting_user\t{request}");
+                println!("{id}\t{}\t{request}", State::AwaitingUser.as_str());
             }
             SessionCmd::Handoff { id } => {
                 let id = session_id(&id)?;
                 let (request, origin) =
                     lifecycle::pending_handoff(&*self.store, &*self.runtime, id)?;
                 println!(
-                    "{id}\tawaiting_user\t{request}\t{}",
+                    "{id}\t{}\t{request}\t{}",
+                    State::AwaitingUser.as_str(),
                     origin.as_deref().unwrap_or("origin not provided")
                 );
             }
             SessionCmd::Resume { id, request_id } => {
                 let id = session_id(&id)?;
                 lifecycle::resume(&*self.store, &*self.runtime, id, &request_id, LOCAL_AGENT)?;
-                println!("{id}\trunning");
+                println!("{id}\t{}", State::Running.as_str());
             }
             SessionCmd::Recover {
                 id,
@@ -254,7 +255,7 @@ impl Ports {
                 "warning: raw CDP gives any local client full control of this browser, bypassing KeyHarbor"
             );
         }
-        println!("{id}\trunning");
+        println!("{id}\t{}", State::Running.as_str());
         Ok(())
     }
 
@@ -266,7 +267,7 @@ impl Ports {
         }
         let id = session_id(id)?;
         lifecycle::recover(&*self.store, &*self.runtime, id)?;
-        println!("{id}\tstopped");
+        println!("{id}\t{}", State::Stopped.as_str());
         Ok(())
     }
 }

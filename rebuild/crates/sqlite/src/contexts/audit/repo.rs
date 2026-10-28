@@ -116,6 +116,20 @@ mod tests {
     }
 
     #[test]
+    fn only_an_explicit_false_turns_the_record_off() {
+        let (_tmp, store) = store();
+        for value in ["true", "TRUE", "0", "off", ""] {
+            store.setting_set(crate::AUDIT_ENABLED, value).unwrap();
+            assert!(
+                store
+                    .record(&AuditEvent::new("a", AuditKind::SecretDenied, "origin"))
+                    .unwrap(),
+                "{value:?}"
+            );
+        }
+    }
+
+    #[test]
     fn audit_schema_has_no_value_column() {
         let (_tmp, store) = store();
         #[derive(diesel::QueryableByName)]

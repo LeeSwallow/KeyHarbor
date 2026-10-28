@@ -3,7 +3,7 @@
 
 use anyhow::{Result, anyhow};
 use clap::Args;
-use keyharbor_core::{ExpiryChoice, today};
+use keyharbor_core::{ExpiryChoice, expires_in};
 use keyharbor_domain::date::{Expiry, Ttl};
 
 #[derive(Args)]
@@ -31,7 +31,7 @@ impl ExpiryArgs {
         }
         if let Some(days) = &self.expires_in {
             let ttl = Ttl::parse(days).map_err(|e| anyhow!("--expires-in: {e}"))?;
-            return Ok(Some(Some(ttl.from(today()))));
+            return Ok(Some(Some(expires_in(ttl))));
         }
         Ok(None)
     }

@@ -1,6 +1,6 @@
 //! Creating, describing and listing sessions: one implementation for every interface.
 
-use super::display_state;
+use super::{DisplayState, display_state};
 use anyhow::{Result, bail};
 use keyharbor_domain::{
     Session, SessionId, SessionName,
@@ -12,8 +12,7 @@ use keyharbor_domain::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionView {
     pub row: SessionRow,
-    /// `recovery_required` when the store says active but no supervisor runs.
-    pub state: &'static str,
+    pub state: DisplayState,
 }
 
 /// Creates a stopped session with its description in one write.

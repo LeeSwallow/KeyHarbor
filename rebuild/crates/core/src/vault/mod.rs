@@ -162,10 +162,7 @@ pub struct ItemSummary {
 pub trait VaultBackend: VaultStore + AuditStore + SettingsStore {}
 impl<T: VaultStore + AuditStore + SettingsStore> VaultBackend for T {}
 
-/// The setting that gives new items an expiry, e.g. `90d` (R-37). Unset: they never expire.
-pub const DEFAULT_ITEM_TTL: &str = "default_item_ttl";
-/// The `default_item_ttl` value meaning "never expire" (also the default).
-pub const NO_TTL: &str = "none";
+pub use keyharbor_domain::settings::{DEFAULT_ITEM_TTL, NO_TTL};
 
 /// Every vault value with its placeholder, as of `version`. Values are zeroized on drop.
 pub struct MaskValues {

@@ -276,4 +276,5 @@ pub mod denial;
 pub mod policy;
 pub mod ports;
 pub mod secret;
+pub mod settings;
 pub mod vault;

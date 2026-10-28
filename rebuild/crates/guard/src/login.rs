@@ -7,7 +7,7 @@ use crate::GuardedBrowser;
 use anyhow::{Result, bail};
 use keyharbor_domain::{
     ports::{BrowserPort, FrameInspector, PageInput},
-    vault::{ItemKind, ItemName},
+    vault::{ItemKind, ItemName, placeholder},
 };
 use serde_json::{Value, json};
 
@@ -39,7 +39,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         steps.push(("password", password));
         let mut filled = Vec::new();
         for (field, node) in steps {
-            let template = format!("{{{{secret:{}.{field}}}}}", item.as_str());
+            let template = placeholder(item.as_str(), field);
             self.fill_checked(&json!({"ref": node}), &template).await?;
             filled.push(field);
         }

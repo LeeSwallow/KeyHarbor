@@ -43,6 +43,11 @@ pub fn today() -> keyharbor_domain::date::Date {
     keyharbor_domain::date::Date::from_unix_seconds(unix_seconds())
 }
 
+/// The expiry of something given `ttl` today: the one place a TTL becomes a date (R-37).
+pub fn expires_in(ttl: keyharbor_domain::date::Ttl) -> keyharbor_domain::date::Expiry {
+    ttl.from(today())
+}
+
 /// Now as RFC 3339 UTC with seconds, e.g. `2026-10-28T12:34:56Z`.
 pub(crate) fn now_rfc3339() -> String {
     let secs = unix_seconds();

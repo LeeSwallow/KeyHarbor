@@ -4,6 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use keyharbor_broker::client;
 use keyharbor_domain::{
     SessionId,
+    policy::AgentName,
     ports::{SessionRuntime, Store},
 };
 use keyharbor_guard::{
@@ -29,7 +30,7 @@ pub(crate) struct Inner {
     pub data: PathBuf,
     pub scope: Option<SessionId>,
     pub allow_cdp: bool,
-    pub agent: Option<String>,
+    pub agent: AgentName,
     pub browser: PathBuf,
 }
 
@@ -39,7 +40,7 @@ pub const DEFAULT_AGENT: &str = "mcp";
 impl Inner {
     /// The name policies and the usage record know this server's agent by.
     pub fn agent(&self) -> &str {
-        self.agent.as_deref().unwrap_or(DEFAULT_AGENT)
+        self.agent.as_str()
     }
 
     /// The store, held until the guard is dropped (keep it to one use case).

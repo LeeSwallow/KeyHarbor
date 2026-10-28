@@ -4,7 +4,7 @@ use super::{
     DEFAULT_ITEM_TTL, ExpiryChoice, ItemChange, NO_TTL, NewItem, Vault, check_fields,
     sorted_origins,
 };
-use crate::{LOCAL_AGENT, now_rfc3339, today};
+use crate::{LOCAL_AGENT, expires_in, now_rfc3339};
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
@@ -100,11 +100,9 @@ impl Vault {
             ExpiryChoice::On(expiry) => Some(expiry),
             ExpiryChoice::Default => match self.store.setting_get(DEFAULT_ITEM_TTL)?.as_deref() {
                 None | Some(NO_TTL) => None,
-                Some(ttl) => Some(
-                    Ttl::parse(ttl)
-                        .map_err(|e| anyhow!("{DEFAULT_ITEM_TTL}: {e}"))?
-                        .from(today()),
-                ),
+                Some(ttl) => Some(expires_in(
+                    Ttl::parse(ttl).map_err(|e| anyhow!("{DEFAULT_ITEM_TTL}: {e}"))?,
+                )),
             },
         })
     }
