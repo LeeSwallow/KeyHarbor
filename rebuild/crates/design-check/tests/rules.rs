@@ -35,7 +35,22 @@ fn every_rule_has_a_test_here_and_a_unique_name() {
 fn the_design_set_is_found() {
     let ds = design();
     assert!(ds.sheets.len() > 20, "{} stylesheets", ds.sheets.len());
-    assert!(ds.consumers.iter().any(|f| f.path == "design/index.html"));
+    // The class and icon rules cover the showcase and the browser extension's popup.
+    for page in [
+        "design/index.html",
+        "design/showcase/sections/components.js",
+        "integrations/browser-extension/src/ui/popup/popup.html",
+        "integrations/browser-extension/src/ui/popup/view.ts",
+    ] {
+        assert!(
+            ds.consumers.iter().any(|f| f.path == page),
+            "{page} is not checked"
+        );
+    }
+    assert!(
+        !ds.consumers.iter().any(|f| f.path.contains(".test.")),
+        "tests are not consumers"
+    );
     assert!(ds.icons.len() >= 41);
 }
 
