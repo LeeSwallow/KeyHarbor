@@ -175,9 +175,86 @@ pub struct Session {
     pub state: State,
 }
 
+fn is_local(url: &url::Url) -> bool {
+    match url.host() {
+        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    }
+}
+
+/// The URL a session opens with. It is passed on the browser command line (visible in `ps`),
+/// so it may not carry credentials, a query or a fragment, and must be HTTPS or local HTTP.
+pub fn validate_start_url(value: &str) -> Result<String, vault::InvalidValue> {
+    if value.len() > 2048 {
+        return Err(vault::InvalidValue("URL exceeds 2048 bytes"));
+    }
+    let url = url::Url::parse(value).map_err(|_| vault::InvalidValue("invalid URL"))?;
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(vault::InvalidValue(
+            "URL must not include user information, query, or fragment",
+        ));
+    }
+    if url.host().is_none()
+        || !(url.scheme() == "https" || (url.scheme() == "http" && is_local(&url)))
+    {
+        return Err(vault::InvalidValue(
+            "URL must use HTTPS or HTTP on localhost",
+        ));
+    }
+    Ok(url.into())
+}
+
+/// A URL an agent may navigate to: any http(s) URL, or `about:blank`.
+pub fn validate_navigation_url(value: &str) -> Result<String, vault::InvalidValue> {
+    if value == "about:blank" {
+        return Ok(value.to_owned());
+    }
+    if value.len() > 8192 {
+        return Err(vault::InvalidValue("URL exceeds 8192 bytes"));
+    }
+    let url = url::Url::parse(value).map_err(|_| vault::InvalidValue("invalid URL"))?;
+    if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
+        return Err(vault::InvalidValue("URL must use HTTP or HTTPS"));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(vault::InvalidValue("URL must not include user information"));
+    }
+    Ok(url.into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn start_urls_reject_unsafe_destinations_and_credentials() {
+        assert!(validate_start_url("https://example.com/login").is_ok());
+        assert!(validate_start_url("http://127.0.0.1:8080/login").is_ok());
+        for url in [
+            "http://example.com",
+            "file:///etc/passwd",
+            "https://user:secret@example.com",
+            "https://example.com/?token=secret",
+            "https://example.com/#secret",
+        ] {
+            assert!(validate_start_url(url).is_err(), "{url}");
+        }
+        assert!(validate_navigation_url("http://example.com/?q=1").is_ok());
+        assert!(validate_navigation_url("about:blank").is_ok());
+        for url in [
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "chrome://settings",
+            "https://u:p@example.com",
+        ] {
+            assert!(validate_navigation_url(url).is_err(), "{url}");
+        }
+    }
     #[test]
     fn names_are_trimmed_and_reject_controls() {
         assert_eq!(SessionName::parse("  work  ").unwrap().as_str(), "work");

@@ -9,6 +9,7 @@ publish = false
 anyhow.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
 keyharbor-domain = { path = "../domain" }
+keyharbor-broker = { path = "../broker" }
 keyharbor-core = { path = "../core" }
 keyharbor-sqlite = { path = "../sqlite" }
 keyharbor-vault = { path = "../vault" }

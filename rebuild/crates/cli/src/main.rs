@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use keyharbor_domain::SessionName;
-use keyharbor_sqlite::SqliteStore;
 use std::path::{Path, PathBuf};
 
+mod session_cmd;
 mod vault_cmd;
 
 #[derive(Parser)]
@@ -16,10 +15,8 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
-    Create {
-        name: String,
-    },
-    List,
+    #[command(flatten)]
+    Session(session_cmd::SessionCmd),
     /// Manage the local encrypted vault
     #[command(subcommand)]
     Vault(vault_cmd::VaultCmd),
@@ -39,27 +36,7 @@ fn main() -> Result<()> {
         )),
     };
     match args.command {
-        Command::Vault(command) => return vault_cmd::run(&root, command),
-        Command::Create { name } => {
-            let store = SqliteStore::open(&root)?;
-            let session = store.create(SessionName::parse(&name)?)?;
-            println!(
-                "{}\t{}\t{}",
-                session.id,
-                session.name.as_str(),
-                session.state.as_str()
-            );
-        }
-        Command::List => {
-            for session in SqliteStore::open(&root)?.list()? {
-                println!(
-                    "{}\t{}\t{}",
-                    session.id,
-                    session.name.as_str(),
-                    session.state.as_str()
-                );
-            }
-        }
+        Command::Vault(command) => vault_cmd::run(&root, command),
+        Command::Session(command) => session_cmd::run(&root, command),
     }
-    Ok(())
 }
