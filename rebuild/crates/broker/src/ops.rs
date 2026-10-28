@@ -11,6 +11,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use keyharbor_core::{
     ItemStatus, LOCAL_AGENT, Vault, fill_template,
+    mask::Masker,
     policy::{Action, decide},
 };
 use keyharbor_domain::{
@@ -20,7 +21,11 @@ use keyharbor_domain::{
 };
 use keyharbor_sqlite::SqliteStore;
 use serde_json::{Value, json};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::time::Instant;
 use zeroize::Zeroizing;
 
@@ -39,7 +44,14 @@ pub(crate) struct Ops {
     attached: HashMap<String, String>,
     /// Opened on first use, reopened when the vault version moves (so rotations are seen).
     /// A mutex only to make `Ops` shareable; requests already run one at a time.
-    vault: std::sync::Mutex<Option<(i64, Vault)>>,
+    vault: std::sync::Mutex<Option<Loaded>>,
+}
+
+/// The vault as of one version, and the masker for its values once a response needed it.
+struct Loaded {
+    version: i64,
+    vault: Vault,
+    masker: Option<Masker>,
 }
 
 /// The element that has keyboard focus and the frame whose document holds it.
@@ -74,7 +86,11 @@ impl Ops {
     /// Runs `work` with the vault at its current version, or `None` if it was never
     /// initialized. The root key is read only here, the first time a placeholder or a response
     /// needs it.
-    fn with_vault<T>(&self, shared: &Shared, work: impl FnOnce(Option<&Vault>) -> T) -> Result<T> {
+    fn with_vault<T>(
+        &self,
+        shared: &Shared,
+        work: impl FnOnce(Option<&mut Loaded>) -> T,
+    ) -> Result<T> {
         let row = shared
             .store
             .lock()
@@ -88,15 +104,22 @@ impl Ops {
             *slot = None;
             return Ok(work(None));
         };
-        if slot.as_ref().is_none_or(|(v, _)| *v != row.version) {
+        if slot
+            .as_ref()
+            .is_none_or(|loaded| loaded.version != row.version)
+        {
             *slot = None;
             let vault = Vault::open(
                 SqliteStore::open(&shared.data)?,
                 keyharbor_vault::keystore::keystore_from_env(),
             )?;
-            *slot = Some((row.version, vault));
+            *slot = Some(Loaded {
+                version: row.version,
+                vault,
+                masker: None,
+            });
         }
-        Ok(work(slot.as_ref().map(|(_, vault)| vault)))
+        Ok(work(slot.as_mut()))
     }
 
     /// Every text that will be typed into the page. Without placeholders it is used as is.
@@ -129,8 +152,8 @@ impl Ops {
             .lock()
             .map_err(|_| anyhow!("store lock poisoned"))?
             .policy_rules()?;
-        let checked = self.with_vault(shared, |vault| -> Result<Zeroizing<String>> {
-            let Some(vault) = vault else {
+        let checked = self.with_vault(shared, |loaded| -> Result<Zeroizing<String>> {
+            let Some(Loaded { vault, .. }) = loaded else {
                 return Err(deny(&first, "not_found"));
             };
             for item in &items {
@@ -168,12 +191,36 @@ impl Ops {
         Ok(Prepared { text, items })
     }
 
-    /// Every result before it leaves the supervisor. Phase 3: masking.
-    fn redact(&self, value: Value) -> Value {
-        value
+    /// Every result before it leaves the supervisor: each vault value becomes its placeholder.
+    /// If the values cannot be loaded the response is withheld, never sent unmasked.
+    fn redact(&self, shared: &Shared, value: Value) -> Result<Value> {
+        let masked = self.with_vault(shared, |loaded| -> Result<Value> {
+            let Some(loaded) = loaded else {
+                return Ok(value);
+            };
+            if loaded.masker.is_none() {
+                loaded.masker = Some(loaded.vault.masker()?);
+            }
+            Ok(loaded.masker.as_ref().expect("built").redact_json(value))
+        });
+        match masked {
+            Ok(Ok(value)) => Ok(value),
+            _ => bail!("response withheld: vault values could not be loaded for masking"),
+        }
     }
 
     pub async fn execute(&mut self, shared: &Shared, request: &Value) -> Result<Value> {
+        let outcome = self.dispatch(shared, request).await;
+        match outcome {
+            Ok(value) => self.redact(shared, value),
+            Err(error) => match self.redact(shared, Value::String(format!("{error:#}")))? {
+                Value::String(message) => Err(anyhow!(message)),
+                _ => bail!("operation failed"),
+            },
+        }
+    }
+
+    async fn dispatch(&mut self, shared: &Shared, request: &Value) -> Result<Value> {
         let op = request
             .get("op")
             .and_then(Value::as_str)
@@ -222,7 +269,7 @@ impl Ops {
             }
             _ => bail!("unknown operation"),
         };
-        Ok(self.redact(result))
+        Ok(result)
     }
 
     async fn call(&self, method: &str, params: Value, session: &str) -> Result<Value> {
@@ -334,11 +381,13 @@ impl Ops {
         let tree = self
             .call("Accessibility.getFullAXTree", json!({}), &session)
             .await?;
+        let hidden = self.password_inputs(&session).await?;
         let mut text = render_ax_tree(
             tree["nodes"]
                 .as_array()
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
+            &hidden,
         );
         // Iframes in the page's process have their own trees; refs work across them.
         let frames = self.call("Page.getFrameTree", json!({}), &session).await?;
@@ -362,7 +411,7 @@ impl Ops {
                         .as_array()
                         .map(Vec::as_slice)
                         .unwrap_or_default();
-                    for line in render_ax_tree(nodes).lines() {
+                    for line in render_ax_tree(nodes, &hidden).lines() {
                         text.push_str("\n  ");
                         text.push_str(line);
                     }
@@ -375,6 +424,47 @@ impl Ops {
         }
         let (url, title) = self.page_info(&session).await?;
         Ok(json!({"url": url, "title": title, "text": text}))
+    }
+
+    /// Backend ids of every `<input type=password>` in the page and its same-process frames.
+    /// Their values never appear in a snapshot, whether or not they came from the vault.
+    async fn password_inputs(&self, session: &str) -> Result<HashSet<u64>> {
+        let document = self
+            .call(
+                "DOM.getDocument",
+                json!({"depth": -1, "pierce": true}),
+                session,
+            )
+            .await?;
+        let mut found = HashSet::new();
+        let mut stack = vec![&document["root"]];
+        while let Some(node) = stack.pop() {
+            if node["localName"] == "input" {
+                let attributes = node["attributes"]
+                    .as_array()
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let password = attributes.chunks(2).any(|pair| {
+                    pair[0] == "type"
+                        && pair
+                            .get(1)
+                            .and_then(Value::as_str)
+                            .is_some_and(|t| t.trim().eq_ignore_ascii_case("password"))
+                });
+                if let (true, Some(id)) = (password, node["backendNodeId"].as_u64()) {
+                    found.insert(id);
+                }
+            }
+            for key in ["children", "shadowRoots"] {
+                if let Some(children) = node[key].as_array() {
+                    stack.extend(children);
+                }
+            }
+            if node["contentDocument"].is_object() {
+                stack.push(&node["contentDocument"]);
+            }
+        }
+        Ok(found)
     }
 
     async fn screenshot(&mut self, shared: &Shared) -> Result<Value> {
@@ -883,7 +973,8 @@ fn target(request: &Value) -> Result<&Value> {
 /// Renders the accessibility tree as indented lines `[ref] role "name" value="…"`, where ref is
 /// the backend DOM node id. Ignored nodes, inline text boxes and unnamed generic containers are
 /// left out (their children move up a level).
-pub(crate) fn render_ax_tree(nodes: &[Value]) -> String {
+/// Nodes in `hidden` are shown without their value.
+pub(crate) fn render_ax_tree(nodes: &[Value], hidden: &HashSet<u64>) -> String {
     let by_id: HashMap<&str, &Value> = nodes
         .iter()
         .filter_map(|n| n["nodeId"].as_str().map(|id| (id, n)))
@@ -920,7 +1011,13 @@ pub(crate) fn render_ax_tree(nodes: &[Value]) -> String {
                 "  ".repeat(depth),
                 serde_json::to_string(name).unwrap_or_default()
             );
-            if let Some(value) = node["value"]["value"].as_str().filter(|v| !v.is_empty()) {
+            let secret = node["backendDOMNodeId"]
+                .as_u64()
+                .is_some_and(|id| hidden.contains(&id));
+            if let Some(value) = node["value"]["value"]
+                .as_str()
+                .filter(|v| !v.is_empty() && !secret)
+            {
                 line.push_str(&format!(
                     " value={}",
                     serde_json::to_string(value).unwrap_or_default()
@@ -956,9 +1053,12 @@ mod tests {
             json!({"nodeId": "5", "parentId": "2", "role": {"value": "StaticText"}, "name": {"value": "say \"hi\""}, "childIds": []}),
         ];
         assert_eq!(
-            render_ax_tree(&nodes),
+            render_ax_tree(&nodes, &HashSet::new()),
             "[10] RootWebArea \"Login\"\n  [12] textbox \"User\" value=\"alice\"\n  [13] button \"로그인\"\n  [-] StaticText \"say \\\"hi\\\"\""
         );
+        let hidden = render_ax_tree(&nodes, &HashSet::from([12]));
+        assert!(hidden.contains("[12] textbox \"User\"\n"), "{hidden}");
+        assert!(!hidden.contains("alice"));
     }
 
     #[test]
@@ -969,7 +1069,7 @@ mod tests {
         for i in 1..3000 {
             nodes.push(json!({"nodeId": i.to_string(), "parentId": "0", "role": {"value": "link"}, "name": {"value": "x"}}));
         }
-        let text = render_ax_tree(&nodes);
+        let text = render_ax_tree(&nodes, &HashSet::new());
         assert_eq!(text.lines().count(), MAX_SNAPSHOT_LINES + 1);
         assert!(text.ends_with("truncated at 2000 lines"));
     }

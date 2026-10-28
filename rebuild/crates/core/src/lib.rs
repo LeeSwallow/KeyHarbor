@@ -2,6 +2,7 @@
 //! Plaintext leaves this crate only through `Vault::resolve`, which the CLI never calls.
 
 mod dotenv;
+pub mod mask;
 pub mod policy;
 mod rotate;
 mod transfer;

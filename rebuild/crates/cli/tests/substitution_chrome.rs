@@ -328,3 +328,105 @@ fn placeholders_fill_only_allowed_items_into_bound_frames() {
     assert_eq!(used["session_id"], h.id.as_str());
     h.assert_absent(&[&user, &password, &gh_password, &inner_user, &note]);
 }
+
+/// Sixteen digits derived from the test directory name, so every run uses a new number.
+fn card_number(seed: &str) -> String {
+    let mut n: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in seed.bytes() {
+        n = (n ^ u64::from(b)).wrapping_mul(0x100_0000_01b3);
+    }
+    format!("4{:015}", n % 1_000_000_000_000_000)
+}
+
+#[test]
+fn values_shown_back_by_the_page_are_masked() {
+    let Some(browser) = chrome() else { return };
+    let shop = serve_pages();
+    let mut h = Harness::new();
+    let number = card_number(&h.synth("card"));
+    let spaced = h.synth("p@ss w&rd");
+    let token = h.synth("token");
+    h.add(
+        "visa",
+        "card",
+        &[&shop.base],
+        json!({"number": number, "cvc": "123", "exp_month": "12"}),
+    );
+    h.add("api", "secret", &[], json!({"value": spaced}));
+    h.add("other", "secret", &[], json!({"value": token}));
+    h.open(&browser);
+
+    // Review focus 3: the page shows the typed card number as is and in groups of four.
+    h.ok_call(json!({"op": "navigate", "url": format!("{}/", shop.base)}));
+    h.fill("#user", "{{secret:visa.number}}").unwrap();
+    h.fill("#pw", "{{secret:api.value}}").unwrap();
+    let before = h.snapshot();
+    assert!(
+        before.contains("value=\"{{secret:visa.number}}\""),
+        "{before}"
+    );
+    let password = before
+        .lines()
+        .find(|l| l.contains("textbox \"Password\""))
+        .unwrap();
+    assert!(!password.contains("value="), "{password}");
+    h.ok_call(json!({"op": "click", "target": {"selector": "#go"}}));
+    h.ok_call(json!({"op": "wait", "selector": "#done"}));
+    assert!(
+        shop.posted
+            .lock()
+            .unwrap()
+            .contains(&("user".into(), number.clone()))
+    );
+    let after = h.snapshot();
+    assert_eq!(
+        after.matches("{{secret:visa.number}}").count(),
+        2,
+        "{after}"
+    );
+    assert!(!after.contains(&number[..8]), "{after}");
+
+    // Values in URLs, raw or percent-encoded, are masked in every result.
+    let encoded: String = spaced
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b == b'-' {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect();
+    let page = h.ok_call(json!({
+        "op": "navigate",
+        "url": format!("{}/missing?a={encoded}&b={token}", shop.base),
+    }));
+    assert_eq!(
+        page["url"],
+        format!(
+            "{}/missing?a={{{{secret:api.value}}}}&b={{{{secret:other.value}}}}",
+            shop.base
+        )
+    );
+    let tabs = h.ok_call(json!({"op": "tabs"}));
+    assert!(
+        tabs.to_string().contains("{{secret:other.value}}"),
+        "{tabs}"
+    );
+
+    // A vault change is picked up by the next response without restarting the session.
+    let late = h.synth("late");
+    h.add("late", "secret", &[], json!({"value": late}));
+    let page = h.ok_call(json!({
+        "op": "navigate",
+        "url": format!("{}/missing?c={late}", shop.base),
+    }));
+    assert!(
+        page["url"]
+            .as_str()
+            .unwrap()
+            .ends_with("c={{secret:late.value}}"),
+        "{page}"
+    );
+    h.assert_absent(&[&number, &spaced, &encoded, &token, &late]);
+}

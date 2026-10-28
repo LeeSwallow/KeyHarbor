@@ -191,10 +191,7 @@ pub fn serve_pages() -> Site {
                      <iframe id=f src=\"http://127.0.0.1:{port}/\"></iframe>"
                 )
             } else {
-                let _ = stream.write_all(
-                    b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
-                );
-                continue;
+                "<!doctype html><title>Elsewhere</title><p>elsewhere</p>".to_owned()
             };
             let _ = write!(
                 stream,
