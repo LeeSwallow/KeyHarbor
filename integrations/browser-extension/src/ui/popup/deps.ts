@@ -1,6 +1,6 @@
 // What the popup needs from the browser. Adapters build it (adapters/webext/popup.ts).
 
-import type { HandOffCommandWire } from "../../app/commands.js";
+import type { HandOffAsk } from "../../app/commands.js";
 import type { HandOffOutcome } from "../../app/hand-off-site.js";
 import type { Result } from "../../domain/result.js";
 import type { Tab } from "../../ports/index.js";
@@ -11,7 +11,8 @@ export interface PopupDeps {
   activeTab(): Promise<Tab | null>;
   /** Asks the person for host access; must run inside the click that started the hand-off. */
   requestHostAccess(origins: string[]): Promise<boolean>;
-  send(command: HandOffCommandWire): Promise<Result<HandOffOutcome>>;
+  /** Asks the background to hand the site off; it checks the ask and answers with counts only. */
+  handOff(ask: HandOffAsk): Promise<Result<HandOffOutcome>>;
   loadSession(): Promise<string | null>;
   saveSession(session: string): Promise<void>;
 }

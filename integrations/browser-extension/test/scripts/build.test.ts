@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { build } from "../../scripts/build.mjs";
 import { iconNames } from "../../scripts/design-assets.mjs";
-import { HOST_NAME } from "../../src/domain/protocol.js";
+import { HOST_NAME } from "../../src/adapters/wire/protocol.js";
 
 let out: string;
 beforeAll(async () => {

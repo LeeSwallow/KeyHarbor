@@ -39,7 +39,7 @@ export async function mountPopup(doc: Document, deps: PopupDeps): Promise<void> 
 
   root.addEventListener("input", (e) => {
     const target = e.target as HTMLInputElement;
-    if (target.id === "session" && state.kind === "ready") state = { ...state, session: target.value.trim() };
+    if (target.id === "session" && state.kind === "ready") state = { ...state, session: target.value }; // parseSessionName trims, as Rust does
   });
   root.addEventListener("click", async (e) => {
     const el = (e.target as HTMLElement).closest("[data-ttl], #ls, #submit");
@@ -52,7 +52,7 @@ export async function mountPopup(doc: Document, deps: PopupDeps): Promise<void> 
     update({ busy: true });
     const current = state;
     if (current.kind !== "ready") return;
-    const result = await deps.send({ type: "hand_off", tabId: tab.id, session: current.session, ttlSeconds: current.ttlSeconds, includeLocalStorage: current.includeLocalStorage });
+    const result = await deps.handOff({ tabId: tab.id, session: current.session, ttlSeconds: current.ttlSeconds, includeLocalStorage: current.includeLocalStorage });
     if (result.ok) {
       await deps.saveSession(result.value.session);
       update({ busy: false, done: { cookies: result.value.cookies, session: result.value.session } });

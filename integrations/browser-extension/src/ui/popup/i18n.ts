@@ -49,7 +49,7 @@ export const MESSAGES: Record<Lang, Record<MessageKey, string>> = { ko: KO, en: 
 export const ERRORS: Record<Lang, Record<ErrorCode, string>> = {
   ko: {
     unsupported_page: "이 페이지는 넘길 수 없습니다.",
-    bad_session: "세션 이름은 영문 소문자, 숫자, -, _로 64자까지입니다.",
+    bad_session: "세션 이름은 1–120바이트이고 제어 문자를 넣을 수 없습니다.",
     bad_ttl: "기간이 범위를 벗어났습니다.",
     no_permission: "이 사이트에 대한 접근을 허용해야 넘길 수 있습니다.",
     no_cookies: "넘길 로그인 쿠키가 없습니다.",
@@ -61,7 +61,7 @@ export const ERRORS: Record<Lang, Record<ErrorCode, string>> = {
   },
   en: {
     unsupported_page: "This page can't be handed off.",
-    bad_session: "Session names are lowercase letters, digits, - and _, up to 64.",
+    bad_session: "Session names are 1–120 bytes with no control characters.",
     bad_ttl: "That length is out of range.",
     no_permission: "Allow access to this site to hand it off.",
     no_cookies: "There are no login cookies to hand off.",

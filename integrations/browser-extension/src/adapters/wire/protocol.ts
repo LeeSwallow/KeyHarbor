@@ -2,8 +2,9 @@
 // Wire types end in `Wire`; this file is the only place that builds or reads them.
 // Version 1: one request (`receive_site`) and its reply.
 
-import type { CdpCookieParam } from "./cookie.js";
-import { type Result, err, ok } from "./result.js";
+import type { HostReply, SiteHandoff } from "../../domain/handoff.js";
+import { type Result, err, ok } from "../../domain/result.js";
+import { type CdpCookieParam, toCookieParam } from "./cdp-cookie.js";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -34,9 +35,6 @@ export type HostReplyWire =
   | { v: typeof PROTOCOL_VERSION; type: "received"; session: string; cookies: number }
   | { v: typeof PROTOCOL_VERSION; type: "error"; code: string };
 
-/** The reply in our words. */
-export type HostReply = { kind: "received"; session: string; cookies: number } | { kind: "refused"; code: string };
-
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 
 /** Reads a host reply. Anything not shaped like protocol v1 is `bad_reply`. */
@@ -52,13 +50,15 @@ export function parseHostReply(raw: unknown): Result<HostReply> {
 }
 
 /** Builds the `receive_site` request. The only place a `ReceiveSiteWire` is made. */
-export function toReceiveSiteWire(
-  origin: string,
-  cookies: CdpCookieParam[],
-  request: { session: string; ttlSeconds: number },
-  localStorage?: Record<string, string>,
-): ReceiveSiteWire {
-  const wire: ReceiveSiteWire = { v: PROTOCOL_VERSION, type: "receive_site", origin, cookies, ttl_seconds: request.ttlSeconds, session: request.session };
-  if (localStorage) wire.local_storage = localStorage;
+export function toReceiveSiteWire(handoff: SiteHandoff): ReceiveSiteWire {
+  const wire: ReceiveSiteWire = {
+    v: PROTOCOL_VERSION,
+    type: "receive_site",
+    origin: handoff.origin,
+    cookies: handoff.cookies.map(toCookieParam),
+    ttl_seconds: handoff.ttlSeconds,
+    session: handoff.session,
+  };
+  if (handoff.localStorage) wire.local_storage = handoff.localStorage;
   return wire;
 }

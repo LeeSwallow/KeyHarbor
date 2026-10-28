@@ -1,7 +1,9 @@
-// Test doubles. They follow the port contracts and call the domain; they copy no rules.
+// Test doubles. They follow the port contracts and call the domain; they copy no rules. The
+// host is the real wire adapter over a fake transport, so tests see the message that would go out.
 
 import type { SiteCookie } from "../../src/domain/cookie.js";
-import type { HostRequestWire } from "../../src/domain/protocol.js";
+import { nativeHostOver } from "../../src/adapters/wire/native-host.js";
+import type { HostRequestWire } from "../../src/adapters/wire/protocol.js";
 import type { Ports, Tab } from "../../src/ports/index.js";
 
 /** A cookie value no test output may ever contain. */
@@ -43,12 +45,10 @@ export function fakePorts(opts: { tab?: Tab | null; cookies?: SiteCookie[] | "th
         return opts.storage ?? { token: SECRET };
       },
     },
-    host: {
-      send: async (request) => {
-        sent.push(request);
-        if (opts.reply === "throws") throw new Error(`host gone ${SECRET}`);
-        return opts.reply ?? { v: 1, type: "received", session: request.session, cookies: request.cookies.length };
-      },
-    },
+    host: nativeHostOver(async (request) => {
+      sent.push(request);
+      if (opts.reply === "throws") throw new Error(`host gone ${SECRET}`);
+      return opts.reply ?? { v: 1, type: "received", session: request.session, cookies: request.cookies.length };
+    }),
   };
 }
