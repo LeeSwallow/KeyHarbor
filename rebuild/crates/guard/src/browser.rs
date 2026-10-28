@@ -800,4 +800,61 @@ mod tests {
             ]
         );
     }
+
+    static NOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1000);
+    fn now() -> u64 {
+        NOW.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    #[test]
+    fn a_flood_of_refusals_is_recorded_as_one_counter_per_second() {
+        let e = env();
+        init(&e).add(login("github", "KH-SYNTH-pw-85")).unwrap();
+        let (guard, probe) = guard(&e);
+        let guard = guard.with_clock(now);
+        let mut fake = Fake::default();
+        for _ in 0..25 {
+            assert!(
+                block(
+                    guard
+                        .browser(&mut fake, "claude")
+                        .type_text("{{secret:nope.x}}")
+                )
+                .is_err()
+            );
+        }
+        NOW.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            block(
+                guard
+                    .browser(&mut fake, "claude")
+                    .type_text("{{secret:nope.x}}")
+            )
+            .is_err()
+        );
+        let kinds = probe.kinds();
+        let denied = kinds
+            .iter()
+            .filter(|(k, _)| *k == AuditKind::SecretDenied)
+            .count();
+        assert_eq!(denied, crate::guard::MAX_DENIALS_PER_SECOND as usize + 1);
+        assert!(
+            kinds.contains(&(AuditKind::DeniedSuppressed, "15".into())),
+            "{kinds:?}"
+        );
+        // Whatever is left when the session ends is counted too.
+        for _ in 0..12 {
+            let _ = block(
+                guard
+                    .browser(&mut fake, "claude")
+                    .type_text("{{secret:nope.x}}"),
+            );
+        }
+        drop(guard);
+        assert!(
+            probe
+                .kinds()
+                .contains(&(AuditKind::DeniedSuppressed, "3".into()))
+        );
+    }
 }

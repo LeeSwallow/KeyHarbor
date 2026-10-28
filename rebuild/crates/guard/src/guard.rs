@@ -53,6 +53,27 @@ pub struct Guard {
     /// Requests that carried a vault value (I1). At [`MAX_PROBES`] the session stops
     /// substituting and refuses every request that carries agent text.
     probes: AtomicU32,
+    /// Refusals recorded in the current second, and those left out (Minor: a flood of
+    /// refused requests must not flood the record).
+    denials: Mutex<Denials>,
+    /// Seconds since the epoch; replaced in tests.
+    clock: fn() -> u64,
+}
+
+/// Refusals a session records per second; the rest become one counter event.
+pub const MAX_DENIALS_PER_SECOND: u32 = 10;
+
+#[derive(Default)]
+struct Denials {
+    second: u64,
+    recorded: u32,
+    suppressed: u32,
+}
+
+fn unix_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// Requests carrying a vault value a session tolerates before it locks (I1).
@@ -68,7 +89,54 @@ impl Guard {
             tainted: Mutex::new(BTreeSet::new()),
             locked: AtomicBool::new(false),
             probes: AtomicU32::new(0),
+            denials: Mutex::new(Denials::default()),
+            clock: unix_seconds,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_clock(mut self, clock: fn() -> u64) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    /// Records a refusal unless this second's cap is reached; a new second first records how
+    /// many were left out of the last one.
+    fn record_denial(&self, agent: &str, event: &AuditEvent) {
+        let now = (self.clock)();
+        let (flush, record) = {
+            let Ok(mut d) = self.denials.lock() else {
+                return;
+            };
+            let flush = if d.second != now {
+                let left_out = std::mem::take(&mut d.suppressed);
+                d.second = now;
+                d.recorded = 0;
+                left_out
+            } else {
+                0
+            };
+            let record = d.recorded < MAX_DENIALS_PER_SECOND;
+            if record {
+                d.recorded += 1;
+            } else {
+                d.suppressed += 1;
+            }
+            (flush, record)
+        };
+        if flush > 0 {
+            self.record_suppressed(agent, flush);
+        }
+        if record {
+            self.record(event);
+        }
+    }
+
+    fn record_suppressed(&self, agent: &str, count: u32) {
+        self.record(
+            &AuditEvent::new(agent, AuditKind::DeniedSuppressed, &count.to_string())
+                .session(self.session),
+        );
     }
 
     /// The decorator through which `agent`'s request reaches `browser`.
@@ -124,7 +192,10 @@ impl Guard {
         reason: &str,
     ) -> anyhow::Error {
         let session = self.session.to_string();
-        self.record(&audit::denied(agent, Some(&session), item, origin, reason));
+        self.record_denial(
+            agent,
+            &audit::denied(agent, Some(&session), item, origin, reason),
+        );
         audit::denial_error(item, reason)
     }
 
@@ -271,6 +342,20 @@ impl Guard {
                 Value::String(message) => Err(anyhow!(message)),
                 _ => bail!("operation failed"),
             },
+        }
+    }
+}
+
+impl Drop for Guard {
+    /// The supervisor is ending: the refusals left out of the last second are counted.
+    fn drop(&mut self) {
+        let left_out = self
+            .denials
+            .get_mut()
+            .map(|d| std::mem::take(&mut d.suppressed))
+            .unwrap_or(0);
+        if left_out > 0 {
+            self.record_suppressed(keyharbor_domain::policy::LOCAL_AGENT, left_out);
         }
     }
 }

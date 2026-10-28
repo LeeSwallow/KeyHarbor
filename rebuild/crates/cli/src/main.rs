@@ -55,7 +55,22 @@ fn default_data_dir(home: &Path) -> PathBuf {
     home.join("Library/Application Support/KeyHarbor")
 }
 
+/// No core dumps of this process (it holds vault values while it runs `run`, resolves
+/// placeholders as a session supervisor, or reads secret input; 07 §7.10).
+fn disable_core_dumps() -> std::io::Result<()> {
+    let none = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: setrlimit only reads the struct it is given.
+    if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &none) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
+    disable_core_dumps().context("could not turn core dumps off")?;
     let args = Cli::parse();
     let root = match args.data_dir {
         Some(path) => path,
@@ -85,5 +100,20 @@ fn main() -> Result<()> {
             agent,
             browser,
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn core_dumps_are_turned_off() {
+        super::disable_core_dumps().unwrap();
+        let mut limit = libc::rlimit {
+            rlim_cur: 1,
+            rlim_max: 1,
+        };
+        // SAFETY: getrlimit writes only the struct it is given.
+        assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_CORE, &mut limit) }, 0);
+        assert_eq!((limit.rlim_cur, limit.rlim_max), (0, 0));
     }
 }
