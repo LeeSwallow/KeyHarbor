@@ -80,8 +80,8 @@
 :root {
   --c-accent: var(--teal-500);          /* harbor teal: focus, selection, toggles */
   --c-accent-strong: var(--teal-700);   /* accent used as text */
-  --c-accent-fill: var(--teal-500);     /* primary button fill */
-  --c-accent-fill-hover: var(--teal-700);
+  --c-accent-fill: var(--teal-700);     /* primary button fill: white text needs ≥ 4.5:1 */
+  --c-accent-fill-hover: var(--teal-800);
   --c-accent-text: var(--neutral-0);    /* text on accent-fill */
   --c-accent-wash: var(--teal-50);
   --c-focus: var(--teal-500);

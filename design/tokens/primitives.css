@@ -43,14 +43,14 @@
   /* ---- Domain hues ---- */
   --cyan-50: #e2f3f7;   --cyan-700: #0e7490;   --cyan-950: #0c2a35;
   --sky-400: #38bdf8;
-  --amber-50: #fbf0e1;  --amber-300: #f5c451;  --amber-400: #fbbf24;  --amber-700: #b45309;
+  --amber-50: #fbf0e1;  --amber-300: #f5c451;  --amber-400: #fbbf24;  --amber-700: #ab4f08;
   --amber-925: #33270b; --amber-950: #2f2510;
   --violet-50: #f0eafd; --violet-400: #a78bfa; --violet-600: #7c3aed; --violet-950: #241b3d;
   --emerald-50: #e1f4ec; --emerald-400: #34d399; --emerald-700: #047857; --emerald-950: #0f2c22;
   --pink-50: #fce8f1;   --pink-400: #f472b6;   --pink-700: #be185d;   --pink-950: #3a1428;
 
   /* ---- Status hues ---- */
-  --green-50: #e5f5ea;  --green-400: #4ade80;  --green-700: #15803d;  --green-950: #11301d;
+  --green-50: #e5f5ea;  --green-400: #4ade80;  --green-700: #137a3a;  --green-950: #11301d;
   --red-50: #fce9e9;    --red-400: #f87171;    --red-700: #b91c1c;    --red-950: #3a1414;  --red-990: #2a0707;
   --blue-50: #e7edfc;   --blue-300: #93b4fd;   --blue-700: #1d4ed8;   --blue-950: #15213f;
 
