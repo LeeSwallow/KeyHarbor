@@ -101,6 +101,9 @@ impl Generation {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
+    pub fn parse(value: &str) -> Result<Self, uuid::Error> {
+        Ok(Self(Uuid::parse_str(value)?))
+    }
 }
 impl Default for Generation {
     fn default() -> Self {
@@ -110,6 +113,58 @@ impl Default for Generation {
 impl fmt::Display for Generation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// Identifies one authentication handoff request; the user resumes by quoting it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequestId(Uuid);
+impl RequestId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+    pub fn parse(value: &str) -> Result<Self, uuid::Error> {
+        Ok(Self(Uuid::parse_str(value)?))
+    }
+}
+impl Default for RequestId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl fmt::Display for RequestId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Where a handoff request stands. Only `Resumed` means the user said they are done.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HandoffStatus {
+    Pending,
+    Resumed,
+    /// A newer request for the same session replaced it.
+    Superseded,
+    /// The session stopped, failed or was recovered while it was pending.
+    Cancelled,
+}
+impl HandoffStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Resumed => "resumed",
+            Self::Superseded => "superseded",
+            Self::Cancelled => "cancelled",
+        }
+    }
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(Self::Pending),
+            "resumed" => Some(Self::Resumed),
+            "superseded" => Some(Self::Superseded),
+            "cancelled" => Some(Self::Cancelled),
+            _ => None,
+        }
     }
 }
 

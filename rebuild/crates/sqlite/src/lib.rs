@@ -1,9 +1,10 @@
+mod session_repo;
 mod vault_repo;
+pub use session_repo::SessionRow;
 pub use vault_repo::*;
 
-use anyhow::{Context, Result, bail};
-use keyharbor_domain::{Generation, Session, SessionId, SessionName, State};
-use rusqlite::{Connection, params};
+use anyhow::{Result, bail};
+use rusqlite::Connection;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -36,8 +37,7 @@ impl SqliteStore {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.pragma_update(None, "secure_delete", "ON")?;
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, state TEXT NOT NULL CHECK(state IN ('stopped','starting','running','awaiting_user','stopping','failed')));
-        CREATE TABLE IF NOT EXISTS generations (session_id TEXT PRIMARY KEY, generation TEXT NOT NULL);")?;
+        session_repo::migrate(&conn)?;
         vault_repo::migrate(&conn)?;
         Ok(Self {
             conn,
@@ -48,73 +48,12 @@ impl SqliteStore {
     pub fn root(&self) -> &Path {
         &self.root
     }
-    pub fn create(&self, name: SessionName) -> Result<Session> {
-        let id = SessionId::new();
-        self.conn.execute(
-            "INSERT INTO sessions (id,name,state) VALUES (?1,?2,'stopped')",
-            params![id.to_string(), name.as_str()],
-        )?;
-        Ok(Session {
-            id,
-            name,
-            state: State::Stopped,
-        })
-    }
-    pub fn list(&self) -> Result<Vec<Session>> {
-        let mut query = self
-            .conn
-            .prepare("SELECT id,name,state FROM sessions ORDER BY name")?;
-        let rows = query.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })?;
-        rows.map(|row| {
-            let (id, name, state) = row?;
-            Ok(Session {
-                id: SessionId::parse(&id).context("invalid stored session id")?,
-                name: SessionName::parse(&name).context("invalid stored session name")?,
-                state: State::parse(&state).context("invalid stored session state")?,
-            })
-        })
-        .collect()
-    }
-    pub fn reserve(&self, id: SessionId) -> Result<Option<Generation>> {
-        let tx = rusqlite::Transaction::new_unchecked(
-            &self.conn,
-            rusqlite::TransactionBehavior::Immediate,
-        )?;
-        let changed = tx.execute(
-            "UPDATE sessions SET state='starting' WHERE id=?1 AND state='stopped'",
-            [id.to_string()],
-        )?;
-        if changed == 0 {
-            return Ok(None);
-        }
-        let generation = Generation::new();
-        tx.execute("INSERT INTO generations(session_id,generation) VALUES (?1,?2) ON CONFLICT(session_id) DO UPDATE SET generation=excluded.generation", params![id.to_string(),generation.to_string()])?;
-        tx.commit()?;
-        Ok(Some(generation))
-    }
-    pub fn transition(
-        &self,
-        id: SessionId,
-        generation: Generation,
-        from: State,
-        to: State,
-    ) -> Result<bool> {
-        if !from.permits(to) {
-            bail!("invalid session transition");
-        }
-        Ok(self.conn.execute("UPDATE sessions SET state=?1 WHERE id=?2 AND state=?3 AND EXISTS (SELECT 1 FROM generations WHERE session_id=?2 AND generation=?4)", params![to.as_str(),id.to_string(),from.as_str(),generation.to_string()])? == 1)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use keyharbor_domain::{Generation, SessionName, State};
     #[test]
     fn sessions_persist_and_duplicate_names_fail() {
         let tmp = tempfile::tempdir().unwrap();
@@ -142,7 +81,7 @@ mod tests {
                 std::thread::spawn(move || {
                     let store = SqliteStore::open(&root).unwrap();
                     barrier.wait();
-                    store.reserve(id).unwrap()
+                    store.reserve(id, false).unwrap()
                 })
             })
             .collect();
@@ -167,7 +106,7 @@ mod tests {
                 .transition(id, generation, State::Running, State::Stopped)
                 .unwrap()
         );
-        let next = store.reserve(id).unwrap().unwrap();
+        let next = store.reserve(id, false).unwrap().unwrap();
         assert_ne!(generation, next);
         assert!(
             !store
