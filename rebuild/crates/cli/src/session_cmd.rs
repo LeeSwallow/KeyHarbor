@@ -4,14 +4,20 @@
 use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use keyharbor_broker::{
-    lifecycle::{self, DEFAULT_BROWSER, OpenOptions},
-    supervisor,
+    DEFAULT_BROWSER, ProcessRuntime,
+    supervisor::{self, Adapters},
 };
-use keyharbor_core::LOCAL_AGENT;
-use keyharbor_domain::ports::*;
-use keyharbor_domain::{Generation, SessionId, SessionName};
-use keyharbor_sqlite::SqliteStore;
-use std::path::{Path, PathBuf};
+use keyharbor_core::{
+    LOCAL_AGENT, Vault,
+    session::{self as lifecycle, OpenOptions},
+};
+use keyharbor_domain::{Generation, SessionId, SessionName, ports::SessionStore};
+use keyharbor_sqlite::{SqliteStore, SqliteStores};
+use keyharbor_vault::keystore::keystore_from_env;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 #[derive(Subcommand)]
 pub enum SessionCmd {
@@ -69,6 +75,20 @@ fn session_id(value: &str) -> Result<SessionId> {
     SessionId::parse(value).context("invalid session id")
 }
 
+/// The session runtime: supervisors are this same binary, run as `__supervise`.
+fn runtime(root: &Path) -> Result<ProcessRuntime> {
+    Ok(ProcessRuntime::new(root, &std::env::current_exe()?))
+}
+
+/// What a supervisor runs with: this data directory's SQLite store and the system key store.
+pub fn supervisor_adapters(root: &Path) -> Adapters {
+    let data = root.to_path_buf();
+    Adapters {
+        stores: Arc::new(SqliteStores::new(root)),
+        open_vault: Box::new(move || Vault::open(SqliteStore::open(&data)?, keystore_from_env())),
+    }
+}
+
 pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
     match command {
         SessionCmd::Create { name } => {
@@ -82,8 +102,9 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
             );
         }
         SessionCmd::List => {
+            let runtime = runtime(root)?;
             for row in SqliteStore::open(root)?.list()? {
-                let state = lifecycle::display_state(root, &row);
+                let state = lifecycle::display_state(&runtime, &row);
                 let cdp = if row.cdp && state != "stopped" {
                     "\tcdp"
                 } else {
@@ -106,7 +127,7 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
                 browser: &browser,
                 agent: LOCAL_AGENT,
             };
-            lifecycle::open(root, id, &options, &std::env::current_exe()?)?;
+            lifecycle::open(&SqliteStore::open(root)?, &runtime(root)?, id, &options)?;
             if cdp {
                 eprintln!(
                     "warning: raw CDP gives any local client full control of this browser, bypassing KeyHarbor"
@@ -116,17 +137,25 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
         }
         SessionCmd::Stop { id } => {
             let id = session_id(&id)?;
-            let state = lifecycle::stop(root, id, LOCAL_AGENT)?;
+            let state =
+                lifecycle::stop(&SqliteStore::open(root)?, &runtime(root)?, id, LOCAL_AGENT)?;
             println!("{id}\t{}", state.as_str());
         }
         SessionCmd::WaitAuth { id, origin } => {
             let id = session_id(&id)?;
-            let request = lifecycle::wait_auth(root, id, origin.as_deref(), LOCAL_AGENT)?;
+            let request = lifecycle::wait_auth(
+                &SqliteStore::open(root)?,
+                &runtime(root)?,
+                id,
+                origin.as_deref(),
+                LOCAL_AGENT,
+            )?;
             println!("{id}\tawaiting_user\t{request}");
         }
         SessionCmd::Handoff { id } => {
             let id = session_id(&id)?;
-            let (request, origin) = lifecycle::pending_handoff(root, id)?;
+            let (request, origin) =
+                lifecycle::pending_handoff(&SqliteStore::open(root)?, &runtime(root)?, id)?;
             println!(
                 "{id}\tawaiting_user\t{request}\t{}",
                 origin.as_deref().unwrap_or("origin not provided")
@@ -134,7 +163,13 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
         }
         SessionCmd::Resume { id, request_id } => {
             let id = session_id(&id)?;
-            lifecycle::resume(root, id, &request_id, LOCAL_AGENT)?;
+            lifecycle::resume(
+                &SqliteStore::open(root)?,
+                &runtime(root)?,
+                id,
+                &request_id,
+                LOCAL_AGENT,
+            )?;
             println!("{id}\trunning");
         }
         SessionCmd::Recover {
@@ -147,12 +182,15 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
                 );
             }
             let id = session_id(&id)?;
-            lifecycle::recover(root, id)?;
+            lifecycle::recover(&SqliteStore::open(root)?, &runtime(root)?, id)?;
             println!("{id}\tstopped");
         }
         SessionCmd::Endpoint { id } => {
             let id = session_id(&id)?;
-            println!("{}", lifecycle::endpoint(root, id)?);
+            println!(
+                "{}",
+                lifecycle::endpoint(&SqliteStore::open(root)?, &runtime(root)?, id)?
+            );
         }
         SessionCmd::Supervise {
             id,
@@ -163,7 +201,15 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
         } => {
             let id = session_id(&id)?;
             let generation = Generation::parse(&generation).context("invalid generation")?;
-            supervisor::run(root, id, generation, &browser, url.as_deref(), cdp)?;
+            supervisor::run(
+                root,
+                id,
+                generation,
+                &browser,
+                url.as_deref(),
+                cdp,
+                supervisor_adapters(root),
+            )?;
         }
     }
     Ok(())

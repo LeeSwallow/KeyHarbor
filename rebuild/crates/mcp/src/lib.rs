@@ -5,11 +5,8 @@
 //! responses masked in the supervisor. Session tools apply the agent's policy (02 §2.8).
 
 use anyhow::{Context, Result, bail};
-use keyharbor_broker::{
-    client,
-    lifecycle::{self, DEFAULT_BROWSER, OpenOptions},
-    paths, supervisor,
-};
+use keyharbor_broker::{DEFAULT_BROWSER, ProcessRuntime, client, paths, supervisor};
+use keyharbor_core::session::{self as lifecycle, OpenOptions};
 use keyharbor_domain::ports::*;
 use keyharbor_domain::{
     RequestId, SessionId, SessionName, State,
@@ -60,7 +57,7 @@ pub fn run(options: Options) -> Result<()> {
     };
     let server = Server {
         inner: Arc::new(Inner {
-            exe: std::env::current_exe()?,
+            runtime: ProcessRuntime::new(&options.data, &std::env::current_exe()?),
             data: options.data,
             scope: scope.as_ref().map(|(id, _)| *id),
             allow_cdp: options.allow_cdp,
@@ -91,7 +88,7 @@ fn router(allow_cdp: bool) -> ToolRouter<Server> {
 }
 
 struct Inner {
-    exe: PathBuf,
+    runtime: ProcessRuntime,
     data: PathBuf,
     scope: Option<SessionId>,
     allow_cdp: bool,
@@ -137,11 +134,11 @@ fn outcome(result: Result<Value>) -> CallToolResult {
     }
 }
 
-fn row_json(data: &std::path::Path, row: &SessionRow) -> Value {
+fn row_json(runtime: &ProcessRuntime, row: &SessionRow) -> Value {
     json!({
         "id": row.id.to_string(),
         "name": row.name.as_str(),
-        "state": lifecycle::display_state(data, row),
+        "state": lifecycle::display_state(runtime, row),
         "cdp": row.cdp,
     })
 }
@@ -299,7 +296,7 @@ impl Server {
                 Ok(Value::Array(
                     rows.iter()
                         .filter(|row| inner.scope.is_none_or(|scope| scope == row.id))
-                        .map(|row| row_json(&inner.data, row))
+                        .map(|row| row_json(&inner.runtime, row))
                         .collect(),
                 ))
             })
@@ -351,7 +348,12 @@ impl Server {
                     browser: &inner.browser,
                     agent: inner.agent(),
                 };
-                lifecycle::open(&inner.data, id, &options, &inner.exe)?;
+                lifecycle::open(
+                    &SqliteStore::open(&inner.data)?,
+                    &inner.runtime,
+                    id,
+                    &options,
+                )?;
                 Ok(json!({"id": id.to_string(), "state": "running"}))
             })
             .await,
@@ -368,7 +370,12 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                let state = lifecycle::stop(&inner.data, id, inner.agent())?;
+                let state = lifecycle::stop(
+                    &SqliteStore::open(&inner.data)?,
+                    &inner.runtime,
+                    id,
+                    inner.agent(),
+                )?;
                 Ok(json!({"id": id.to_string(), "state": state.as_str()}))
             })
             .await,
@@ -388,7 +395,7 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                let request = lifecycle::wait_auth(&inner.data, id, origin.as_deref(), inner.agent())?;
+                let request = lifecycle::wait_auth(&SqliteStore::open(&inner.data)?, &inner.runtime, id, origin.as_deref(), inner.agent())?;
                 Ok(json!({"id": id.to_string(), "state": "awaiting_user", "request_id": request.to_string()}))
             })
             .await,
@@ -485,7 +492,7 @@ impl Server {
             self.blocking(move |inner| {
                 inner.allow(&Action::OpenSession(id))?;
                 inner.allow(&Action::RawCdp)?;
-                Ok(json!({"endpoint": lifecycle::endpoint(&inner.data, id)?, "warning": "full browser control; KeyHarbor protections do not apply"}))
+                Ok(json!({"endpoint": lifecycle::endpoint(&SqliteStore::open(&inner.data)?, &inner.runtime, id)?, "warning": "full browser control; KeyHarbor protections do not apply"}))
             })
             .await,
         )

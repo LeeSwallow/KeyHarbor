@@ -8,6 +8,7 @@
 mod access;
 mod dotenv;
 mod rotate;
+pub mod session;
 #[cfg(test)]
 mod test_support;
 mod transfer;
@@ -39,7 +40,7 @@ use zeroize::Zeroizing;
 pub const MAX_FIELD_BYTES: usize = 64 * 1024;
 
 /// The agent name recorded for changes made by the local user through the CLI.
-pub const LOCAL_AGENT: &str = "cli";
+pub use keyharbor_domain::policy::LOCAL_AGENT;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemStatus {

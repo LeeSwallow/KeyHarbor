@@ -1414,16 +1414,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
- "keyharbor-core",
  "keyharbor-domain",
  "keyharbor-guard",
- "keyharbor-sqlite",
- "keyharbor-vault",
  "libc",
  "serde_json",
  "tempfile",
  "tokio",
- "zeroize",
 ]
 
 [[package]]

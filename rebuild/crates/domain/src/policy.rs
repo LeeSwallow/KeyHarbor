@@ -64,6 +64,9 @@ impl Effect {
 /// Matches every agent or every target.
 pub const ANY: &str = "*";
 
+/// The agent name recorded for the local user (CLI commands, direct control-socket calls).
+pub const LOCAL_AGENT: &str = "cli";
+
 /// Agent names: 1–64 ASCII letters, digits, '-', '_' or '.', or `*` for every agent.
 /// The name is chosen by whoever starts the MCP server; it is a label, not an identity.
 pub fn parse_agent(value: &str) -> Result<String, InvalidValue> {

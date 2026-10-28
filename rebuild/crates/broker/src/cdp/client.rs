@@ -1,10 +1,11 @@
-//! A CDP client over Chrome's `--remote-debugging-pipe`: each message is JSON followed by `\0`.
+//! A CDP client over Chrome's `--remote-debugging-pipe` (framing in [`super::protocol`]).
 //!
 //! Requests get increasing integer ids; a reader task matches responses to waiting callers and
 //! broadcasts everything else (events). A call that gets no answer fails after the timeout.
 
+use super::protocol::{self, Incoming, Reply};
 use anyhow::{Result, anyhow, bail};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::{
     collections::HashMap,
     sync::{
@@ -20,7 +21,6 @@ use tokio::{
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
-type Reply = std::result::Result<Value, String>;
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Reply>>>>;
 
 pub struct Cdp {
@@ -64,29 +64,18 @@ impl Cdp {
                     Ok(0) | Err(_) => break,
                     Ok(_) => (),
                 }
-                if buffer.last() == Some(&0) {
-                    buffer.pop();
-                }
-                let Ok(message) = serde_json::from_slice::<Value>(&buffer) else {
+                let Some(message) = protocol::decode(&mut buffer) else {
                     continue;
                 };
-                match message.get("id").and_then(Value::as_u64) {
-                    Some(id) => {
+                match message {
+                    Incoming::Reply { id, reply } => {
                         let waiter = pending_reader.lock().ok().and_then(|mut p| p.remove(&id));
                         if let Some(waiter) = waiter {
-                            let reply = match message.get("error") {
-                                Some(error) => Err(error
-                                    .get("message")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("CDP error")
-                                    .to_owned()),
-                                None => Ok(message.get("result").cloned().unwrap_or(json!({}))),
-                            };
                             let _ = waiter.send(reply);
                         }
                     }
-                    None => {
-                        let _ = events_reader.send(message);
+                    Incoming::Event(event) => {
+                        let _ = events_reader.send(event);
                     }
                 }
             }
@@ -106,19 +95,10 @@ impl Cdp {
         }
     }
 
+    #[cfg(test)]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
-    }
-
-    fn message(id: u64, method: &str, params: Value, session: Option<&str>) -> Vec<u8> {
-        let mut message = json!({"id": id, "method": method, "params": params});
-        if let Some(session) = session {
-            message["sessionId"] = json!(session);
-        }
-        let mut bytes = serde_json::to_vec(&message).expect("JSON value serializes");
-        bytes.push(0);
-        bytes
     }
 
     fn enqueue(&self, bytes: Vec<u8>) -> Result<()> {
@@ -144,7 +124,7 @@ impl Cdp {
             self.forget(id);
             bail!("browser connection closed");
         }
-        if let Err(error) = self.enqueue(Self::message(id, method, params, session)) {
+        if let Err(error) = self.enqueue(protocol::encode(id, method, params, session)) {
             self.forget(id);
             return Err(error);
         }
@@ -171,7 +151,7 @@ impl Cdp {
     /// Sends `method` without waiting for a reply, then closes the pipe to the browser.
     pub fn send_and_close(&self, method: &str, params: Value) {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let _ = self.enqueue(Self::message(id, method, params, None));
+        let _ = self.enqueue(protocol::encode(id, method, params, None));
         if let Ok(mut outgoing) = self.outgoing.lock() {
             outgoing.take();
         }
@@ -185,6 +165,7 @@ impl Cdp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use tokio::io::{AsyncReadExt, DuplexStream, duplex};
 
     /// The browser's side of the pipe pair.
