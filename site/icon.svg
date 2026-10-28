@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="KeyHarbor 앱 아이콘: 열쇠 몸통이 닻이 되는 모양">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="70%">
+      <stop offset="0" stop-color="#0FBFBC"/>
+      <stop offset="1" stop-color="#05A8A8"/>
+    </radialGradient>
+  </defs>
+  <!-- macOS squircle 바탕 (824px 내부 그리드, 100px 여백) -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <g fill="#FFFFFF" stroke="#FFFFFF" stroke-linejoin="round">
+    <!-- 열쇠 고리 -->
+    <path fill-rule="evenodd" stroke="none" d="M512 172a155 155 0 1 1 0 310a155 155 0 1 1 0-310zm0 68a87 87 0 1 0 0 174a87 87 0 1 0 0-174z"/>
+    <!-- 열쇠 몸통 = 닻의 기둥 -->
+    <rect x="470" y="462" width="84" height="390" rx="12" stroke="none"/>
+    <!-- 열쇠 이빨 -->
+    <rect x="540" y="512" width="80" height="44" rx="12" stroke="none"/>
+    <rect x="540" y="590" width="80" height="44" rx="12" stroke="none"/>
+    <!-- 닻의 팔 -->
+    <path d="M292 628 Q318 808 512 852 Q706 808 732 628" fill="none" stroke-width="72" stroke-linecap="butt"/>
+    <!-- 닻 끝의 화살촉 -->
+    <path d="M292 548 L240 618 L344 618 Z" stroke-width="24"/>
+    <path d="M732 548 L680 618 L784 618 Z" stroke-width="24"/>
+    <!-- 아래 뾰족한 끝 -->
+    <path d="M462 840 L562 840 L512 904 Z" stroke-width="24"/>
+  </g>
+</svg>
