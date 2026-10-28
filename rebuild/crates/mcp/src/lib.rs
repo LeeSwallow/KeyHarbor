@@ -13,12 +13,15 @@ mod tools;
 pub use server::DEFAULT_AGENT;
 
 use anyhow::{Result, anyhow};
-use keyharbor_domain::{policy::AgentName, ports::SessionRuntime};
+use keyharbor_domain::{
+    policy::AgentName,
+    ports::{Clock, SessionRuntime},
+};
 use keyharbor_guard::{SharedStore, VaultOpener};
 use keyharbor_supervisor::DEFAULT_BROWSER;
 use rmcp::{ServiceExt, transport::stdio};
 use server::{Inner, Server};
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 pub struct Options {
     /// The data directory: supervisors' control sockets and the scoped-server lock live here.
@@ -38,6 +41,8 @@ pub struct Deps {
     /// Opens the vault when a tool needs verified item metadata.
     pub open_vault: VaultOpener,
     pub runtime: Box<dyn SessionRuntime>,
+    /// For the session use cases' waits.
+    pub clock: Arc<dyn Clock>,
 }
 
 /// Runs the server on stdin/stdout until the client disconnects.
@@ -54,6 +59,7 @@ pub fn run(options: Options, deps: Deps) -> Result<()> {
         store: deps.store,
         open_vault: deps.open_vault,
         runtime: deps.runtime,
+        clock: deps.clock,
         data: options.data,
         scope: scope.as_ref().map(|(id, _)| *id),
         allow_cdp: options.allow_cdp,

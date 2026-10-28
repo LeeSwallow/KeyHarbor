@@ -10,7 +10,7 @@ use keyharbor_core::{
 };
 use keyharbor_domain::{
     SessionId, SessionName, State,
-    ports::{SessionRuntime, Store},
+    ports::{Clock, SessionRuntime, Store},
     vault::Description,
 };
 use keyharbor_supervisor::{DEFAULT_BROWSER, SUPERVISE_COMMAND, SuperviseArgs};
@@ -112,9 +112,10 @@ fn view_line(view: &SessionView) -> String {
 }
 
 /// What a session command runs on.
-struct Ports {
+struct Ports<'a> {
     store: Box<dyn Store>,
     runtime: Box<dyn SessionRuntime>,
+    clock: &'a dyn Clock,
 }
 
 pub fn run(app: &App, command: SessionCmd) -> Result<()> {
@@ -125,11 +126,12 @@ pub fn run(app: &App, command: SessionCmd) -> Result<()> {
     let ports = Ports {
         store: app.store()?,
         runtime: app.runtime()?,
+        clock: app.clock(),
     };
     ports.run(command)
 }
 
-impl Ports {
+impl Ports<'_> {
     fn run(&self, command: SessionCmd) -> Result<()> {
         match command {
             SessionCmd::Create { name, description } => self.create(&name, description)?,
@@ -151,7 +153,8 @@ impl Ports {
             } => self.open(&id, url.as_deref(), cdp, browser)?,
             SessionCmd::Stop { id } => {
                 let id = session_id(&id)?;
-                let state = lifecycle::stop(&*self.store, &*self.runtime, id, LOCAL_AGENT)?;
+                let state =
+                    lifecycle::stop(&*self.store, &*self.runtime, self.clock, id, LOCAL_AGENT)?;
                 println!("{id}\t{}", state.as_str());
             }
             SessionCmd::WaitAuth { id, origin } => {
@@ -229,7 +232,7 @@ impl Ports {
             browser: &browser,
             agent: LOCAL_AGENT,
         };
-        lifecycle::open(&*self.store, &*self.runtime, id, &options)?;
+        lifecycle::open(&*self.store, &*self.runtime, self.clock, id, &options)?;
         if cdp {
             eprintln!(
                 "warning: raw CDP gives any local client full control of this browser, bypassing KeyHarbor"

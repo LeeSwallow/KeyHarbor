@@ -68,7 +68,7 @@ impl SessionStore for SqliteStore {
         name: SessionName,
         description: Option<&Description>,
     ) -> Result<Session> {
-        let id = SessionId::new();
+        let id = keyharbor_crypto::random::id::<SessionId>();
         self.read(|conn| {
             diesel::insert_into(sessions::table)
                 .values(NewSession {
@@ -134,7 +134,7 @@ impl SessionStore for SqliteStore {
             if changed == 0 {
                 return Ok(None);
             }
-            let generation = Generation::new();
+            let generation = keyharbor_crypto::random::id::<Generation>();
             diesel::insert_into(generations::table)
                 .values(NewGeneration {
                     session_id: &id,
@@ -232,7 +232,7 @@ impl SessionStore for SqliteStore {
             )
             .set(handoff_requests::status.eq(HandoffStatus::Superseded.as_str()))
             .execute(conn)?;
-            let request = RequestId::new();
+            let request = keyharbor_crypto::random::id::<RequestId>();
             diesel::insert_into(handoff_requests::table)
                 .values(NewHandoff {
                     request_id: &request.to_string(),
@@ -361,7 +361,7 @@ mod tests {
         assert_eq!(store.list().unwrap()[0].generation, Some(generation));
         assert!(
             store
-                .get(keyharbor_domain::SessionId::new())
+                .get(keyharbor_crypto::random::id::<keyharbor_domain::SessionId>())
                 .unwrap()
                 .is_none()
         );
@@ -395,7 +395,9 @@ mod tests {
         );
         assert_eq!(store.get(id).unwrap().unwrap().state, State::Running);
         assert!(
-            store.request_handoff(id, Generation::new(), None).is_err(),
+            store
+                .request_handoff(id, keyharbor_crypto::random::id::<Generation>(), None)
+                .is_err(),
             "stale generation"
         );
         let first = store
@@ -420,10 +422,14 @@ mod tests {
         assert!(store.resume_handoff(id, generation, first).is_err());
         assert!(
             store
-                .resume_handoff(id, generation, RequestId::new())
+                .resume_handoff(id, generation, keyharbor_crypto::random::id::<RequestId>())
                 .is_err()
         );
-        assert!(store.resume_handoff(id, Generation::new(), second).is_err());
+        assert!(
+            store
+                .resume_handoff(id, keyharbor_crypto::random::id::<Generation>(), second)
+                .is_err()
+        );
         assert_eq!(store.get(id).unwrap().unwrap().state, State::AwaitingUser);
         store.resume_handoff(id, generation, second).unwrap();
         assert_eq!(store.get(id).unwrap().unwrap().state, State::Running);
@@ -436,7 +442,12 @@ mod tests {
             store.resume_handoff(id, generation, second).is_err(),
             "twice"
         );
-        assert_eq!(store.handoff_status(id, RequestId::new()).unwrap(), None);
+        assert_eq!(
+            store
+                .handoff_status(id, keyharbor_crypto::random::id::<RequestId>())
+                .unwrap(),
+            None
+        );
     }
 
     #[test]

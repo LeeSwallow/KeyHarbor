@@ -76,8 +76,8 @@ mod tests {
     #[test]
     fn the_argv_reads_back_as_written() {
         let args = SuperviseArgs {
-            id: SessionId::new(),
-            generation: Generation::new(),
+            id: keyharbor_crypto::random::id::<SessionId>(),
+            generation: keyharbor_crypto::random::id::<Generation>(),
             browser: PathBuf::from("/bin/chrome"),
             url: Some("https://example.com/".into()),
             cdp: true,

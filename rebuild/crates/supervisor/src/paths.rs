@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn layout_and_private_dirs() {
         let tmp = tempfile::tempdir().unwrap();
-        let id = SessionId::new();
+        let id = keyharbor_crypto::random::id::<SessionId>();
         assert_eq!(
             socket_path(tmp.path(), &id),
             tmp.path().join("run").join(format!("{id}.sock"))

@@ -7,6 +7,7 @@
 
 mod connection;
 mod contexts;
+mod rotation_lock;
 
 use anyhow::Result;
 use diesel::SqliteConnection;
@@ -118,7 +119,12 @@ mod tests {
         let generation = owners[0];
         assert!(
             !store
-                .transition(id, Generation::new(), State::Starting, State::Running)
+                .transition(
+                    id,
+                    keyharbor_crypto::random::id::<Generation>(),
+                    State::Starting,
+                    State::Running
+                )
                 .unwrap()
         );
         assert!(
@@ -153,7 +159,7 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
-        let id = keyharbor_domain::SessionId::new();
+        let id = keyharbor_crypto::random::id::<keyharbor_domain::SessionId>();
         let mut old =
             SqliteConnection::establish(root.join("keyharbor.sqlite3").to_str().unwrap()).unwrap();
         old.batch_execute(&format!(

@@ -1,5 +1,5 @@
 //! The session runtime: supervisor processes, their OS locks and control sockets.
-//! `keyharbor-broker` implements it; the session use cases in `keyharbor-core` drive it.
+//! `keyharbor-supervisor` implements it; the session use cases in `keyharbor-core` drive it.
 
 use crate::{Generation, SessionId};
 use anyhow::Result;
@@ -24,6 +24,8 @@ pub trait StartedSupervisor: Send {
 }
 
 pub trait SessionRuntime: Send + Sync {
+    /// True if `browser` names a file a supervisor could start.
+    fn has_browser(&self, browser: &Path) -> bool;
     /// True while a supervisor holds the session's lock.
     fn is_alive(&self, id: SessionId) -> bool;
     /// Takes the session's supervisor lock; fails at once if it is held.

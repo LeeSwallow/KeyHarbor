@@ -11,12 +11,5 @@ keyharbor-domain = { path = "../domain" }
 uuid.workspace = true
 zeroize.workspace = true
 
-[features]
-# Lets KEYHARBOR_TEST_KEYSTORE_DIR select a plaintext root-key file. Tests only; never in release builds.
-insecure-test-keystore = []
-
-[target.'cfg(target_os = "macos")'.dependencies]
-security-framework.workspace = true
-
 [dev-dependencies]
 tempfile.workspace = true

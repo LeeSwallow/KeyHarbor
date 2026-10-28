@@ -16,23 +16,24 @@ cargo run -p keyharbor -- list
 
 | 계층 | crate | 하는 일 | 주요 모듈 |
 |---|---|---|---|
-| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립(`compose` 한 곳), `run`의 프로세스 실행 | `compose`, `session_cmd`, `vault_cmd/{input, items, output}`, `policy_cmd`, `audit_cmd`, `settings_cmd`, `run_cmd`, `tty_confirm` |
+| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립(`compose` 한 곳: 저장소·키 저장소·시계·감독자), 파일 읽기·쓰기, `run`의 프로세스 실행 | `compose`, `session_cmd`, `vault_cmd/{input, items, output, files}`, `policy_cmd`, `audit_cmd`, `settings_cmd`, `run_cmd`, `tty_confirm` |
 | | `keyharbor-mcp` | stdio MCP 서버. 저장소·금고 opener·런타임은 생성자로 받는다 | `server`, `scope`, `tools/{session, browser, vault}` |
 | adapters | `keyharbor-supervisor` | 세션 감독자 프로세스: 잠금, Chrome을 guard로 감싸 제어 socket 처리, 상태 기록(`core::session::supervision`), 제어 프로토콜 wire 타입과 client, `__supervise` argv(`SuperviseArgs`), `SessionRuntime`(`ProcessRuntime`) | `process/{mod, prepare}`, `control/{wire, server, client}`, `ops`, `argv`, `runtime`, `lock`, `paths` |
 | | `keyharbor-broker` | Chrome 어댑터: Chrome 실행과 CDP pipe, `BrowserPort`·`PageInput`·`FrameInspector` 구현(`CdpBrowser`). domain에만 의존하고 supervisor만 이것에 의존한다 | `chrome`, `cdp/{client, protocol}`(crate 내부), `browser/{navigate, snapshot, input, tabs, screenshot, wait, frames}`(crate 내부) |
-| | `keyharbor-sqlite` | Diesel 저장소, 저장소 포트 구현 | `connection`, `contexts/{vault, session, access, audit, config}/{schema, models, mappers, repo}` |
-| | `keyharbor-vault` | 금고 레코드 형식·메타 MAC 입력·키 분리, `KeyStore`(Keychain) | `record`, `meta`, `keys`, `keystore` |
-| crypto | `keyharbor-crypto` | 모든 암호 원시 연산, I/O 없음 ([ADR-0016](../docs/design/adr/0016-crypto-crate.md)) | `aead`, `envelope`, `kdf`, `mac`, `random`, `export` |
+| | `keyharbor-sqlite` | Diesel 저장소, 저장소 포트와 `RotationLock`(`vault.lock`) 구현 | `connection`, `rotation_lock`, `contexts/{vault, session, access, audit, config}/{schema, models, mappers, repo}` |
+| | `keyharbor-keystore` | `KeyStore` 어댑터: macOS login keychain(`KeychainKeyStore`, 다른 OS에서는 오류), 테스트용 파일 저장소(`FileKeyStore`) | `keychain`, `file` |
+| inner | `keyharbor-vault` | 금고 레코드 형식·메타 MAC 입력·키 분리·키 ID, I/O 없음 | `record`, `meta`, `keys` |
+| crypto | `keyharbor-crypto` | 모든 암호 원시 연산과 난수(id 포함), I/O 없음 ([ADR-0016](../docs/design/adr/0016-crypto-crate.md)) | `aead`, `envelope`, `kdf`, `mac`, `random`, `export` |
 | security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser`, 항목 add/edit 순서, 세션 작업 → 정책 Action 표 | `pdp/checks/<검사>`, `pep/{substitute, mask/variants/<변형>, origin, selector}`, `audit`, `run`, `items`, `session`, `guard`, `browser` |
 | application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess`, 약화 작업 판정(`weaken`) | `vault/{open, items, summary, resolve, developer}`, `session/{manage, lifecycle, handoff, supervision}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `dotenv`, `weaken` |
-| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 설정 레지스트리 `SETTINGS`, placeholder 문법, 요청자 이름 `AgentName`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `settings`, `ports/{vault, session, access, audit, keys, browser, confirm, runtime}` |
+| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 설정 레지스트리 `SETTINGS`, placeholder 문법, 요청자 이름 `AgentName`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `settings`, `ports/{vault, session, access, audit, keys, browser, clock, confirm, runtime}` |
 | dev tool | `keyharbor-design-check` | `design/` 디자인 시스템 검사(계층·테마·대비·아이콘·클래스), 쇼케이스 서버 `design-serve`. 출시물에 들어가지 않고 아무도 의존하지 않는다([ADR-0015](../docs/design/adr/0015-design-system-layers.md)) | `scanner`, `model`, `layers`, `rules/*`, `color`, `theme`, `report`, `serve` |
 
 - 평문 값은 `Vault::resolve`·`Vault::mask_values`에서만 나오고, 둘 다 guard가 검사 뒤 발급하는 `PlaintextAccess`를 요구한다. 브라우저 조작은 제어 socket → `ops` → `GuardedBrowser`로만 간다.
 - **스키마 확장**: 저장소는 바운디드 컨텍스트별로 나뉘어 있다. 새 컨텍스트(예: 4단계 `site_states`)는 `crates/sqlite/src/contexts/<이름>/`(schema·models·mappers·repo) + `crates/sqlite/migrations/<이름>/<timestamp>_<이름>_<설명>/up.sql` + `contexts::CONTEXTS`에 한 줄이면 된다. 버전 타임스탬프는 모든 컨텍스트에서 유일해야 한다. 원시 SQL은 마이그레이션과 테스트에만 쓴다.
 - **항목 종류 확장**: `keyharbor_domain::vault::KINDS`에 `KindSpec` 하나(필드마다 `secret`·`maskable`·`input`·기본 `description`, 종류마다 origin 바인딩·`run` 허용 기본값)와 `ItemKind` 변형 하나를 더한다. 스키마·기본값·CLI의 비밀 필드 거부·필드 이름 검사·마스킹이 이 표를 읽는다.
 - **검사·변형 확장**: 사용 검사는 `crates/guard/src/pdp/checks/<검사>.rs` 하나 + `checks::BROWSER`/`PROCESS`에 한 줄, 거부 사유는 `DenialReason` 변형 하나, 마스킹 형태는 `crates/guard/src/pep/mask/variants/<변형>.rs` 하나 + `VARIANTS`에 한 줄, 약화 작업은 `core::weaken::WeakeningOp` 변형 하나다.
-- 테스트 전용 기능: `keyharbor-vault/insecure-test-keystore`, `keyharbor-sqlite/test-support`. 릴리스 빌드에 켜지지 않는지 `scripts/check-release-features.sh`가 확인한다.
+- 테스트 전용 기능: `keyharbor-keystore/insecure-test-keystore`, `keyharbor-sqlite/test-support`. 릴리스 빌드에 켜지지 않는지 `scripts/check-release-features.sh`가 확인한다.
 
 ## 브라우저 세션 (1단계)
 

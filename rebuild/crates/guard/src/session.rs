@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn every_operation_on_one_session_needs_that_session() {
-        let id = SessionId::new();
+        let id = keyharbor_crypto::random::id::<SessionId>();
         for op in [
             SessionOp::Open { id, cdp: false },
             SessionOp::Browser(id),

@@ -1,8 +1,8 @@
-//! Local vault cryptography: key separation, sealed records, metadata MACs and key storage.
+//! Local vault formats: key separation, sealed records and metadata MACs. No I/O: the root
+//! key is stored by a `KeyStore` adapter (`keyharbor-keystore`).
 //! Format and constants follow docs/design/07-cryptography-design.md.
 
 pub mod keys;
-pub mod keystore;
 pub mod meta;
 pub mod record;
 

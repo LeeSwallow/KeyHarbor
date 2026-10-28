@@ -1,7 +1,7 @@
 //! Vault storage. Only ciphertext, wrapped keys and non-secret metadata cross this port.
 
 use anyhow::Result;
-use std::path::Path;
+use std::any::Any;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VaultRow {
@@ -52,10 +52,20 @@ pub struct KeyGuard {
     pub dk_id: [u8; 16],
 }
 
+/// Held while it lives (an OS file lock in the adapter).
+pub type RotationGuard = Box<dyn Any + Send>;
+
+/// The lock that keeps key rotations (and the clean-up of a parked rotation key) to one
+/// process at a time. The SQLite adapter keeps it next to the database.
+pub trait RotationLock {
+    /// Blocks until no other process is rotating keys.
+    fn lock_rotation(&self) -> Result<RotationGuard>;
+    /// `None` while another process holds the lock.
+    fn try_lock_rotation(&self) -> Result<Option<RotationGuard>>;
+}
+
 /// Writes bump the vault version; key rotations commit only from an expected version.
 pub trait VaultStore: Send {
-    /// The data directory the store lives in (rotations lock `vault.lock` there).
-    fn root(&self) -> &Path;
     fn vault_get(&self) -> Result<Option<VaultRow>>;
     /// Fails with "vault already initialized" if a vault exists.
     fn vault_create(&self, vault: &VaultRow, dks: &[DomainKeyRow]) -> Result<()>;

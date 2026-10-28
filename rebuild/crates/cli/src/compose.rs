@@ -1,6 +1,6 @@
 //! The composition root (ADR-0014): the only place in this binary that picks adapters — the
-//! SQLite store, the system key store, the supervisor process runtime. Command modules get
-//! ports from [`App`] and call core and guard use cases with them.
+//! SQLite store, the key store (`keystore_from_env`), the system clock, the supervisor process
+//! runtime. Command modules get ports from [`App`] and call core and guard use cases with them.
 //!
 //! Nothing is built before a command asks for it: a session command never touches the key
 //! store. A vault owns its store connection, so a command that needs both the vault and the
@@ -8,22 +8,53 @@
 
 use anyhow::Result;
 use keyharbor_core::Vault;
-use keyharbor_domain::ports::{SessionRuntime, Store};
+use keyharbor_domain::ports::{Clock, KeyStore, SessionRuntime, Store};
+use keyharbor_keystore::{FileKeyStore, KeychainKeyStore, TEST_KEYSTORE_ENV, test_keystore_dir};
 use keyharbor_sqlite::{SqliteStore, SqliteStores};
 use keyharbor_supervisor::{Adapters, ProcessRuntime};
-use keyharbor_vault::keystore::keystore_from_env;
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+/// The `Clock` port over the system clock.
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> Duration {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+    }
+    fn sleep(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
+}
+
+/// The macOS keychain, or the insecure file store in test builds that set
+/// `KEYHARBOR_TEST_KEYSTORE_DIR`.
+fn keystore_from_env() -> Box<dyn KeyStore> {
+    if let Some(dir) = test_keystore_dir(std::env::var_os(TEST_KEYSTORE_ENV)) {
+        eprintln!(
+            "warning: INSECURE test key store in use ({TEST_KEYSTORE_ENV}); the root key is stored in plaintext"
+        );
+        return Box::new(FileKeyStore::new(dir));
+    }
+    Box::new(KeychainKeyStore)
+}
 
 pub struct App {
     root: PathBuf,
+    clock: Arc<dyn Clock>,
 }
 
 impl App {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            clock: Arc::new(SystemClock),
+        }
     }
 
     /// The data directory.
@@ -31,16 +62,28 @@ impl App {
         &self.root
     }
 
+    pub fn clock(&self) -> &dyn Clock {
+        &*self.clock
+    }
+
     pub fn store(&self) -> Result<Box<dyn Store>> {
         Ok(Box::new(SqliteStore::open(&self.root)?))
     }
 
     pub fn vault(&self) -> Result<Vault> {
-        Vault::open(SqliteStore::open(&self.root)?, keystore_from_env())
+        Vault::open(
+            SqliteStore::open(&self.root)?,
+            keystore_from_env(),
+            self.clock.clone(),
+        )
     }
 
     pub fn init_vault(&self) -> Result<Vault> {
-        Vault::init(SqliteStore::open(&self.root)?, keystore_from_env())
+        Vault::init(
+            SqliteStore::open(&self.root)?,
+            keystore_from_env(),
+            self.clock.clone(),
+        )
     }
 
     /// Supervisors are this same binary, run as `__supervise`.
@@ -51,15 +94,25 @@ impl App {
         )))
     }
 
-    /// What a supervisor runs with: this data directory's store, the system key store, and
-    /// whether the browser runs headless (`KEYHARBOR_BROWSER_HEADLESS=1`).
+    /// Opens the vault on demand (a supervisor or the MCP server opens it per use).
+    fn vault_opener(&self) -> keyharbor_guard::VaultOpener {
+        let (data, clock) = (self.root.clone(), self.clock.clone());
+        Box::new(move || {
+            Vault::open(
+                SqliteStore::open(&data)?,
+                keystore_from_env(),
+                clock.clone(),
+            )
+        })
+    }
+
+    /// What a supervisor runs with: this data directory's store, the system key store and
+    /// clock, and whether the browser runs headless (`KEYHARBOR_BROWSER_HEADLESS=1`).
     pub fn supervisor_adapters(&self) -> Adapters {
-        let data = self.root.clone();
         Adapters {
             stores: Arc::new(SqliteStores::new(&self.root)),
-            open_vault: Box::new(move || {
-                Vault::open(SqliteStore::open(&data)?, keystore_from_env())
-            }),
+            open_vault: self.vault_opener(),
+            clock: self.clock.clone(),
             headless: std::env::var_os("KEYHARBOR_BROWSER_HEADLESS").is_some_and(|v| v == "1"),
         }
     }
@@ -67,13 +120,11 @@ impl App {
     /// The MCP server's dependencies: one store for every tool, and a vault opener for the
     /// verified item list.
     pub fn mcp_deps(&self) -> Result<keyharbor_mcp::Deps> {
-        let data = self.root.clone();
         Ok(keyharbor_mcp::Deps {
             store: Arc::new(Mutex::new(self.store()?)),
-            open_vault: Box::new(move || {
-                Vault::open(SqliteStore::open(&data)?, keystore_from_env())
-            }),
+            open_vault: self.vault_opener(),
             runtime: self.runtime()?,
+            clock: self.clock.clone(),
         })
     }
 }

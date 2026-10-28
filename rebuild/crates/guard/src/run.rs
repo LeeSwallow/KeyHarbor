@@ -9,7 +9,7 @@ use crate::{
     pdp::checks::{self, Target, UseContext},
     pep::{mask, mask::Masker},
 };
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 use keyharbor_core::{PlaintextAccess, Vault, fill_template, parse_dotenv};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
@@ -18,14 +18,14 @@ use keyharbor_domain::{
     ports::Store,
     vault::{FieldName, ItemKind, ItemName, PlaceholderRef, parse_placeholders},
 };
-use std::path::PathBuf;
 use zeroize::Zeroizing;
 
-/// What to inject: whole env items and `.env`-style template files.
+/// What to inject: whole env items and `.env`-style templates (the contents of
+/// `--env-file`s, which the CLI reads).
 pub struct Request<'a> {
     pub agent: &'a str,
     pub items: &'a [String],
-    pub files: &'a [PathBuf],
+    pub files: &'a [Zeroizing<String>],
 }
 
 /// The checked, resolved variables for one child process and the masker for its output.
@@ -123,12 +123,8 @@ pub fn prepare(store: &dyn Store, vault: &Vault, request: &Request<'_>) -> Resul
         item_vars.push((item, fields));
     }
     let mut templates = Vec::new();
-    for path in request.files {
-        let text = Zeroizing::new(
-            std::fs::read_to_string(path)
-                .with_context(|| format!("cannot read {}", path.display()))?,
-        );
-        for (name, template) in parse_dotenv(&text)? {
+    for text in request.files {
+        for (name, template) in parse_dotenv(text)? {
             for reference in parse_placeholders(&template).map_err(|e| anyhow!("{e}"))? {
                 checker.check(&reference.item, &[reference.field.as_str()], false)?;
             }

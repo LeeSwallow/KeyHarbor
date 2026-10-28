@@ -2,13 +2,40 @@
 //! over CDP; `keyharbor-guard` wraps the implementation in `GuardedBrowser`, which is the
 //! only `BrowserPort` that control requests (and therefore MCP and the CLI) can reach.
 //!
-//! Results are JSON values in the control protocol's shape. A target is `{"ref": N}` (a
-//! backend node id from a snapshot) or `{"selector": css}`.
+//! A request names its element with a [`Target`]. Results of reading the page (snapshot,
+//! tabs, navigation) are the page's JSON, which the guard masks as a whole before it leaves
+//! the supervisor (J-43, J-75); results the guard itself decides are values
+//! ([`FillOutcome`]). The control protocol's shapes are the supervisor's.
 
 use crate::vault::Origin;
 use anyhow::Result;
 use serde_json::Value;
 use std::{collections::BTreeSet, future::Future};
+
+/// The element a request acts on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// A backend node id from a snapshot.
+    Ref(u64),
+    /// A CSS selector (checked by the guard's selector grammar).
+    Selector(String),
+}
+
+impl Target {
+    pub fn selector(&self) -> Option<&str> {
+        match self {
+            Self::Selector(css) => Some(css),
+            Self::Ref(_) => None,
+        }
+    }
+}
+
+/// What typing text into the page did, besides putting the text there.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FillOutcome {
+    /// The frame's origin changed while the text went in (detected after the fact).
+    pub origin_changed: bool,
+}
 
 /// What `wait` waits for.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,18 +51,22 @@ pub trait BrowserPort: Send {
     fn navigate(&mut self, url: &str) -> impl Future<Output = Result<Value>> + Send;
     fn snapshot(&mut self) -> impl Future<Output = Result<Value>> + Send;
     fn screenshot(&mut self) -> impl Future<Output = Result<Value>> + Send;
-    fn click(&mut self, target: &Value) -> impl Future<Output = Result<Value>> + Send;
+    fn click(&mut self, target: &Target) -> impl Future<Output = Result<Value>> + Send;
     /// Replaces the target element's value with `text`.
-    fn fill(&mut self, target: &Value, text: &str) -> impl Future<Output = Result<Value>> + Send;
+    fn fill(
+        &mut self,
+        target: &Target,
+        text: &str,
+    ) -> impl Future<Output = Result<FillOutcome>> + Send;
     /// Types `text` into the focused element.
-    fn type_text(&mut self, text: &str) -> impl Future<Output = Result<Value>> + Send;
+    fn type_text(&mut self, text: &str) -> impl Future<Output = Result<FillOutcome>> + Send;
     fn press(&mut self, key: &str) -> impl Future<Output = Result<Value>> + Send;
     fn tabs(&mut self) -> impl Future<Output = Result<Value>> + Send;
     fn new_tab(&mut self, url: Option<&str>) -> impl Future<Output = Result<Value>> + Send;
     fn switch_tab(&mut self, id: &str) -> impl Future<Output = Result<Value>> + Send;
     fn wait(&mut self, until: &WaitFor) -> impl Future<Output = Result<Value>> + Send;
     /// Asks the browser to exit; returns at once.
-    fn close(&mut self) -> Result<Value>;
+    fn close(&mut self) -> Result<()>;
 }
 
 /// The attached page (tab) the input steps act on.
@@ -112,7 +143,7 @@ pub trait PageInput: Send {
     fn focus_element(
         &mut self,
         page: &Page,
-        target: &Value,
+        target: &Target,
     ) -> impl Future<Output = Result<u64>> + Send;
     /// Empties the element's value (this runs page code).
     fn clear_element(&mut self, page: &Page, node: u64) -> impl Future<Output = Result<()>> + Send;

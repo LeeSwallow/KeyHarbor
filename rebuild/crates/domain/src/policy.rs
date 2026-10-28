@@ -184,7 +184,7 @@ mod tests {
     }
     #[test]
     fn rules_validate_agent_and_target() {
-        let id = SessionId::new().to_string();
+        let id = SessionId::from_bytes([7; 16]).to_string();
         assert!(Rule::new("claude", Resource::Session, &id, Effect::Deny).is_ok());
         assert!(Rule::new("*", Resource::Item, "github", Effect::Allow).is_ok());
         assert_eq!(

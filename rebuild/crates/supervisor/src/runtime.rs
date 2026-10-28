@@ -60,6 +60,10 @@ impl StartedSupervisor for Supervisor {
 }
 
 impl SessionRuntime for ProcessRuntime {
+    fn has_browser(&self, browser: &Path) -> bool {
+        browser.is_file()
+    }
+
     fn is_alive(&self, id: SessionId) -> bool {
         lock::is_alive(&self.data, &id)
     }

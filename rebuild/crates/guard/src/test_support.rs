@@ -2,10 +2,11 @@
 
 use crate::pep::mask::{Masker, masker};
 use keyharbor_core::{ItemSource, ItemStatus, NewItem, Vault};
+use keyharbor_domain::ports::{Clock, ManualClock};
 use keyharbor_domain::vault::{FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
+use keyharbor_keystore::FileKeyStore;
 use keyharbor_sqlite::SqliteStore;
-use keyharbor_vault::keystore::FileKeyStore;
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 use zeroize::Zeroizing;
 
 pub struct Env {
@@ -23,10 +24,15 @@ pub fn env() -> Env {
         keys,
     }
 }
+/// The tests' vault clock: 2026-10-28.
+pub fn clock() -> Arc<dyn Clock> {
+    Arc::new(ManualClock::at_unix_seconds(1_793_203_129))
+}
 pub fn open_vault(e: &Env) -> anyhow::Result<Vault> {
     Vault::open(
         SqliteStore::open(&e.data)?,
         Box::new(FileKeyStore::new(e.keys.clone())),
+        clock(),
     )
 }
 pub fn init(e: &Env) -> TestVault {
@@ -34,6 +40,7 @@ pub fn init(e: &Env) -> TestVault {
         Vault::init(
             SqliteStore::open(&e.data).unwrap(),
             Box::new(FileKeyStore::new(e.keys.clone())),
+            clock(),
         )
         .unwrap(),
     )

@@ -15,5 +15,6 @@ serde_json.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+keyharbor-keystore = { path = "../keystore" }
 keyharbor-sqlite = { path = "../sqlite", features = ["test-support"] }
 tempfile.workspace = true
