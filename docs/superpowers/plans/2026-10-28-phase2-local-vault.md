@@ -522,7 +522,7 @@ age 0.12의 정확한 API는 docs.rs `age/0.12.1`에서 `Encryptor::with_recipie
 
 - [x] **Step 1: README 갱신** — 금고 명령 표, "CLI는 평문을 출력하지 않는다 — 값 보기는 관리 앱(5단계)", "Mac·키를 잃으면 데이터를 잃는다, `vault export`로 age 백업", `KEYHARBOR_TEST_KEYSTORE_DIR`은 시험 전용이라는 경고, 키체인 확인 창 안내.
 - [x] **Step 2: 전체 검증** — Run: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` — Expected: 세 명령 모두 성공
-- [ ] **Step 3: 실제 Keychain 수동 확인** — ⏸ 미실행: 2026-10-28 자동 모드 권한 검사가 실제 키체인 쓰기(Secret-Store Writes)를 거부했다. 사용자가 직접 실행해야 한다(아래 「실행 기록」). — `KEYHARBOR_TEST_KEYSTORE_DIR` 없이 임시 `--data-dir`로 `vault init` → `vault add` → `vault list` → `vault rotate-root` → `vault list`. 확인 창 횟수를 기록한 뒤 `security delete-generic-password -s dev.keyharbor.vault -a <vault_id>`로 정리한다.
+- [x] **Step 3: 실제 Keychain 수동 확인** — 2026-10-28 사용자가 직접 실행(자동 모드 권한 검사가 에이전트 실행을 거부했기 때문). 결과는 아래 「실행 기록」. — `KEYHARBOR_TEST_KEYSTORE_DIR` 없이 임시 `--data-dir`로 `vault init` → `vault add` → `vault list` → `vault rotate-root` → `vault list`. 확인 창 횟수를 기록한 뒤 `security delete-generic-password -s dev.keyharbor.vault -a <vault_id>`로 정리한다.
 - [x] **Step 4: 커밋** — `git commit -m "docs: phase 2 vault usage, limits, and verification results"`
 
 ---
@@ -536,3 +536,4 @@ age 0.12의 정확한 API는 docs.rs `age/0.12.1`에서 `Encryptor::with_recipie
 - 최종 브랜치 검토(별도 에이전트): Critical 0, Important 3(I1 교체 중 `#next` 삭제, I2 교체·쓰기 경합, I3 평문 테스트 키 저장소) → 모두 RED→GREEN으로 수정(`e11eb9b`). Minor 13건은 보류, 목록은 `docs/design/06-requirements-log.md` §6.5.
 - **브랜치 마무리**: 3번 「그대로 유지」를 적용했다. goal의 Git 규칙(브랜치에서 작업, push 금지)에 따라 `feat/phase2-local-vault`를 병합·push하지 않고 둔다. 병합이나 PR은 사용자가 별도로 요청할 때 진행한다.
 - **goal 상태**: 완료. 실제 키체인 수동 확인은 goal이 허용한 대로 미실행 사유를 기록했다(위 Task 10 Step 3 항목).
+- **Task 10 Step 3 결과 (사용자 실행)**: 실제 login keychain으로 `vault init` → `vault add demo` → `touch crates/cli/src/main.rs` 후 재빌드한 바이너리로 `vault list` → `vault rotate-root` 모두 성공, stderr 없음. vault id `e7e463c9-6438-467e-a1ae-405eb8a62803`. 확인 창 발생 여부는 보고되지 않음.
