@@ -79,8 +79,15 @@ impl Cli {
     }
 }
 
+/// The binary uses the system clock, so the test reads it too.
 fn days_from_today(days: u32) -> String {
-    keyharbor_core::today().plus_days(days).to_string()
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    keyharbor_domain::date::Date::from_unix_seconds(now)
+        .plus_days(days)
+        .to_string()
 }
 
 #[test]

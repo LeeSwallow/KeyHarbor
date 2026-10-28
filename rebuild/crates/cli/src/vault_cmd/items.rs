@@ -58,7 +58,7 @@ pub fn add(app: &App, args: &AddArgs) -> Result<()> {
         source: ItemSource::User,
         details: ItemDetails {
             run_allowed: args.run_allowed.map(Toggle::on),
-            expiry: args.expiry.for_new_item()?,
+            expiry: args.expiry.for_new_item(app.clock())?,
             description: description.flatten(),
             field_descriptions,
         },
@@ -94,7 +94,7 @@ pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
         origins: new_origins,
         origin_binding: args.origin_binding.map(Toggle::on),
         run_allowed: args.run_allowed.map(Toggle::on),
-        expiry: args.expiry.for_change()?,
+        expiry: args.expiry.for_change(app.clock())?,
         description: args.about.item()?,
         field_descriptions: args.about.fields(kind)?,
         status: args.status.map(ItemStatus::from),

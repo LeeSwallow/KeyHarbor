@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/domain", "crates/crypto", "crates/sqlite", "crates/vault", "crates/core", "crates/guard", "crates/broker", "crates/supervisor", "crates/mcp", "crates/cli", "crates/design-check"]
+members = ["crates/domain", "crates/crypto", "crates/sqlite", "crates/vault", "crates/keystore", "crates/core", "crates/guard", "crates/broker", "crates/supervisor", "crates/mcp", "crates/cli", "crates/design-check"]
 resolver = "3"
 
 [workspace.package]
@@ -10,7 +10,8 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 aho-corasick = "1"
 anyhow = "1"
-uuid = { version = "1", features = ["v4"] }
+# No `v4` feature: v4 ids are built from keyharbor-crypto's random bytes (ADR-0016).
+uuid = "1"
 diesel = { version = "2.3", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = { version = "2.3", features = ["sqlite"] }
 # Only one libsqlite3-sys can be linked; Diesel accepts < 0.39. `bundled` builds SQLite in.

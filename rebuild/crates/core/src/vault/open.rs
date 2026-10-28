@@ -4,7 +4,7 @@ use super::{Vault, VaultBackend, account, vault_err};
 use crate::rotate;
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
-    ports::{DomainKeyRow, KeyStore, VaultRow},
+    ports::{Clock, DomainKeyRow, KeyStore, VaultRow},
     vault::Domain,
 };
 use keyharbor_vault::{
@@ -12,10 +12,14 @@ use keyharbor_vault::{
     keys::{KeyId, KeySet, VaultId},
     record::wrap_domain_key,
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 impl Vault {
-    pub fn init(store: impl VaultBackend + 'static, keystore: Box<dyn KeyStore>) -> Result<Vault> {
+    pub fn init(
+        store: impl VaultBackend + 'static,
+        keystore: Box<dyn KeyStore>,
+        clock: Arc<dyn Clock>,
+    ) -> Result<Vault> {
         let store: Box<dyn VaultBackend> = Box::new(store);
         if store.vault_get()?.is_some() {
             bail!("vault already initialized");
@@ -54,6 +58,7 @@ impl Vault {
         Ok(Vault {
             store,
             keystore,
+            clock,
             vault_id,
             kek_id,
             keys,
@@ -61,7 +66,11 @@ impl Vault {
         })
     }
 
-    pub fn open(store: impl VaultBackend + 'static, keystore: Box<dyn KeyStore>) -> Result<Vault> {
+    pub fn open(
+        store: impl VaultBackend + 'static,
+        keystore: Box<dyn KeyStore>,
+        clock: Arc<dyn Clock>,
+    ) -> Result<Vault> {
         let store: Box<dyn VaultBackend> = Box::new(store);
         let row = store.vault_get()?.context("vault not initialized")?;
         let vault_id = VaultId::from_bytes(row.vault_id);
@@ -79,7 +88,7 @@ impl Vault {
             Ok(domain_keys) => {
                 // A parked key left by an interrupted rotation is only safe to drop when no
                 // rotation is running; otherwise it may be the key the DB is about to depend on.
-                if let Some(_lock) = rotate::try_rotation_lock(&*store)? {
+                if let Some(_lock) = store.try_lock_rotation()? {
                     match keystore.delete(&next) {
                         Ok(()) | Err(VaultError::KeyNotFound) => {}
                         Err(e) => return Err(vault_err(e)),
@@ -90,7 +99,7 @@ impl Vault {
             Err(original) => {
                 // The DB was re-keyed under a root key that is not promoted yet. Wait for any
                 // running rotation, then retry the main key before finishing the promotion.
-                let _lock = rotate::rotation_lock(&*store)?;
+                let _lock = store.lock_rotation()?;
                 let keys = KeySet::derive(&get_main()?, &vault_id);
                 if let Ok(domain_keys) = Self::unwrap_all(&*store, &keys, &vault_id) {
                     (keys, domain_keys)
@@ -111,6 +120,7 @@ impl Vault {
         let mut vault = Vault {
             store,
             keystore,
+            clock,
             vault_id,
             kek_id,
             keys,

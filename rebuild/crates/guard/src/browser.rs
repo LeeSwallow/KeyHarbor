@@ -15,11 +15,11 @@ use keyharbor_domain::{
     denial::DenialReason,
     ports::{
         BrowserPort, FrameInspector, PageInput,
-        browser::{Element, Focus, Page, WaitFor},
+        browser::{Element, FillOutcome, Focus, Page, Target, WaitFor},
     },
     vault::{Origin, has_placeholder, parse_placeholders},
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 
 pub struct GuardedBrowser<'a, B> {
     pub(crate) inner: &'a mut B,
@@ -87,7 +87,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         focus: &Focus,
         origin: Option<Origin>,
         prepared: Prepared,
-    ) -> Result<Value> {
+    ) -> Result<FillOutcome> {
         // From here on the element may hold a value: snapshots redact it for the session.
         self.guard.taint(focus.node);
         let inserted = self.inner.insert_text(page, &prepared.text).await;
@@ -124,10 +124,8 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
             self.guard.lock(self.agent, "focus_moved");
             bail!("substitution locked for this session: the focus moved while typing");
         }
-        Ok(if changed {
-            json!({"warning": "origin_changed_after_fill"})
-        } else {
-            json!({})
+        Ok(FillOutcome {
+            origin_changed: changed,
         })
     }
 
@@ -166,7 +164,11 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         ))
     }
 
-    pub(crate) async fn fill_checked(&mut self, target: &Value, template: &str) -> Result<Value> {
+    pub(crate) async fn fill_checked(
+        &mut self,
+        target: &Target,
+        template: &str,
+    ) -> Result<FillOutcome> {
         if !has_placeholder(template) {
             return self.inner.fill(target, template).await;
         }
@@ -198,7 +200,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         self.insert_prepared(&page, &focus, origin, prepared).await
     }
 
-    async fn type_checked(&mut self, template: &str) -> Result<Value> {
+    async fn type_checked(&mut self, template: &str) -> Result<FillOutcome> {
         if !has_placeholder(template) {
             return self.inner.type_text(template).await;
         }
@@ -220,11 +222,8 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
 }
 
 /// The CSS selector a target carries, if any.
-fn selector(target: &Value) -> &str {
-    target
-        .get("selector")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
+fn selector(target: &Target) -> &str {
+    target.selector().unwrap_or_default()
 }
 
 impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
@@ -234,8 +233,8 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
     }
 
     /// Refuses selectors outside the structural grammar of `pep::selector` (I3).
-    fn target(&self, target: &Value) -> Result<()> {
-        match target.get("selector").and_then(Value::as_str) {
+    fn target(&self, target: &Target) -> Result<()> {
+        match target.selector() {
             Some(css) => crate::pep::selector::check(css),
             None => Ok(()),
         }
@@ -257,22 +256,22 @@ impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser
         let outcome = self.inner.screenshot().await;
         self.guard.redact_outcome(outcome)
     }
-    async fn click(&mut self, target: &Value) -> Result<Value> {
+    async fn click(&mut self, target: &Target) -> Result<Value> {
         self.target(target)?;
         self.literals(&[selector(target)])?;
         let outcome = self.inner.click(target).await;
         self.guard.redact_outcome(outcome)
     }
-    async fn fill(&mut self, target: &Value, text: &str) -> Result<Value> {
+    async fn fill(&mut self, target: &Target, text: &str) -> Result<FillOutcome> {
         self.target(target)?;
         self.literals(&[selector(target), text])?;
         let outcome = self.fill_checked(target, text).await;
-        self.guard.redact_outcome(outcome)
+        self.guard.redact_error(outcome)
     }
-    async fn type_text(&mut self, text: &str) -> Result<Value> {
+    async fn type_text(&mut self, text: &str) -> Result<FillOutcome> {
         self.literals(&[text])?;
         let outcome = self.type_checked(text).await;
-        self.guard.redact_outcome(outcome)
+        self.guard.redact_error(outcome)
     }
     async fn press(&mut self, key: &str) -> Result<Value> {
         self.literals(&[key])?;
@@ -301,9 +300,9 @@ impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser
         let outcome = self.inner.wait(until).await;
         self.guard.redact_outcome(outcome)
     }
-    fn close(&mut self) -> Result<Value> {
+    fn close(&mut self) -> Result<()> {
         let outcome = self.inner.close();
-        self.guard.redact_outcome(outcome)
+        self.guard.redact_error(outcome)
     }
 }
 
@@ -322,6 +321,7 @@ mod tests {
     };
     use keyharbor_domain::{ports::browser::LoginFields, vault::ItemName};
     use keyharbor_sqlite::SqliteStore;
+    use serde_json::json;
     use std::{
         collections::BTreeSet,
         sync::{Arc, Mutex},
@@ -381,16 +381,16 @@ mod tests {
         async fn screenshot(&mut self) -> Result<Value> {
             Ok(json!({}))
         }
-        async fn click(&mut self, _: &Value) -> Result<Value> {
+        async fn click(&mut self, _: &Target) -> Result<Value> {
             anyhow::bail!("no element {}", self.echo)
         }
-        async fn fill(&mut self, _: &Value, text: &str) -> Result<Value> {
+        async fn fill(&mut self, _: &Target, text: &str) -> Result<FillOutcome> {
             self.typed.push(text.to_owned());
-            Ok(json!({}))
+            Ok(FillOutcome::default())
         }
-        async fn type_text(&mut self, text: &str) -> Result<Value> {
+        async fn type_text(&mut self, text: &str) -> Result<FillOutcome> {
             self.typed.push(text.to_owned());
-            Ok(json!({}))
+            Ok(FillOutcome::default())
         }
         async fn press(&mut self, key: &str) -> Result<Value> {
             self.pressed.push(key.to_owned());
@@ -408,15 +408,15 @@ mod tests {
         async fn wait(&mut self, _: &WaitFor) -> Result<Value> {
             Ok(json!({}))
         }
-        fn close(&mut self) -> Result<Value> {
-            Ok(json!({}))
+        fn close(&mut self) -> Result<()> {
+            Ok(())
         }
     }
     impl PageInput for Fake {
         async fn page(&mut self) -> Result<Page> {
             Ok(Page("p".into()))
         }
-        async fn focus_element(&mut self, _: &Page, _: &Value) -> Result<u64> {
+        async fn focus_element(&mut self, _: &Page, _: &Target) -> Result<u64> {
             Ok(7)
         }
         async fn clear_element(&mut self, _: &Page, _: u64) -> Result<()> {
@@ -469,13 +469,32 @@ mod tests {
         let opener: crate::VaultOpener = Box::new(move || {
             keyharbor_core::Vault::open(
                 SqliteStore::open(&data)?,
-                Box::new(keyharbor_vault::keystore::FileKeyStore::new(keys.clone())),
+                Box::new(keyharbor_keystore::FileKeyStore::new(keys.clone())),
+                crate::test_support::clock(),
             )
         });
         (
-            Guard::new(SessionId::new(), store.clone(), opener),
+            Guard::new(
+                keyharbor_crypto::random::id::<SessionId>(),
+                store.clone(),
+                opener,
+                Arc::new(ClockHandle),
+            ),
             SharedStoreProbe(store),
         )
+    }
+
+    /// One clock for every guard in these tests, so a test can move it.
+    static CLOCK: std::sync::LazyLock<keyharbor_domain::ports::ManualClock> =
+        std::sync::LazyLock::new(|| keyharbor_domain::ports::ManualClock::at_unix_seconds(1000));
+    struct ClockHandle;
+    impl keyharbor_domain::ports::Clock for ClockHandle {
+        fn now(&self) -> std::time::Duration {
+            CLOCK.now()
+        }
+        fn sleep(&self, duration: std::time::Duration) {
+            CLOCK.sleep(duration)
+        }
     }
     struct SharedStoreProbe(crate::SharedStore);
     impl SharedStoreProbe {
@@ -506,12 +525,12 @@ mod tests {
         let mut fake = Fake::default();
         block(async {
             let mut browser = guard.browser(&mut fake, "claude");
-            let target = json!({"ref": 7});
+            let target = Target::Ref(7);
             let out = browser
                 .fill(&target, "{{secret:github.password}}")
                 .await
                 .unwrap();
-            assert_eq!(out, json!({}));
+            assert_eq!(out, FillOutcome::default());
             // The page has the value; the agent sees only the placeholder.
             let snap = browser.snapshot().await.unwrap();
             assert_eq!(snap, json!({"text": "{{secret:github.password}}"}));
@@ -520,7 +539,7 @@ mod tests {
         assert_eq!(probe.kinds(), vec![(AuditKind::SecretUsed, "ok".into())]);
         // Errors are masked too.
         fake.echo = "KH-SYNTH-pw-77".into();
-        let err = block(guard.browser(&mut fake, "claude").click(&json!({"ref": 1})))
+        let err = block(guard.browser(&mut fake, "claude").click(&Target::Ref(1)))
             .unwrap_err()
             .to_string();
         assert_eq!(err, "no element {{secret:github.password}}");
@@ -589,7 +608,7 @@ mod tests {
             },
             ..Fake::default()
         };
-        let target = json!({"ref": 7});
+        let target = Target::Ref(7);
         let err = block(
             guard
                 .browser(&mut fake, "claude")
@@ -643,7 +662,7 @@ mod tests {
         block(
             guard
                 .browser(&mut fake, "claude")
-                .fill(&json!({"ref": 7}), "plain"),
+                .fill(&Target::Ref(7), "plain"),
         )
         .unwrap();
         block(guard.browser(&mut fake, "claude").snapshot()).unwrap();
@@ -651,7 +670,7 @@ mod tests {
         block(
             guard
                 .browser(&mut fake, "claude")
-                .fill(&json!({"ref": 7}), "{{secret:github.password}}"),
+                .fill(&Target::Ref(7), "{{secret:github.password}}"),
         )
         .unwrap();
         block(guard.browser(&mut fake, "codex").snapshot()).unwrap();
@@ -706,7 +725,7 @@ mod tests {
         let err = block(
             guard
                 .browser(&mut fake, "codex")
-                .fill(&json!({"ref": 7}), "{{secret:github.username}}"),
+                .fill(&Target::Ref(7), "{{secret:github.username}}"),
         )
         .unwrap_err();
         assert_eq!(err.to_string(), "denied: github (locked)");
@@ -769,7 +788,7 @@ mod tests {
         let err = block(
             guard
                 .browser(&mut fake, "claude")
-                .fill(&json!({"ref": 7}), "{{secret:github.password}}"),
+                .fill(&Target::Ref(7), "{{secret:github.password}}"),
         )
         .unwrap_err();
         assert!(err.to_string().contains("accepts no more text"), "{err}");
@@ -811,7 +830,7 @@ mod tests {
         let err = block(
             guard
                 .browser(&mut fake, "claude")
-                .fill(&json!({"ref": 7}), "{{secret:github.password}}"),
+                .fill(&Target::Ref(7), "{{secret:github.password}}"),
         )
         .unwrap_err();
         assert_eq!(err.to_string(), "denied: github (navigating)");
@@ -825,17 +844,11 @@ mod tests {
         );
     }
 
-    static NOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1000);
-    fn now() -> u64 {
-        NOW.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
     #[test]
     fn a_flood_of_refusals_is_recorded_as_one_counter_per_second() {
         let e = env();
         init(&e).add(login("github", "KH-SYNTH-pw-85")).unwrap();
         let (guard, probe) = guard(&e);
-        let guard = guard.with_clock(now);
         let mut fake = Fake::default();
         for _ in 0..25 {
             assert!(
@@ -847,7 +860,7 @@ mod tests {
                 .is_err()
             );
         }
-        NOW.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        CLOCK.advance(std::time::Duration::from_secs(1));
         assert!(
             block(
                 guard
@@ -1039,7 +1052,11 @@ mod tests {
         let out = block(guard.browser(&mut fake, "claude").login(&github, true)).unwrap();
         assert_eq!(
             out,
-            json!({"filled": ["username", "password"], "submitted": true, "url": "https://github.com/"})
+            crate::LoginOutcome {
+                filled: vec!["username", "password"],
+                submitted: true,
+                url: "https://github.com/".into()
+            }
         );
         assert_eq!(fake.typed, vec!["me@x.com", "KH-SYNTH-pw-91"]);
         assert_eq!(fake.pressed, vec!["Enter"]);
@@ -1055,10 +1072,7 @@ mod tests {
             ..Fake::default()
         };
         let out = block(guard.browser(&mut fake, "claude").login(&github, false)).unwrap();
-        assert_eq!(
-            out["url"],
-            "https://github.com/?pw={{secret:github.password}}"
-        );
+        assert_eq!(out.url, "https://github.com/?pw={{secret:github.password}}");
         assert!(fake.pressed.is_empty());
     }
 }

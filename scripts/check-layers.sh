@@ -33,6 +33,18 @@
 # 12. (K) The control-socket protocol has one wire module
 #    (supervisor/src/control/wire.rs): no other production code writes an
 #    `"op"` key by hand.
+# 13. (C) The inner crates (domain, crypto, vault, core, guard) do no I/O:
+#    no files, processes, sockets, environment, clock, sleeping or printing
+#    outside tests. Ports bring those in (Clock, RotationLock, KeyStore, ...).
+# 14. (D) The inner crates depend on no driver crate (tokio, rmcp, clap,
+#    diesel, libsqlite3-sys, security-framework, libc, rpassword, base64).
+# 15. (E) keyharbor-domain uses serde_json only where a port result is the
+#    page's JSON (ports/browser.rs, J-43).
+# 16. (F) Randomness comes from keyharbor-crypto only (ADR-0016): nobody else
+#    calls `new_v4`, `OsRng`, `rand::` or `getrandom`, and no crate turns on
+#    uuid's `v4` feature (crypto builds v4 ids from its own random bytes).
+# 17. (G) A driver technology stays in its adapter crate: security-framework
+#    in keyharbor-keystore, rmcp in keyharbor-mcp, clap in keyharbor.
 #
 # CHECK_LAYERS_ROOT replaces rebuild/crates (scripts/test-scripts.sh runs the
 # rules against copies with planted violations).
@@ -49,13 +61,16 @@ allowed() {
 	vault) echo "domain crypto" ;;
 	core) echo "domain vault crypto" ;;
 	guard) echo "domain core" ;;
-	sqlite) echo "domain" ;;
+	# Row ids and run generations come from crypto's random source (ADR-0016, J-75).
+	sqlite) echo "domain crypto" ;;
 	# (B) the CDP adapter knows only the ports it implements.
 	broker) echo "domain" ;;
 	# The supervisor process composes the CDP adapter with the guard (#11).
 	supervisor) echo "domain core guard broker" ;;
 	mcp) echo "domain core guard supervisor" ;;
-	cli) echo "domain vault core guard sqlite supervisor mcp" ;;
+	cli) echo "domain core guard sqlite keystore supervisor mcp" ;;
+	# The key-store adapter (macOS Keychain, test file store; #19).
+	keystore) echo "domain" ;;
 	# A dev tool (ADR-0015): uses no keyharbor crate, and no crate may depend on it.
 	design-check) echo "" ;;
 	*) echo "?" ;;
@@ -224,6 +239,55 @@ hits="$(outside_tests '"op"[[:space:]]*[]:)]' | grep -E '^\./(mcp|cli|broker|sup
 	grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
 [ -n "$hits" ] && no "control requests built or parsed by hand (use keyharbor_supervisor::control::wire):
 $hits"
+
+inner="domain crypto vault core guard"
+
+# --- 13. (C) the inner crates do no I/O ----------------------------------------------
+# (awk has no \b: a word start is "line start or a non-identifier character".)
+hits="$(outside_tests 'std::(fs|process|net|env)([^A-Za-z0-9_]|$)|(^|[^A-Za-z0-9_])(File::|tokio::)|Command::new|SystemTime::now|Instant::now|thread::sleep|println!|eprintln!' |
+	grep -E "^\./($(echo "$inner" | tr ' ' '|'))/src/" |
+	grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
+[ -n "$hits" ] && no "I/O in an inner crate (bring it in through a port; the adapter lives outside):
+$hits"
+
+# --- 14. (D) the inner crates use no driver crate --------------------------------------
+for crate in $inner; do
+	[ -f "$crate/Cargo.toml" ] || continue
+	for dep in $(normal_deps "$crate/Cargo.toml"); do
+		case "$dep" in
+		tokio | rmcp | clap | diesel | diesel_migrations | libsqlite3-sys | security-framework | libc | rpassword | base64)
+			no "$crate depends on $dep; inner crates use no driver crate"
+			;;
+		esac
+	done
+done
+
+# --- 15. (E) serde_json in the domain only for page results -----------------------------
+hits="$(grep -rln 'serde_json' domain/src 2>/dev/null | grep -v '^domain/src/ports/browser\.rs$' || true)"
+[ -n "$hits" ] && no "keyharbor-domain uses serde_json outside ports/browser.rs:
+$hits"
+
+# --- 16. (F) randomness only in keyharbor-crypto -----------------------------------------
+hits="$(grep -rnE 'new_v4\(|OsRng|\brand::|getrandom' --include='*.rs' . |
+	grep -v '^\./crypto/' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
+[ -n "$hits" ] && no "randomness outside keyharbor-crypto (use keyharbor_crypto::random):
+$hits"
+hits="$(grep -nE '^uuid.*"v4"' */Cargo.toml ../Cargo.toml 2>/dev/null || true)"
+[ -n "$hits" ] && no "uuid's v4 feature is on (v4 ids come from keyharbor_crypto::random):
+$hits"
+
+# --- 17. (G) a driver technology stays in its adapter --------------------------------------
+for manifest in */Cargo.toml; do
+	crate="${manifest%/Cargo.toml}"
+	for dep in $(normal_deps "$manifest"); do
+		case "$dep:$crate" in
+		security-framework:keystore | rmcp:mcp | clap:cli) ;;
+		security-framework:* | rmcp:* | clap:*)
+			no "$crate depends on $dep; it belongs to one adapter crate only"
+			;;
+		esac
+	done
+done
 
 [ "$bad" -eq 0 ] && echo "layer rules hold"
 exit "$bad"

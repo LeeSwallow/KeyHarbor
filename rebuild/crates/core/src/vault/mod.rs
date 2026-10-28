@@ -15,7 +15,10 @@ pub use summary::{CatalogEntry, ItemUse, catalog, effective_descriptions};
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
     date::Expiry,
-    ports::{AuditStore, FieldRow, ItemRow, KeyGuard, KeyStore, SettingsStore, VaultStore},
+    ports::{
+        AuditStore, Clock, FieldRow, ItemRow, KeyGuard, KeyStore, RotationLock, SettingsStore,
+        VaultStore,
+    },
     vault::{Description, Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
 };
 use keyharbor_vault::{
@@ -24,7 +27,7 @@ use keyharbor_vault::{
     meta::{ItemMeta, meta_mac, verify_meta_mac},
     record::{FieldAd, seal_field, unwrap_domain_key},
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 use zeroize::Zeroizing;
 
 pub const MAX_FIELD_BYTES: usize = 64 * 1024;
@@ -159,8 +162,8 @@ pub struct ItemSummary {
 /// What a vault needs from storage: its tables and the usage record.
 /// What a vault needs from storage: its tables, the usage record and the settings
 /// (`default_item_ttl`).
-pub trait VaultBackend: VaultStore + AuditStore + SettingsStore {}
-impl<T: VaultStore + AuditStore + SettingsStore> VaultBackend for T {}
+pub trait VaultBackend: VaultStore + RotationLock + AuditStore + SettingsStore {}
+impl<T: VaultStore + RotationLock + AuditStore + SettingsStore> VaultBackend for T {}
 
 pub use keyharbor_domain::settings::{DEFAULT_ITEM_TTL, NO_TTL};
 
@@ -173,6 +176,8 @@ pub struct MaskValues {
 pub struct Vault {
     pub(crate) store: Box<dyn VaultBackend>,
     pub(crate) keystore: Box<dyn KeyStore>,
+    /// Dates for expiry and `updated_at`.
+    pub(crate) clock: Arc<dyn Clock>,
     pub(crate) vault_id: VaultId,
     pub(crate) kek_id: KeyId,
     pub(crate) keys: KeySet,

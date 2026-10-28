@@ -2,18 +2,16 @@
 
 use super::CdpBrowser;
 use anyhow::{Context, Result, anyhow, bail};
+use keyharbor_domain::ports::browser::Target;
 use serde_json::{Value, json};
 
 impl CdpBrowser {
-    /// The backend DOM node id a target names: `{"ref": N}` from a snapshot, or `{"selector": css}`.
-    async fn resolve(&mut self, session: &str, target: &Value) -> Result<u64> {
-        if let Some(reference) = target.get("ref").and_then(Value::as_u64) {
-            return Ok(reference);
-        }
-        let selector = target
-            .get("selector")
-            .and_then(Value::as_str)
-            .context("target needs a ref or a selector")?;
+    /// The backend DOM node id a target names: a ref from a snapshot, or a CSS selector.
+    async fn resolve(&mut self, session: &str, target: &Target) -> Result<u64> {
+        let selector = match target {
+            Target::Ref(reference) => return Ok(*reference),
+            Target::Selector(selector) => selector,
+        };
         let document = self
             .call("DOM.getDocument", json!({"depth": 0}), session)
             .await?;
@@ -36,7 +34,7 @@ impl CdpBrowser {
             .context("element has no backend node id")
     }
 
-    pub(super) async fn click_target(&mut self, target: &Value) -> Result<Value> {
+    pub(super) async fn click_target(&mut self, target: &Target) -> Result<Value> {
         let session = self.active_page().await?;
         let node = self.resolve(&session, target).await?;
         let _ = self
@@ -74,7 +72,7 @@ impl CdpBrowser {
     }
 
     /// Resolves the target and gives it keyboard focus.
-    pub(super) async fn focus_target(&mut self, session: &str, target: &Value) -> Result<u64> {
+    pub(super) async fn focus_target(&mut self, session: &str, target: &Target) -> Result<u64> {
         let node = self.resolve(session, target).await?;
         self.call("DOM.focus", json!({"backendNodeId": node}), session)
             .await?;

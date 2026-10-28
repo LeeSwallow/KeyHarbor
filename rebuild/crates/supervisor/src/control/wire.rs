@@ -5,6 +5,8 @@
 //! `{"ok":false,"error":"..."}`. The server (`ops`) and every client (MCP, `ProcessRuntime`)
 //! build and read these types only; defaults such as `login`'s `submit` live here once.
 
+use keyharbor_domain::ports::browser::{FillOutcome, Target};
+use keyharbor_guard::LoginOutcome;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -98,6 +100,51 @@ pub fn login_submits(submit: Option<bool>) -> bool {
 pub enum TargetWire {
     Ref(u64),
     Selector(String),
+}
+
+impl From<TargetWire> for Target {
+    fn from(target: TargetWire) -> Self {
+        match target {
+            TargetWire::Ref(reference) => Self::Ref(reference),
+            TargetWire::Selector(selector) => Self::Selector(selector),
+        }
+    }
+}
+
+/// The `result` of `fill` and `type`: `{}`, or a warning when the frame's origin changed
+/// while the text went in.
+#[derive(Serialize)]
+pub struct FillResultWire {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning: Option<&'static str>,
+}
+
+impl From<FillOutcome> for FillResultWire {
+    fn from(outcome: FillOutcome) -> Self {
+        Self {
+            warning: outcome
+                .origin_changed
+                .then_some("origin_changed_after_fill"),
+        }
+    }
+}
+
+/// The `result` of `login`: the fields filled, whether the form was submitted, the URL after.
+#[derive(Serialize)]
+pub struct LoginResultWire {
+    filled: Vec<&'static str>,
+    submitted: bool,
+    url: String,
+}
+
+impl From<LoginOutcome> for LoginResultWire {
+    fn from(outcome: LoginOutcome) -> Self {
+        Self {
+            filled: outcome.filled,
+            submitted: outcome.submitted,
+            url: outcome.url,
+        }
+    }
 }
 
 /// One response.
@@ -210,6 +257,27 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    #[test]
+    fn guard_outcomes_keep_their_result_shape() {
+        let fill = |changed| {
+            serde_json::to_value(FillResultWire::from(FillOutcome {
+                origin_changed: changed,
+            }))
+            .unwrap()
+        };
+        assert_eq!(fill(false), json!({}));
+        assert_eq!(fill(true), json!({"warning": "origin_changed_after_fill"}));
+        let login = LoginResultWire::from(LoginOutcome {
+            filled: vec!["username", "password"],
+            submitted: true,
+            url: "https://github.com/".into(),
+        });
+        assert_eq!(
+            serde_json::to_value(login).unwrap(),
+            json!({"filled": ["username", "password"], "submitted": true, "url": "https://github.com/"})
+        );
     }
 
     #[test]

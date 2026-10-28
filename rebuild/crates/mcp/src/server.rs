@@ -4,7 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use keyharbor_domain::{
     SessionId,
     policy::AgentName,
-    ports::{SessionRuntime, Store},
+    ports::{Clock, SessionRuntime, Store},
 };
 use keyharbor_guard::{
     SharedStore, VaultOpener,
@@ -30,6 +30,7 @@ pub(crate) struct Inner {
     pub store: SharedStore,
     pub open_vault: VaultOpener,
     pub runtime: Box<dyn SessionRuntime>,
+    pub clock: Arc<dyn Clock>,
     pub data: PathBuf,
     pub scope: Option<SessionId>,
     pub allow_cdp: bool,

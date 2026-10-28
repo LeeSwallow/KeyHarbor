@@ -11,7 +11,7 @@ use keyharbor_broker::chrome::{self, ChromeLaunch};
 use keyharbor_core::session::supervision::{self, BrowserExit};
 use keyharbor_domain::{
     Generation, SessionId,
-    ports::{Store, StoreFactory},
+    ports::{Clock, Store, StoreFactory},
 };
 use keyharbor_guard::{Guard, SharedStore, VaultOpener};
 use prepare::{bind, prepare};
@@ -28,6 +28,8 @@ use tokio::{net::UnixListener, process::Child, time::Instant};
 pub struct Adapters {
     pub stores: Arc<dyn StoreFactory>,
     pub open_vault: VaultOpener,
+    /// The guard's clock (refusal rate limit).
+    pub clock: Arc<dyn Clock>,
     /// Start the browser headless (`KEYHARBOR_BROWSER_HEADLESS=1`, tests and CI).
     pub headless: bool,
 }
@@ -105,7 +107,8 @@ pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
         socket: prepared.socket,
         shots: prepared.shots,
     };
-    runtime.block_on(supervise(run, store, adapters.open_vault, launch))
+    let guard_parts = (adapters.open_vault, adapters.clock);
+    runtime.block_on(supervise(run, store, guard_parts, launch))
 }
 
 /// One run's identity and files.
@@ -119,7 +122,7 @@ struct Run {
 async fn supervise(
     run: Run,
     store: Box<dyn Store>,
-    open_vault: VaultOpener,
+    (open_vault, clock): (VaultOpener, Arc<dyn Clock>),
     launch: ChromeLaunch,
 ) -> Result<()> {
     let Run {
@@ -163,7 +166,7 @@ async fn supervise(
     let shared = Arc::new(Shared {
         id,
         generation,
-        guard: Guard::new(id, store.clone(), open_vault),
+        guard: Guard::new(id, store.clone(), open_vault, clock),
         store,
         ops: tokio::sync::Mutex::new(Ops::new(browser)),
         close: tokio::sync::Notify::new(),

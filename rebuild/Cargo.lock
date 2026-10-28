@@ -1396,10 +1396,10 @@ dependencies = [
  "keyharbor-core",
  "keyharbor-domain",
  "keyharbor-guard",
+ "keyharbor-keystore",
  "keyharbor-mcp",
  "keyharbor-sqlite",
  "keyharbor-supervisor",
- "keyharbor-vault",
  "libc",
  "rpassword",
  "serde_json",
@@ -1426,6 +1426,7 @@ dependencies = [
  "anyhow",
  "keyharbor-crypto",
  "keyharbor-domain",
+ "keyharbor-keystore",
  "keyharbor-sqlite",
  "keyharbor-vault",
  "serde",
@@ -1446,6 +1447,7 @@ dependencies = [
  "hmac 0.13.0",
  "keyharbor-domain",
  "sha2 0.11.1",
+ "uuid",
  "zeroize",
 ]
 
@@ -1474,12 +1476,24 @@ dependencies = [
  "aho-corasick",
  "anyhow",
  "keyharbor-core",
+ "keyharbor-crypto",
  "keyharbor-domain",
+ "keyharbor-keystore",
  "keyharbor-sqlite",
- "keyharbor-vault",
  "serde_json",
  "tempfile",
  "tokio",
+ "zeroize",
+]
+
+[[package]]
+name = "keyharbor-keystore"
+version = "0.1.0"
+dependencies = [
+ "keyharbor-crypto",
+ "keyharbor-domain",
+ "security-framework",
+ "tempfile",
  "zeroize",
 ]
 
@@ -1505,6 +1519,7 @@ dependencies = [
  "anyhow",
  "diesel",
  "diesel_migrations",
+ "keyharbor-crypto",
  "keyharbor-domain",
  "libsqlite3-sys",
  "tempfile",
@@ -1517,6 +1532,7 @@ dependencies = [
  "anyhow",
  "keyharbor-broker",
  "keyharbor-core",
+ "keyharbor-crypto",
  "keyharbor-domain",
  "keyharbor-guard",
  "serde",
@@ -1531,7 +1547,6 @@ version = "0.1.0"
 dependencies = [
  "keyharbor-crypto",
  "keyharbor-domain",
- "security-framework",
  "tempfile",
  "uuid",
  "zeroize",

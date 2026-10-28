@@ -14,7 +14,7 @@ use keyharbor_domain::{
     SessionId,
     audit::{AuditEvent, AuditKind},
     denial::DenialReason,
-    ports::Store,
+    ports::{Clock, Store},
     vault::{Domain, ItemName, Origin, placeholder},
 };
 use serde_json::Value;
@@ -57,8 +57,8 @@ pub struct Guard {
     /// Refusals recorded in the current second, and those left out (Minor: a flood of
     /// refused requests must not flood the record).
     denials: Mutex<Denials>,
-    /// Seconds since the epoch; replaced in tests.
-    clock: fn() -> u64,
+    /// For the per-second refusal cap.
+    clock: Arc<dyn Clock>,
 }
 
 /// Refusals a session records per second; the rest become one counter event. Fixed: it only
@@ -72,19 +72,18 @@ struct Denials {
     suppressed: u32,
 }
 
-fn unix_seconds() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 /// Requests carrying a vault value a session tolerates before it locks (I1). Fixed, not a
 /// setting: raising it gives a guessing agent more answers, and an agent cannot be trusted
 /// to set it.
 pub const MAX_PROBES: u32 = 3;
 
 impl Guard {
-    pub fn new(session: SessionId, store: SharedStore, open_vault: VaultOpener) -> Self {
+    pub fn new(
+        session: SessionId,
+        store: SharedStore,
+        open_vault: VaultOpener,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
         Self {
             session,
             store,
@@ -94,20 +93,14 @@ impl Guard {
             locked: AtomicBool::new(false),
             probes: AtomicU32::new(0),
             denials: Mutex::new(Denials::default()),
-            clock: unix_seconds,
+            clock,
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_clock(mut self, clock: fn() -> u64) -> Self {
-        self.clock = clock;
-        self
     }
 
     /// Records a refusal unless this second's cap is reached; a new second first records how
     /// many were left out of the last one.
     fn record_denial(&self, agent: &str, event: &AuditEvent) {
-        let now = (self.clock)();
+        let now = self.clock.unix_seconds();
         let (flush, record) = {
             let Ok(mut d) = self.denials.lock() else {
                 return;
@@ -378,14 +371,34 @@ impl Guard {
         }
     }
 
+    /// Text before it leaves the supervisor, masked like [`Guard::redact`].
+    pub fn redact_text(&self, text: String) -> Result<String> {
+        match self.redact(Value::String(text))? {
+            Value::String(text) => Ok(text),
+            _ => bail!("operation failed"),
+        }
+    }
+
     /// A whole outcome, masked exactly once: the value, or the error's message.
     pub fn redact_outcome(&self, outcome: Result<Value>) -> Result<Value> {
         match outcome {
             Ok(value) => self.redact(value),
-            Err(error) => match self.redact(Value::String(format!("{error:#}")))? {
-                Value::String(message) => Err(anyhow!(message)),
-                _ => bail!("operation failed"),
-            },
+            Err(error) => Err(self.redact_failure(error)),
+        }
+    }
+
+    /// An outcome whose value holds no page text ([`FillOutcome`], `()`): only an error's
+    /// message is masked.
+    ///
+    /// [`FillOutcome`]: keyharbor_domain::ports::browser::FillOutcome
+    pub fn redact_error<T>(&self, outcome: Result<T>) -> Result<T> {
+        outcome.map_err(|error| self.redact_failure(error))
+    }
+
+    fn redact_failure(&self, error: anyhow::Error) -> anyhow::Error {
+        match self.redact_text(format!("{error:#}")) {
+            Ok(message) => anyhow!(message),
+            Err(withheld) => withheld,
         }
     }
 }

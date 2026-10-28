@@ -1,7 +1,8 @@
 //! `keyharbor vault …`. Never prints secret values; secrets arrive only by hidden prompt or stdin JSON.
 //! Arguments are here, reading input in [`input`], printing in [`output`], adding and
-//! changing items in [`items`].
+//! changing items in [`items`], export and import files in [`files`].
 
+mod files;
 mod input;
 mod items;
 mod output;
@@ -237,7 +238,8 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
             passphrase_stdin,
         } => {
             let vault = app.vault()?;
-            vault.export_age(read_passphrase(passphrase_stdin, true)?, &path)?;
+            let bytes = vault.export_age(read_passphrase(passphrase_stdin, true)?)?;
+            files::write_new_private(&path, &bytes)?;
             println!("exported\t{}", path.display());
         }
         VaultCmd::Import {
@@ -245,7 +247,8 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
             passphrase_stdin,
         } => {
             let vault = app.vault()?;
-            let report = vault.import_age(read_passphrase(passphrase_stdin, false)?, &path)?;
+            let encrypted = files::read(&path)?;
+            let report = vault.import_age(read_passphrase(passphrase_stdin, false)?, &encrypted)?;
             for name in &report.skipped_existing {
                 eprintln!("skipped existing item {name}");
             }

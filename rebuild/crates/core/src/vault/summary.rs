@@ -2,10 +2,9 @@
 //! facts the guard checks before a use.
 
 use super::{ItemSource, ItemStatus, ItemSummary, Vault};
-use crate::today;
 use anyhow::{Context, Result, anyhow};
 use keyharbor_domain::{
-    date::Expiry,
+    date::{Date, Expiry},
     ports::{ItemRow, VaultStore},
     vault::{Domain, ItemKind, ItemName, Origin},
 };
@@ -54,8 +53,8 @@ fn expiry(row: &ItemRow) -> Result<Option<Expiry>> {
         .map_err(|_| anyhow!("invalid expiry in database"))
 }
 
-fn is_expired(row: &ItemRow) -> Result<bool> {
-    Ok(expiry(row)?.is_some_and(|e| e.is_expired(today())))
+fn is_expired(row: &ItemRow, today: Date) -> Result<bool> {
+    Ok(expiry(row)?.is_some_and(|e| e.is_expired(today)))
 }
 
 /// One item as agents may see it. A tampered item shows only its name: its origins, run
@@ -103,7 +102,7 @@ impl Vault {
     }
 
     fn summary(&self, row: ItemRow, tampered: bool) -> Result<ItemSummary> {
-        let (expires_at, expired) = (expiry(&row)?, is_expired(&row)?);
+        let (expires_at, expired) = (expiry(&row)?, is_expired(&row, self.clock.today())?);
         let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
         let fields: Vec<String> = self
             .store
@@ -152,7 +151,7 @@ impl Vault {
             origin_binding: row.origin_binding,
             run_allowed: row.run_allowed,
             expires_at: expiry(&row)?,
-            expired: is_expired(&row)?,
+            expired: is_expired(&row, self.clock.today())?,
             origins,
             status: ItemStatus::parse(&row.status).context("unknown status in database")?,
             fields: fields.into_iter().map(|f| f.field).collect(),

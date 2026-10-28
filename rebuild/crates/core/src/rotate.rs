@@ -1,11 +1,12 @@
 //! Root and domain key rotation (docs/design/07-cryptography-design.md §7.8).
 //! Root rotation never re-encrypts fields: it re-wraps the three domain keys and re-signs metadata.
 //!
-//! Rotations hold an exclusive lock on `<data dir>/vault.lock` and commit only if the vault
-//! version is unchanged since they read it, so concurrent writers make them abort, not corrupt.
+//! Rotations hold the store's exclusive `RotationLock` (`<data dir>/vault.lock` in the SQLite
+//! adapter) and commit only if the vault version is unchanged since they read it, so
+//! concurrent writers make them abort, not corrupt.
 
 use crate::{
-    Vault, VaultBackend,
+    Vault,
     vault::{account, vault_err},
 };
 use anyhow::{Context, Result, bail};
@@ -15,37 +16,9 @@ use keyharbor_vault::{
     keys::{KeyId, KeySet},
     record::{FieldAd, open_field, seal_field, wrap_domain_key},
 };
-use std::fs::{File, TryLockError};
 
 pub(crate) fn next_account(vault: &str) -> String {
     format!("{vault}#next")
-}
-
-fn lock_file(store: &dyn VaultBackend) -> Result<File> {
-    let path = store.root().join("vault.lock");
-    File::options()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(&path)
-        .with_context(|| format!("cannot open {}", path.display()))
-}
-
-/// Blocks until no other process is rotating keys.
-pub(crate) fn rotation_lock(store: &dyn VaultBackend) -> Result<File> {
-    let file = lock_file(store)?;
-    file.lock().context("cannot take the vault rotation lock")?;
-    Ok(file)
-}
-
-/// `None` while another process holds the rotation lock.
-pub(crate) fn try_rotation_lock(store: &dyn VaultBackend) -> Result<Option<File>> {
-    let file = lock_file(store)?;
-    match file.try_lock() {
-        Ok(()) => Ok(Some(file)),
-        Err(TryLockError::WouldBlock) => Ok(None),
-        Err(TryLockError::Error(e)) => Err(e).context("cannot take the vault rotation lock"),
-    }
 }
 
 impl Vault {
@@ -66,7 +39,7 @@ impl Vault {
     }
 
     fn rotate_root_inner(&mut self, stop_after: u8, hook: impl FnOnce()) -> Result<()> {
-        let _lock = rotation_lock(&*self.store)?;
+        let _lock = self.store.lock_rotation()?;
         let version = self.store.vault_version()?;
         let items = self.store.item_list()?;
         for row in &items {
@@ -143,7 +116,7 @@ impl Vault {
     /// Runs `hook` after the fields were re-encrypted and before the commit, to test races.
     #[doc(hidden)]
     pub fn rotate_domain_with_hook(&mut self, domain: Domain, hook: impl FnOnce()) -> Result<()> {
-        let _lock = rotation_lock(&*self.store)?;
+        let _lock = self.store.lock_rotation()?;
         let version = self.store.vault_version()?;
         let vault = self.store.vault_get()?.context("vault not initialized")?;
         if vault.kek_id != *self.kek_id.as_bytes() {
@@ -292,7 +265,8 @@ mod tests {
 
     #[test]
     fn open_does_not_delete_parked_key_during_rotation() {
-        use keyharbor_vault::keystore::{FileKeyStore, KeyStore};
+        use keyharbor_domain::ports::KeyStore;
+        use keyharbor_keystore::FileKeyStore;
         let e = env();
         let v = init(&e);
         v.add(login("github", "pw")).unwrap();

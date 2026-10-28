@@ -133,7 +133,13 @@ impl Server {
                     browser: &inner.browser,
                     agent: inner.agent(),
                 };
-                lifecycle::open(&**inner.store()?, &*inner.runtime, id, &options)?;
+                lifecycle::open(
+                    &**inner.store()?,
+                    &*inner.runtime,
+                    &*inner.clock,
+                    id,
+                    &options,
+                )?;
                 Ok(json!({"id": id.to_string(), "state": State::Running.as_str()}))
             })
             .await,
@@ -151,7 +157,13 @@ impl Server {
         outcome(
             self.blocking(move |inner| {
                 inner.allow(SessionOp::Stop(id))?;
-                let state = lifecycle::stop(&**inner.store()?, &*inner.runtime, id, inner.agent())?;
+                let state = lifecycle::stop(
+                    &**inner.store()?,
+                    &*inner.runtime,
+                    &*inner.clock,
+                    id,
+                    inner.agent(),
+                )?;
                 Ok(json!({"id": id.to_string(), "state": state.as_str()}))
             })
             .await,

@@ -30,3 +30,4 @@ mod test_support;
 
 pub use browser::GuardedBrowser;
 pub use guard::{Guard, SharedStore, VaultOpener};
+pub use login::LoginOutcome;

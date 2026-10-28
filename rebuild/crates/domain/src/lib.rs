@@ -5,16 +5,18 @@ use uuid::Uuid;
 pub struct SessionId(Uuid);
 
 impl SessionId {
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
+    /// From 16 random bytes in UUID v4 layout; new ids come from
+    /// `keyharbor_crypto::random::id()` (ADR-0016).
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(Uuid::from_bytes(bytes))
     }
     pub fn parse(value: &str) -> Result<Self, uuid::Error> {
         Ok(Self(Uuid::parse_str(value)?))
     }
 }
-impl Default for SessionId {
-    fn default() -> Self {
-        Self::new()
+impl From<[u8; 16]> for SessionId {
+    fn from(bytes: [u8; 16]) -> Self {
+        Self::from_bytes(bytes)
     }
 }
 impl fmt::Display for SessionId {
@@ -98,16 +100,18 @@ impl State {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Generation(Uuid);
 impl Generation {
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
+    /// From 16 random bytes in UUID v4 layout; new ids come from
+    /// `keyharbor_crypto::random::id()` (ADR-0016).
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(Uuid::from_bytes(bytes))
     }
     pub fn parse(value: &str) -> Result<Self, uuid::Error> {
         Ok(Self(Uuid::parse_str(value)?))
     }
 }
-impl Default for Generation {
-    fn default() -> Self {
-        Self::new()
+impl From<[u8; 16]> for Generation {
+    fn from(bytes: [u8; 16]) -> Self {
+        Self::from_bytes(bytes)
     }
 }
 impl fmt::Display for Generation {
@@ -120,16 +124,18 @@ impl fmt::Display for Generation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RequestId(Uuid);
 impl RequestId {
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
+    /// From 16 random bytes in UUID v4 layout; new ids come from
+    /// `keyharbor_crypto::random::id()` (ADR-0016).
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(Uuid::from_bytes(bytes))
     }
     pub fn parse(value: &str) -> Result<Self, uuid::Error> {
         Ok(Self(Uuid::parse_str(value)?))
     }
 }
-impl Default for RequestId {
-    fn default() -> Self {
-        Self::new()
+impl From<[u8; 16]> for RequestId {
+    fn from(bytes: [u8; 16]) -> Self {
+        Self::from_bytes(bytes)
     }
 }
 impl fmt::Display for RequestId {

@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use keyharbor_domain::{
     ports::{
         BrowserPort, FrameInspector, PageInput,
-        browser::{Element, Focus, LoginFields, Page, WaitFor},
+        browser::{Element, FillOutcome, Focus, LoginFields, Page, Target, WaitFor},
     },
     vault::Origin,
 };
@@ -157,20 +157,20 @@ impl BrowserPort for CdpBrowser {
     async fn screenshot(&mut self) -> Result<Value> {
         self.save_screenshot().await
     }
-    async fn click(&mut self, target: &Value) -> Result<Value> {
+    async fn click(&mut self, target: &Target) -> Result<Value> {
         self.click_target(target).await
     }
-    async fn fill(&mut self, target: &Value, text: &str) -> Result<Value> {
+    async fn fill(&mut self, target: &Target, text: &str) -> Result<FillOutcome> {
         let page = self.page().await?;
         let node = self.focus_element(&page, target).await?;
         self.clear_element(&page, node).await?;
         self.insert_text(&page, text).await?;
-        Ok(json!({}))
+        Ok(FillOutcome::default())
     }
-    async fn type_text(&mut self, text: &str) -> Result<Value> {
+    async fn type_text(&mut self, text: &str) -> Result<FillOutcome> {
         let page = self.page().await?;
         self.insert_text(&page, text).await?;
-        Ok(json!({}))
+        Ok(FillOutcome::default())
     }
     async fn press(&mut self, key: &str) -> Result<Value> {
         self.press_key(key).await
@@ -187,9 +187,9 @@ impl BrowserPort for CdpBrowser {
     async fn wait(&mut self, until: &WaitFor) -> Result<Value> {
         self.wait_for(until).await
     }
-    fn close(&mut self) -> Result<Value> {
+    fn close(&mut self) -> Result<()> {
         self.cdp.send_and_close("Browser.close", json!({}));
-        Ok(json!({}))
+        Ok(())
     }
 }
 
@@ -197,7 +197,7 @@ impl PageInput for CdpBrowser {
     async fn page(&mut self) -> Result<Page> {
         Ok(Page(self.active_page().await?))
     }
-    async fn focus_element(&mut self, page: &Page, target: &Value) -> Result<u64> {
+    async fn focus_element(&mut self, page: &Page, target: &Target) -> Result<u64> {
         self.focus_target(&page.0, target).await
     }
     async fn clear_element(&mut self, page: &Page, node: u64) -> Result<()> {

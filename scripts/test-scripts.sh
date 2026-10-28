@@ -69,6 +69,20 @@ planted "mcp-depending-on-the-cdp-adapter" mcp/Cargo.toml 'keyharbor-broker = { 
 	"only keyharbor-supervisor wraps the CDP adapter"
 planted "a-control-request-built-by-hand" mcp/src/server.rs 'fn x() -> serde_json::Value { serde_json::json!({"op": "close"}) }' \
 	"control requests built or parsed by hand"
+planted "file-io-in-core" core/src/policy.rs 'fn x() { let _ = std::fs::read("a"); }' \
+	"I/O in an inner crate"
+planted "the-clock-read-in-the-guard" guard/src/audit.rs 'fn x() { let _ = std::time::SystemTime::now(); }' \
+	"I/O in an inner crate"
+planted "a-driver-crate-in-the-domain" domain/Cargo.toml 'tokio.workspace = true' \
+	"domain depends on tokio; inner crates use no driver crate"
+planted "serde-json-in-a-domain-value" domain/src/policy.rs 'fn x() -> serde_json::Value { serde_json::Value::Null }' \
+	"keyharbor-domain uses serde_json outside ports/browser.rs"
+planted "randomness-outside-crypto" sqlite/src/lib.rs 'fn x() { let _ = uuid::Uuid::new_v4(); }' \
+	"randomness outside keyharbor-crypto"
+planted "the-uuid-v4-feature" domain/Cargo.toml 'uuid = { workspace = true, features = ["v4"] }' \
+	"uuid's v4 feature is on"
+planted "clap-outside-the-cli" mcp/Cargo.toml 'clap = "4"' \
+	"mcp depends on clap; it belongs to one adapter crate only"
 
 # The design-system rules hold for design/ (ADR-0015).
 sh scripts/check-design.sh >/dev/null 2>&1 && ok "design rules hold" || no "check-design failed"

@@ -14,7 +14,8 @@ serde_json.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+keyharbor-crypto = { path = "../crypto" }
 keyharbor-sqlite = { path = "../sqlite" }
-keyharbor-vault = { path = "../vault" }
+keyharbor-keystore = { path = "../keystore" }
 tempfile.workspace = true
 tokio.workspace = true

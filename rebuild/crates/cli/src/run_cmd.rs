@@ -84,12 +84,25 @@ fn spawn(argv: &[OsString], vars: &[(String, Zeroizing<String>)]) -> Result<Chil
         .with_context(|| format!("could not start {}", Path::new(&argv[0]).display()))
 }
 
+/// The `--env-file` templates; they may hold values, so they are zeroized on drop.
+fn read_env_files(paths: &[PathBuf]) -> Result<Vec<Zeroizing<String>>> {
+    paths
+        .iter()
+        .map(|path| {
+            std::fs::read_to_string(path)
+                .map(Zeroizing::new)
+                .with_context(|| format!("cannot read {}", path.display()))
+        })
+        .collect()
+}
+
 /// Runs the command and returns the exit code to pass on (128 + signal if it was killed).
 pub fn run(app: &App, args: RunArgs) -> Result<i32> {
     let agent = AgentName::parse(&args.agent).map_err(|e| anyhow!("{e}"))?;
     if args.items.is_empty() && args.files.is_empty() {
         bail!("give at least one --env ITEM or --env-file PATH");
     }
+    let files = read_env_files(&args.files)?;
     let (store, vault) = (app.store()?, app.vault()?);
     // The guard checks every item before resolving any, and builds the output masker.
     let mut injection = guard_run::prepare(
@@ -98,7 +111,7 @@ pub fn run(app: &App, args: RunArgs) -> Result<i32> {
         &guard_run::Request {
             agent: agent.as_str(),
             items: &args.items,
-            files: &args.files,
+            files: &files,
         },
     )?;
     let vars = std::mem::take(&mut injection.vars);

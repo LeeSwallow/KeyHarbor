@@ -6,7 +6,6 @@
 //! once.
 
 use super::{Vault, vault_err};
-use crate::rotate;
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
     ports::{DomainKeyRow, FieldRow, ItemRow},
@@ -26,7 +25,7 @@ impl Vault {
             return Ok(());
         }
         // One process moves the items; the others wait and then find the key.
-        let _lock = rotate::rotation_lock(&*self.store)?;
+        let _lock = self.store.lock_rotation()?;
         for _ in 0..ATTEMPTS {
             if self
                 .store

@@ -89,8 +89,12 @@ flowchart TB
   subgraph adapters["adapters"]
     supervisor["keyharbor-supervisor<br/>감독자 프로세스 · 제어 socket(wire)<br/>Guard 조립 · SessionRuntime 구현"]
     broker["keyharbor-broker<br/>Chrome 실행 · CDP pipe<br/>BrowserPort · PageInput · FrameInspector 구현"]
-    sqlite["keyharbor-sqlite<br/>Diesel · 컨텍스트별 repo<br/>저장소 포트 구현"]
-    vault["keyharbor-vault<br/>AEAD · 레코드 v1 · 메타 MAC<br/>KeyStore 구현(Keychain)"]
+    sqlite["keyharbor-sqlite<br/>Diesel · 컨텍스트별 repo<br/>저장소 포트 · RotationLock 구현"]
+    keystore["keyharbor-keystore<br/>Keychain · 테스트 파일 저장소<br/>KeyStore 구현"]
+  end
+  subgraph inner["안쪽 crate (I/O 없음, 규칙 C·D)"]
+    vault["keyharbor-vault<br/>레코드 v1 · 메타 MAC · 키 분리"]
+    crypto["keyharbor-crypto<br/>원시 연산 · 난수 · id"]
   end
   subgraph security["security (PDP / PEP)"]
     guard["keyharbor-guard<br/>pdp · pep::{substitute, mask, origin}<br/>audit · run · GuardedBrowser"]
@@ -99,33 +103,37 @@ flowchart TB
     core["keyharbor-core<br/>vault · session · rotate · transfer<br/>PlaintextAccess"]
   end
   subgraph domain["domain + ports (I/O 없음)"]
-    dom["keyharbor-domain<br/>엔티티 · 값 객체 · KINDS 레지스트리<br/>ports: VaultStore · SessionStore · PolicyStore<br/>AuditStore · SettingsStore · KeyStore<br/>BrowserPort · PageInput · FrameInspector<br/>SessionRuntime · StoreFactory"]
+    dom["keyharbor-domain<br/>엔티티 · 값 객체 · KINDS 레지스트리<br/>ports: VaultStore · RotationLock · SessionStore<br/>PolicyStore · AuditStore · SettingsStore · KeyStore<br/>BrowserPort · PageInput · FrameInspector<br/>SessionRuntime · StoreFactory · Clock"]
   end
-  cli --> mcp & supervisor & sqlite & vault & guard & core
+  cli --> mcp & supervisor & sqlite & keystore & guard & core
   mcp --> supervisor & guard & core
   supervisor --> broker & guard & core
   guard --> core
-  core --> vault
-  broker & sqlite & vault & guard & core --> dom
+  core --> vault & crypto
+  vault --> crypto
+  sqlite --> crypto
+  broker & sqlite & keystore & vault & crypto & guard & core --> dom
 ```
 
 | crate | 계층 | 의존 가능 (정상 의존) | 핵심 타입·책임 |
 |---|---|---|---|
-| `keyharbor-domain` | domain + ports | 없음 | `SessionId`·`State`·`Generation`, `vault`(`ItemKind`, `KINDS`, `Origin`, placeholder 문법 `PLACEHOLDER_OPEN`·`Display for PlaceholderRef`), `policy`(`Rule`, 요청자 `AgentName`), `settings`(`SETTINGS`), `audit`, `secret`(`SecretKey`, `VaultError`), `ports`(trait) |
-| `keyharbor-vault` | adapter | domain | 레코드 seal/open, 키 분리, 메타 MAC(I/O 없음), `KeyStore` 구현(`MacKeychain`, 테스트용 `FileKeyStore`) |
-| `keyharbor-core` | application | domain, vault(레코드 함수만) | `Vault` 유스케이스(`vault/{open, items, summary, resolve}`, 에이전트용 `catalog`), `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `PlaintextAccess` |
+| `keyharbor-domain` | domain + ports | 없음 | `SessionId`·`State`·`Generation`(만들기는 `crypto::random::id`), `vault`(`ItemKind`, `KINDS`, `Origin`, placeholder 문법 `PLACEHOLDER_OPEN`·`Display for PlaceholderRef`), `policy`(`Rule`, 요청자 `AgentName`), `settings`(`SETTINGS`), `audit`, `secret`(`SecretKey`, `VaultError`), `ports`(trait; 브라우저 대상 `Target`·`FillOutcome`, 시계 `Clock`·`ManualClock`, `RotationLock`) |
+| `keyharbor-crypto` | crypto | domain | 모든 암호 원시 연산과 난수, v4 id(`random::{uuid_v4, id}`) ([ADR-0016](adr/0016-crypto-crate.md)) |
+| `keyharbor-vault` | 안쪽 (형식) | domain, crypto | 레코드 seal/open, 키 분리, 메타 MAC, 키 ID(I/O 없음) |
+| `keyharbor-keystore` | adapter | domain | `KeyStore` 구현: `KeychainKeyStore`(macOS login keychain, 다른 OS는 오류만 내는 자리), 테스트용 `FileKeyStore`, `test_keystore_dir`(기능 `insecure-test-keystore`일 때만). security-framework는 여기에만(규칙 G) |
+| `keyharbor-core` | application | domain, vault(레코드 함수만), crypto | `Vault` 유스케이스(`vault/{open, items, summary, resolve}`, 에이전트용 `catalog`), `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `PlaintextAccess` |
 | `keyharbor-guard` | security | domain, core | `pdp::decide`, `pep::substitute`, `pep::mask::Masker`, `pep::origin`, `audit`, `run`, `items`(항목 add/edit 순서), `session`(세션 작업 → 정책 Action 표), `Guard`, `GuardedBrowser` |
-| `keyharbor-sqlite` | adapter | domain | `SqliteStore`(저장소 포트 전부), `SqliteStores`(`StoreFactory`), 컨텍스트 레지스트리 |
+| `keyharbor-sqlite` | adapter | domain, crypto(id 난수만) | `SqliteStore`(저장소 포트 전부, `RotationLock` = 데이터 폴더의 `vault.lock`), `SqliteStores`(`StoreFactory`), 컨텍스트 레지스트리 |
 | `keyharbor-broker` | adapter (Chrome) | domain | `chrome`(Chrome 실행, CDP pipe `CdpLink`, `DevToolsActivePort` 해석), `CdpBrowser`(`BrowserPort`·`PageInput`·`FrameInspector`). supervisor만 의존한다(규칙 B) |
 | `keyharbor-supervisor` | adapter (프로세스) | domain, core, guard, broker | `run`(감독자 프로세스: 잠금, 준비, `CdpBrowser`를 `GuardedBrowser`로 감싸 제어 socket 처리), `control::{wire, client}`(제어 프로토콜 한 곳, 규칙 K), `SuperviseArgs`(`__supervise` argv 계약), `ProcessRuntime`(`SessionRuntime`), `lock_mcp_scope` |
-| `keyharbor-mcp` | interface | domain, core, guard, supervisor | `server`, `scope`, `tools/{session, browser, vault}`. 저장소·금고 opener·런타임은 생성자로 받는다(`Deps`) |
-| `keyharbor` (CLI) | interface | crypto·broker를 뺀 전부 | `compose`(composition root), clap 명령, 감독자 조립(`__supervise`) |
+| `keyharbor-mcp` | interface | domain, core, guard, supervisor | `server`, `scope`, `tools/{session, browser, vault}`. 저장소·금고 opener·런타임·시계는 생성자로 받는다(`Deps`) |
+| `keyharbor` (CLI) | interface | domain, core, guard, sqlite, keystore, supervisor, mcp | `compose`(composition root: `SystemClock`, `keystore_from_env`), clap 명령, 파일 읽기·쓰기(`vault_cmd::files`, `run`의 `--env-file`), 감독자 조립(`__supervise`) |
 
-`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 crypto만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음, 표면(CLI `*_cmd`·MCP)은 저장소를 열거나 저장소 포트를 부르지 않음(규칙 A), 세션 수준 `Action`은 guard의 표만 고름(규칙 J), placeholder 문법은 domain에만(규칙 H), 요청자 이름 `*` 금지는 domain `AgentName`에만(규칙 I), broker는 domain에만 의존하고 supervisor만 broker에 의존(규칙 B), 제어 요청의 `"op"`은 `supervisor::control::wire`에만(규칙 K). `scripts/test-scripts.sh`가 규칙마다 위반을 심은 사본(`CHECK_LAYERS_ROOT`)으로 검사가 실패하는지 확인한다.
+`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 crypto만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음, 표면(CLI `*_cmd`·MCP)은 저장소를 열거나 저장소 포트를 부르지 않음(규칙 A), 세션 수준 `Action`은 guard의 표만 고름(규칙 J), placeholder 문법은 domain에만(규칙 H), 요청자 이름 `*` 금지는 domain `AgentName`에만(규칙 I), broker는 domain에만 의존하고 supervisor만 broker에 의존(규칙 B), 제어 요청의 `"op"`은 `supervisor::control::wire`에만(규칙 K), 안쪽 crate(domain·crypto·vault·core·guard)는 파일·프로세스·socket·환경 변수·시계·sleep·출력을 쓰지 않음(규칙 C)과 드라이버 crate에 의존하지 않음(규칙 D), domain의 `serde_json`은 `ports/browser.rs`의 페이지 결과에만(규칙 E), 난수는 crypto만이고 uuid `v4` 기능은 아무도 켜지 않음(규칙 F), security-framework·rmcp·clap은 각자 어댑터 crate에만(규칙 G). `scripts/test-scripts.sh`가 규칙마다 위반을 심은 사본(`CHECK_LAYERS_ROOT`)으로 검사가 실패하는지 확인한다.
 
 ### 2.4.0 표면과 composition root
 
-CLI와 MCP는 같은 유스케이스를 부르는 두 얼굴이다. 바이너리마다 조립하는 곳은 하나다: `cli/src/compose.rs`의 `App`이 SQLite 저장소, 키 저장소(`keystore_from_env`), 감독자 런타임(`ProcessRuntime`), 감독자 어댑터, MCP 서버의 `Deps`를 만든다. 명령 모듈은 포트를 받아 core·guard를 부르고, 인자 파싱과 출력 모양만 갖는다. MCP 서버는 저장소 하나(`SharedStore`, 호출마다 잠금)를 생성자로 받고 요청마다 저장소를 열지 않는다. [J-71, J-72]
+CLI와 MCP는 같은 유스케이스를 부르는 두 얼굴이다. 바이너리마다 조립하는 곳은 하나다: `cli/src/compose.rs`의 `App`이 SQLite 저장소, 키 저장소(`keystore_from_env`: `KEYHARBOR_TEST_KEYSTORE_DIR`를 읽는 곳도 여기다), 시계(`SystemClock`), 감독자 런타임(`ProcessRuntime`), 감독자 어댑터, MCP 서버의 `Deps`를 만든다. 안쪽 crate가 쓰는 시간·잠금·파일은 포트로 들어간다: `Clock`(지금·대기), `RotationLock`(키 교체 잠금), 내보내기·가져오기와 `run`의 env 파일은 바이트로 받는다(J-75). 명령 모듈은 포트를 받아 core·guard를 부르고, 인자 파싱과 출력 모양만 갖는다. MCP 서버는 저장소 하나(`SharedStore`, 호출마다 잠금)를 생성자로 받고 요청마다 저장소를 열지 않는다. [J-71, J-72]
 
 | 무엇 | 유스케이스 |
 |---|---|

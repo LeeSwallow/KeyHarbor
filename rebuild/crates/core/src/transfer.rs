@@ -1,11 +1,12 @@
 //! Encrypted export/import in the age format (docs/design/07-cryptography-design.md §7.7).
+//! These work on bytes; the CLI reads and writes the file (0600, never overwriting).
 
 use crate::{ItemSource, ItemStatus, NewItem, PlaintextAccess, Vault};
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_crypto::export::{Passphrase, decrypt_age, encrypt_age};
 use keyharbor_domain::vault::{Description, FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, io::Write, path::Path};
+use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
 pub const EXPORT_FORMAT: &str = "keyharbor-export/v1";
@@ -78,8 +79,8 @@ impl Vault {
         Ok(count)
     }
 
-    /// Writes every item, values included, to a new age file (mode 0600). Never overwrites.
-    pub fn export_age(&self, passphrase: Passphrase, out: &Path) -> Result<()> {
+    /// Every item, values included, as an age file's bytes (encrypted to `passphrase`).
+    pub fn export_age(&self, passphrase: Passphrase) -> Result<Vec<u8>> {
         let summaries = self.list()?;
         if let Some(bad) = summaries.iter().find(|s| s.tampered) {
             bail!("item {} failed verification; refusing to export", bad.name);
@@ -102,7 +103,7 @@ impl Vault {
         }
         let doc = ExportOut {
             format: EXPORT_FORMAT,
-            exported_at: crate::now_rfc3339(),
+            exported_at: self.clock.now_rfc3339(),
             items: summaries
                 .iter()
                 .zip(&values)
@@ -134,24 +135,13 @@ impl Vault {
                 .collect(),
         };
         let plaintext = Zeroizing::new(serde_json::to_vec(&doc)?);
-        let encrypted = encrypt_age(passphrase, &plaintext)?;
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-        let mut file = options
-            .open(out)
-            .with_context(|| format!("cannot create {} (it must not exist yet)", out.display()))?;
-        file.write_all(&encrypted)?;
-        file.sync_all()?;
-        Ok(())
+        encrypt_age(passphrase, &plaintext)
     }
 
-    /// Adds every item whose name is free; existing names are left untouched and reported.
-    pub fn import_age(&self, passphrase: Passphrase, input: &Path) -> Result<ImportReport> {
-        let encrypted =
-            std::fs::read(input).with_context(|| format!("cannot read {}", input.display()))?;
-        let plaintext = decrypt_age(passphrase, &encrypted).map_err(|_| {
+    /// Adds every item of the age file `encrypted` whose name is free; existing names are left
+    /// untouched and reported.
+    pub fn import_age(&self, passphrase: Passphrase, encrypted: &[u8]) -> Result<ImportReport> {
+        let plaintext = decrypt_age(passphrase, encrypted).map_err(|_| {
             anyhow!("could not decrypt export (wrong passphrase or not a KeyHarbor export)")
         })?;
         let doc: ExportIn = serde_json::from_slice(&plaintext)
@@ -278,8 +268,7 @@ mod tests {
         .unwrap();
         va.add(item("app", ItemKind::Env, &[("API_KEY", "k")]))
             .unwrap();
-        let out = a.data.parent().unwrap().join("export.age");
-        va.export_age(pass("correct horse"), &out).unwrap();
+        let out = va.export_age(pass("correct horse")).unwrap();
         let vb = init(&b);
         vb.add(login("github", "keep-me")).unwrap();
         let report = vb.import_age(pass("correct horse"), &out).unwrap();
@@ -312,34 +301,22 @@ mod tests {
         let v = init(&e);
         let secret = format!("KH-SYNTH-{}", uuid_like());
         v.add(login("github", &secret)).unwrap();
-        let out = e.data.parent().unwrap().join("export.age");
-        v.export_age(pass("pw"), &out).unwrap();
-        let bytes = std::fs::read(&out).unwrap();
+        let bytes = v.export_age(pass("pw")).unwrap();
         assert!(bytes.starts_with(b"age-encryption.org/v1\n"));
         assert!(!contains(&bytes, secret.as_bytes()));
         let plain = decrypt_age(pass("pw"), &bytes).unwrap();
         assert!(contains(&plain, b"\"format\":\"keyharbor-export/v1\""));
         assert!(contains(&plain, secret.as_bytes()));
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                std::fs::metadata(&out).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
-        }
+        // The file mode (0600) is the CLI's: vault_cmd::files::tests.
     }
 
     #[test]
-    fn wrong_passphrase_and_existing_target_fail() {
+    fn wrong_passphrase_fails() {
         let e = env();
         let v = init(&e);
         v.add(login("github", "pw")).unwrap();
-        let out = e.data.parent().unwrap().join("export.age");
-        v.export_age(pass("right"), &out).unwrap();
-        let before = std::fs::read(&out).unwrap();
-        assert!(v.export_age(pass("right"), &out).is_err());
-        assert_eq!(std::fs::read(&out).unwrap(), before);
+        let out = v.export_age(pass("right")).unwrap();
+        // Refusing an existing target is the CLI's: vault_cmd::files::tests.
         let other = env();
         let w = init(&other);
         assert!(w.import_age(pass("wrong"), &out).is_err());

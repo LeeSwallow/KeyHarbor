@@ -1,0 +1,23 @@
+[package]
+name = "keyharbor-keystore"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# The key-store adapter (#19): the macOS login keychain, and a plaintext file store for tests.
+[dependencies]
+keyharbor-domain = { path = "../domain" }
+zeroize.workspace = true
+
+[features]
+# Lets the composition root honour KEYHARBOR_TEST_KEYSTORE_DIR (a plaintext root-key file).
+# Tests only; never in release builds (scripts/check-release-features.sh).
+insecure-test-keystore = []
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework.workspace = true
+
+[dev-dependencies]
+keyharbor-crypto = { path = "../crypto" }
+tempfile.workspace = true

@@ -4,7 +4,10 @@
 use anyhow::{Result, anyhow};
 use clap::Args;
 use keyharbor_core::{ExpiryChoice, expires_in};
-use keyharbor_domain::date::{Expiry, Ttl};
+use keyharbor_domain::{
+    date::{Expiry, Ttl},
+    ports::Clock,
+};
 
 #[derive(Args)]
 #[group(multiple = false)]
@@ -22,7 +25,7 @@ pub struct ExpiryArgs {
 
 impl ExpiryArgs {
     /// The expiry asked for: `Some(None)` for none, `None` when no flag was given.
-    fn requested(&self) -> Result<Option<Option<Expiry>>> {
+    fn requested(&self, clock: &dyn Clock) -> Result<Option<Option<Expiry>>> {
         if self.no_expiry {
             return Ok(Some(None));
         }
@@ -31,20 +34,20 @@ impl ExpiryArgs {
         }
         if let Some(days) = &self.expires_in {
             let ttl = Ttl::parse(days).map_err(|e| anyhow!("--expires-in: {e}"))?;
-            return Ok(Some(Some(expires_in(ttl))));
+            return Ok(Some(Some(expires_in(clock, ttl))));
         }
         Ok(None)
     }
 
-    pub fn for_new_item(&self) -> Result<ExpiryChoice> {
-        Ok(match self.requested()? {
+    pub fn for_new_item(&self, clock: &dyn Clock) -> Result<ExpiryChoice> {
+        Ok(match self.requested(clock)? {
             None => ExpiryChoice::Default,
             Some(None) => ExpiryChoice::Never,
             Some(Some(expiry)) => ExpiryChoice::On(expiry),
         })
     }
 
-    pub fn for_change(&self) -> Result<Option<Option<Expiry>>> {
-        self.requested()
+    pub fn for_change(&self, clock: &dyn Clock) -> Result<Option<Option<Expiry>>> {
+        self.requested(clock)
     }
 }

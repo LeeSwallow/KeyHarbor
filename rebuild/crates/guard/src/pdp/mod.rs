@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn no_rules_allow_everything() {
-        let id = SessionId::new();
+        let id = keyharbor_crypto::random::id::<SessionId>();
         for action in [
             Action::OpenSession(id),
             Action::CreateSession,
@@ -224,7 +224,10 @@ mod tests {
 
     #[test]
     fn sessions_create_and_raw_cdp() {
-        let (one, two) = (SessionId::new(), SessionId::new());
+        let (one, two) = (
+            keyharbor_crypto::random::id::<SessionId>(),
+            keyharbor_crypto::random::id::<SessionId>(),
+        );
         let rules = [
             rule("codex", Session, "*", Deny),
             rule("codex", Session, &one.to_string(), Allow),

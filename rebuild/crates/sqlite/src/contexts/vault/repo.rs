@@ -130,10 +130,6 @@ fn replace_domain_key(conn: &mut SqliteConnection, dk: &DomainKeyRow) -> Result<
 }
 
 impl VaultStore for SqliteStore {
-    fn root(&self) -> &std::path::Path {
-        SqliteStore::root(self)
-    }
-
     fn vault_get(&self) -> Result<Option<VaultRow>> {
         self.read(|conn| {
             vault::table

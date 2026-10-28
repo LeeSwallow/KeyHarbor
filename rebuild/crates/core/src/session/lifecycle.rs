@@ -5,16 +5,14 @@ use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
     SessionId, State,
     audit::AuditKind,
-    ports::{SessionRuntime, Store, runtime::LaunchOptions},
+    ports::{Clock, SessionRuntime, Store, runtime::LaunchOptions},
 };
-use std::{
-    path::Path,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{path::Path, time::Duration};
 
 const START_TIMEOUT: Duration = Duration::from_secs(15);
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
+/// How often `open` and `stop` look at the session while they wait.
+const POLL: Duration = Duration::from_millis(50);
 
 pub struct OpenOptions<'a> {
     pub url: Option<&'a str>,
@@ -28,6 +26,7 @@ pub struct OpenOptions<'a> {
 pub fn open(
     store: &dyn Store,
     runtime: &dyn SessionRuntime,
+    clock: &dyn Clock,
     id: SessionId,
     options: &OpenOptions<'_>,
 ) -> Result<()> {
@@ -36,7 +35,7 @@ pub fn open(
         .map(keyharbor_domain::validate_start_url)
         .transpose()
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    if !options.browser.is_file() {
+    if !runtime.has_browser(options.browser) {
         bail!(
             "browser executable not found: {}",
             options.browser.display()
@@ -66,7 +65,7 @@ pub fn open(
             return Err(error).context("start session supervisor");
         }
     };
-    let deadline = Instant::now() + START_TIMEOUT;
+    let deadline = clock.now() + START_TIMEOUT;
     let result = loop {
         let row = session(store, id)?;
         if row.generation != Some(generation) {
@@ -90,12 +89,12 @@ pub fn open(
                 "session supervisor exited during startup ({status}); run recover --confirm-browser-closed before retrying"
             ));
         }
-        if Instant::now() >= deadline {
+        if clock.now() >= deadline {
             break Err(anyhow::anyhow!(
                 "supervisor did not report ready; inspect the session with list before retrying"
             ));
         }
-        thread::sleep(Duration::from_millis(50));
+        clock.sleep(POLL);
     };
     // Reap the supervisor when it eventually exits, so a long-lived caller leaves no zombie.
     child.detach();
@@ -115,6 +114,7 @@ pub fn open(
 pub fn stop(
     store: &dyn Store,
     runtime: &dyn SessionRuntime,
+    clock: &dyn Clock,
     id: SessionId,
     agent: &str,
 ) -> Result<State> {
@@ -133,7 +133,7 @@ pub fn stop(
         bail!("session state changed; retry");
     }
     runtime.close(id)?;
-    let deadline = Instant::now() + STOP_TIMEOUT;
+    let deadline = clock.now() + STOP_TIMEOUT;
     loop {
         let row = session(store, id)?;
         if row.generation != Some(generation) || row.state != State::Stopping {
@@ -146,10 +146,10 @@ pub fn stop(
             );
             return Ok(row.state);
         }
-        if Instant::now() >= deadline {
+        if clock.now() >= deadline {
             bail!("browser did not exit in time; check the session with list");
         }
-        thread::sleep(Duration::from_millis(50));
+        clock.sleep(POLL);
     }
 }
 

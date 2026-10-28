@@ -31,43 +31,22 @@ pub use vault::{
 /// The agent name recorded for changes made by the local user through the CLI.
 pub use keyharbor_domain::policy::LOCAL_AGENT;
 
-fn unix_seconds() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
-/// Today (UTC), for expiry (R-37).
-pub fn today() -> keyharbor_domain::date::Date {
-    keyharbor_domain::date::Date::from_unix_seconds(unix_seconds())
-}
-
 /// The expiry of something given `ttl` today: the one place a TTL becomes a date (R-37).
-pub fn expires_in(ttl: keyharbor_domain::date::Ttl) -> keyharbor_domain::date::Expiry {
-    ttl.from(today())
-}
-
-/// Now as RFC 3339 UTC with seconds, e.g. `2026-10-28T12:34:56Z`.
-pub(crate) fn now_rfc3339() -> String {
-    let secs = unix_seconds();
-    let rem = secs % 86_400;
-    format!(
-        "{}T{:02}:{:02}:{:02}Z",
-        keyharbor_domain::date::Date::from_unix_seconds(secs),
-        rem / 3600,
-        rem % 3600 / 60,
-        rem % 60
-    )
+pub fn expires_in(
+    clock: &dyn keyharbor_domain::ports::Clock,
+    ttl: keyharbor_domain::date::Ttl,
+) -> keyharbor_domain::date::Expiry {
+    ttl.from(clock.today())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     pub(crate) use crate::test_support::TestVault;
+    use keyharbor_domain::ports::{Clock, ManualClock};
     use keyharbor_domain::vault::{FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
+    use keyharbor_keystore::FileKeyStore;
     use keyharbor_sqlite::SqliteStore;
-    use keyharbor_vault::keystore::FileKeyStore;
     use std::path::{Path, PathBuf};
     use zeroize::Zeroizing;
 
@@ -86,6 +65,10 @@ mod tests {
             keys,
         }
     }
+    /// The tests' clock: 2026-10-28, moving only when a use case waits.
+    pub(crate) fn test_clock() -> std::sync::Arc<dyn Clock> {
+        std::sync::Arc::new(ManualClock::at_unix_seconds(1_793_203_129))
+    }
     pub(crate) fn open_store(data: &Path) -> SqliteStore {
         SqliteStore::open(data).unwrap()
     }
@@ -94,6 +77,7 @@ mod tests {
             Vault::init(
                 open_store(&e.data),
                 Box::new(FileKeyStore::new(e.keys.clone())),
+                test_clock(),
             )
             .unwrap(),
         )
@@ -102,6 +86,7 @@ mod tests {
         Vault::open(
             open_store(&e.data),
             Box::new(FileKeyStore::new(e.keys.clone())),
+            test_clock(),
         )
         .map(TestVault)
     }
@@ -138,7 +123,8 @@ mod tests {
         assert!(
             Vault::init(
                 open_store(&e.data),
-                Box::new(FileKeyStore::new(e.keys.clone()))
+                Box::new(FileKeyStore::new(e.keys.clone())),
+                test_clock(),
             )
             .is_err()
         );
@@ -338,7 +324,7 @@ mod tests {
         let list = v.list().unwrap();
         assert_eq!(
             list[0].expires_at.unwrap().date(),
-            crate::today().plus_days(90)
+            test_clock().today().plus_days(90)
         );
         assert_eq!(list[1].expires_at, None);
     }
@@ -355,6 +341,7 @@ mod tests {
                     let v = Vault::open(
                         SqliteStore::open(&data).unwrap(),
                         Box::new(FileKeyStore::new(keys)),
+                        test_clock(),
                     )
                     .unwrap();
                     barrier.wait();
@@ -406,10 +393,10 @@ mod tests {
 
     pub(crate) fn uuid_like() -> String {
         let mut b = [0u8; 8];
-        getrandom_fill(&mut b);
+        random_fill(&mut b);
         b.iter().map(|x| format!("{x:02x}")).collect()
     }
-    fn getrandom_fill(b: &mut [u8]) {
+    fn random_fill(b: &mut [u8]) {
         let k = keyharbor_crypto::random::key();
         b.copy_from_slice(&k.expose()[..b.len()]);
     }

@@ -10,7 +10,7 @@ macro_rules! id_type {
         pub struct $name([u8; 16]);
         impl $name {
             pub fn new() -> Self {
-                Self(*Uuid::new_v4().as_bytes())
+                Self(keyharbor_crypto::random::uuid_v4())
             }
             pub fn from_bytes(bytes: [u8; 16]) -> Self {
                 Self(bytes)

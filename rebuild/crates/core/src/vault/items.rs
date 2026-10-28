@@ -4,7 +4,7 @@ use super::{
     DEFAULT_ITEM_TTL, ExpiryChoice, ItemChange, NO_TTL, NewItem, Vault, check_fields,
     sorted_origins,
 };
-use crate::{LOCAL_AGENT, expires_in, now_rfc3339};
+use crate::{LOCAL_AGENT, expires_in};
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
@@ -79,7 +79,7 @@ impl Vault {
             status: item.status.as_str().to_owned(),
             source: item.source.as_str().to_owned(),
             meta_mac: Vec::new(),
-            updated_at: now_rfc3339(),
+            updated_at: self.clock.now_rfc3339(),
             origins: sorted_origins(&item.origins),
         };
         row.meta_mac = self.mac_for(&row, item.kind, &item.name, &item.origins);
@@ -101,6 +101,7 @@ impl Vault {
             ExpiryChoice::Default => match self.store.setting_get(DEFAULT_ITEM_TTL)?.as_deref() {
                 None | Some(NO_TTL) => None,
                 Some(ttl) => Some(expires_in(
+                    &*self.clock,
                     Ttl::parse(ttl).map_err(|e| anyhow!("{DEFAULT_ITEM_TTL}: {e}"))?,
                 )),
             },
@@ -161,7 +162,7 @@ impl Vault {
         if let Some(status) = change.status {
             row.status = status.as_str().to_owned();
         }
-        row.updated_at = now_rfc3339();
+        row.updated_at = self.clock.now_rfc3339();
         row.meta_mac = self.mac_for(&row, kind, &name, &origins);
         self.store.item_update(&self.guard(domain), &row, &kept)?;
         self.note_change(&name, "updated");

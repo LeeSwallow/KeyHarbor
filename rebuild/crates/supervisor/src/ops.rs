@@ -4,14 +4,19 @@
 //! requests that never reach the browser (`status`, malformed requests) are masked here.
 
 use crate::{
-    control::wire::{ControlEnvelope, ControlRequest, TargetWire, login_submits},
+    control::wire::{
+        ControlEnvelope, ControlRequest, FillResultWire, LoginResultWire, login_submits,
+    },
     process::Shared,
 };
 use anyhow::{Context, Result, anyhow};
 use keyharbor_broker::CdpBrowser;
 use keyharbor_domain::{
     policy::AgentName,
-    ports::{BrowserPort, browser::WaitFor},
+    ports::{
+        BrowserPort,
+        browser::{Target, WaitFor},
+    },
     vault::ItemName,
 };
 use serde::Deserialize;
@@ -22,8 +27,8 @@ enum Command {
     Navigate(String),
     Snapshot,
     Screenshot,
-    Click(Value),
-    Fill(Value, String),
+    Click(Target),
+    Fill(Target, String),
     Type(String),
     Press(String),
     Tabs,
@@ -39,14 +44,6 @@ enum Command {
     Status,
 }
 
-/// The browser port's target shape for a wire target.
-fn target(target: TargetWire) -> Value {
-    match target {
-        TargetWire::Ref(reference) => json!({"ref": reference}),
-        TargetWire::Selector(selector) => json!({"selector": selector}),
-    }
-}
-
 /// The agent (`cli` when absent) and the command a request asks for.
 fn parse(request: &Value) -> Result<(String, Command)> {
     let envelope = ControlEnvelope::deserialize(request).context("invalid request")?;
@@ -60,8 +57,8 @@ fn parse(request: &Value) -> Result<(String, Command)> {
         ControlRequest::Navigate { url } => Command::Navigate(url),
         ControlRequest::Snapshot => Command::Snapshot,
         ControlRequest::Screenshot => Command::Screenshot,
-        ControlRequest::Click { target: t } => Command::Click(target(t)),
-        ControlRequest::Fill { target: t, text } => Command::Fill(target(t), text),
+        ControlRequest::Click { target } => Command::Click(target.into()),
+        ControlRequest::Fill { target, text } => Command::Fill(target.into(), text),
         ControlRequest::Type { text } => Command::Type(text),
         ControlRequest::Press { key } => Command::Press(key),
         ControlRequest::Tabs => Command::Tabs,
@@ -103,22 +100,31 @@ impl Ops {
             Command::Snapshot => browser.snapshot().await,
             Command::Screenshot => browser.screenshot().await,
             Command::Click(target) => browser.click(&target).await,
-            Command::Fill(target, text) => browser.fill(&target, &text).await,
-            Command::Type(text) => browser.type_text(&text).await,
+            Command::Fill(target, text) => {
+                wire(browser.fill(&target, &text).await, FillResultWire::from)
+            }
+            Command::Type(text) => wire(browser.type_text(&text).await, FillResultWire::from),
             Command::Press(key) => browser.press(&key).await,
             Command::Tabs => browser.tabs().await,
             Command::NewTab(url) => browser.new_tab(url.as_deref()).await,
             Command::SwitchTab(id) => browser.switch_tab(&id).await,
             Command::Wait(until) => browser.wait(&until).await,
-            Command::Login { item, submit } => browser.login(&item, submit).await,
+            Command::Login { item, submit } => {
+                wire(browser.login(&item, submit).await, LoginResultWire::from)
+            }
             Command::Close => {
                 let closed = browser.close();
                 shared.request_close();
-                closed
+                closed.map(|()| json!({}))
             }
             Command::Status => guard.redact_outcome(status(shared)),
         }
     }
+}
+
+/// A guard outcome (already masked) in its control-protocol shape.
+fn wire<T, W: serde::Serialize>(outcome: Result<T>, shape: impl FnOnce(T) -> W) -> Result<Value> {
+    Ok(serde_json::to_value(shape(outcome?))?)
 }
 
 fn status(shared: &Shared) -> Result<Value> {
