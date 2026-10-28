@@ -1,7 +1,7 @@
 # GOAL: KeyHarbor 2단계 — 로컬 암호화 금고 구현
 
 ## 목표
-`/Users/min/Projects/Personal/KeyHarbor/rebuild/` 워크스페이스에 세 도메인(자격 증명·결제·개인정보) 로컬 암호화 금고와 `keyharbor vault` CLI를 구현한다. 구현 계획 `docs/superpowers/plans/2026-10-28-phase2-local-vault.md`의 Task 1–10을 **순서대로 전부** 끝내고, 모든 검증을 통과하면 완료다.
+`rebuild/` 워크스페이스에 세 도메인(자격 증명·결제·개인정보) 로컬 암호화 금고와 `keyharbor vault` CLI를 구현한다. 구현 계획 `docs/superpowers/plans/2026-10-28-phase2-local-vault.md`의 Task 1–10을 **순서대로 전부** 끝내고, 모든 검증을 통과하면 완료다.
 
 ## 먼저 읽을 것 (이 순서로)
 1. `docs/superpowers/plans/2026-10-28-phase2-local-vault.md` — 작업 단위, 인터페이스, 테스트. **이 문서가 실행 기준이다.**

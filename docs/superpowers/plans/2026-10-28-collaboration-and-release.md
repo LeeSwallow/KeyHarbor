@@ -4,7 +4,7 @@
 
 **Goal:** stickypane의 협업 자산을 KeyHarbor에 맞게 들여오고, 공개 저장소·CI·태그 릴리스(GitHub Release + Homebrew cask)·GitHub Pages 웹 페이지를 갖춘 뒤 `v0.1.0`을 낸다.
 
-**Architecture:** 제품 바이너리는 `rebuild/` 워크스페이스의 `keyharbor`(패키지 `keyharbor`, crate `crates/cli`)다. CI는 GitHub Actions(macOS·Ubuntu), 릴리스는 macOS 러너의 GoReleaser v2 Rust builder, 웹 페이지는 `site/`의 정적 파일을 `actions/deploy-pages`로 올린다. 협업 흐름(이슈 → 브랜치 → PR → squash → 태그)과 스크립트는 stickypane(`/Users/min/Projects/Personal/stickypane`)의 것을 옮긴다.
+**Architecture:** 제품 바이너리는 `rebuild/` 워크스페이스의 `keyharbor`(패키지 `keyharbor`, crate `crates/cli`)다. CI는 GitHub Actions(macOS·Ubuntu), 릴리스는 macOS 러너의 GoReleaser v2 Rust builder, 웹 페이지는 `site/`의 정적 파일을 `actions/deploy-pages`로 올린다. 협업 흐름(이슈 → 브랜치 → PR → squash → 태그)과 스크립트는 stickypane(`../stickypane`)의 것을 옮긴다.
 
 **Tech Stack:** Rust 1.97 (rustup stable), GitHub Actions, GoReleaser v2 (`builder: rust`, `tool: cargo`), cargo-deny, cargo-about, gh CLI, POSIX sh, 정적 HTML/CSS.
 
