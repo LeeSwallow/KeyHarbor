@@ -29,6 +29,7 @@ diesel::table! {
         meta_mac -> Binary,
         updated_at -> Text,
         run_allowed -> Bool,
+        expires_at -> Nullable<Text>,
     }
 }
 

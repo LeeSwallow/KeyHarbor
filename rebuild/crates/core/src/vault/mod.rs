@@ -14,7 +14,8 @@ pub use summary::ItemUse;
 
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
-    ports::{AuditStore, FieldRow, ItemRow, KeyGuard, KeyStore, VaultStore},
+    date::Expiry,
+    ports::{AuditStore, FieldRow, ItemRow, KeyGuard, KeyStore, SettingsStore, VaultStore},
     vault::{Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
 };
 use keyharbor_vault::{
@@ -100,6 +101,17 @@ pub struct NewItem {
 pub struct ItemDetails {
     /// `None` uses the kind's default (secret and env items yes, the others no; R-36).
     pub run_allowed: Option<bool>,
+    pub expiry: ExpiryChoice,
+}
+
+/// The expiry a new item gets (R-37).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExpiryChoice {
+    /// Today plus `default_item_ttl` if that is set, otherwise never.
+    #[default]
+    Default,
+    Never,
+    On(Expiry),
 }
 
 #[derive(Default)]
@@ -109,6 +121,8 @@ pub struct ItemChange {
     pub origins: Option<Vec<Origin>>,
     pub origin_binding: Option<bool>,
     pub run_allowed: Option<bool>,
+    /// `Some(None)` removes the expiry.
+    pub expiry: Option<Option<Expiry>>,
     pub status: Option<ItemStatus>,
 }
 
@@ -122,6 +136,9 @@ pub struct ItemSummary {
     pub origins: Vec<String>,
     pub origin_binding: bool,
     pub run_allowed: bool,
+    pub expires_at: Option<Expiry>,
+    /// The expiry date has passed: agents may not use the item.
+    pub expired: bool,
     pub status: ItemStatus,
     pub source: ItemSource,
     pub updated_at: String,
@@ -130,8 +147,15 @@ pub struct ItemSummary {
 }
 
 /// What a vault needs from storage: its tables and the usage record.
-pub trait VaultBackend: VaultStore + AuditStore {}
-impl<T: VaultStore + AuditStore> VaultBackend for T {}
+/// What a vault needs from storage: its tables, the usage record and the settings
+/// (`default_item_ttl`).
+pub trait VaultBackend: VaultStore + AuditStore + SettingsStore {}
+impl<T: VaultStore + AuditStore + SettingsStore> VaultBackend for T {}
+
+/// The setting that gives new items an expiry, e.g. `90d` (R-37). Unset: they never expire.
+pub const DEFAULT_ITEM_TTL: &str = "default_item_ttl";
+/// The `default_item_ttl` value meaning "never expire" (also the default).
+pub const NO_TTL: &str = "none";
 
 /// Every vault value with its placeholder, as of `version`. Values are zeroized on drop.
 pub struct MaskValues {
@@ -250,7 +274,7 @@ impl Vault {
             status: &row.status,
             updated_at: &row.updated_at,
             run_allowed: row.run_allowed,
-            expires_at: None,
+            expires_at: row.expires_at.as_deref(),
             description: None,
             field_descriptions: &[],
         }

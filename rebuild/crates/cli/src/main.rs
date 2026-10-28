@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 mod adapters;
 mod audit_cmd;
+mod expiry_args;
 mod policy_cmd;
 mod run_cmd;
 mod session_cmd;

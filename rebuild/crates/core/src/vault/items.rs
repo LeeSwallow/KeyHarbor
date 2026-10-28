@@ -1,10 +1,14 @@
 //! Adding, changing and removing items. Every change is recorded (without values).
 
-use super::{ItemChange, NewItem, Vault, check_fields, sorted_origins};
-use crate::{LOCAL_AGENT, now_rfc3339};
-use anyhow::{Context, Result};
+use super::{
+    DEFAULT_ITEM_TTL, ExpiryChoice, ItemChange, NO_TTL, NewItem, Vault, check_fields,
+    sorted_origins,
+};
+use crate::{LOCAL_AGENT, now_rfc3339, today};
+use anyhow::{Context, Result, anyhow};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
+    date::{Expiry, Ttl},
     ports::{FieldRow, ItemRow},
     vault::{Domain, ItemName},
 };
@@ -33,6 +37,7 @@ impl Vault {
                 .details
                 .run_allowed
                 .unwrap_or_else(|| item.kind.default_run_allowed()),
+            expires_at: self.new_expiry(item.details.expiry)?.map(|e| e.to_string()),
             status: item.status.as_str().to_owned(),
             source: item.source.as_str().to_owned(),
             meta_mac: Vec::new(),
@@ -48,6 +53,22 @@ impl Vault {
         self.store.item_insert(&self.guard(domain), &row, &fields)?;
         self.note_change(&item.name, "added");
         Ok(())
+    }
+
+    /// The expiry `choice` gives an item created today.
+    fn new_expiry(&self, choice: ExpiryChoice) -> Result<Option<Expiry>> {
+        Ok(match choice {
+            ExpiryChoice::Never => None,
+            ExpiryChoice::On(expiry) => Some(expiry),
+            ExpiryChoice::Default => match self.store.setting_get(DEFAULT_ITEM_TTL)?.as_deref() {
+                None | Some(NO_TTL) => None,
+                Some(ttl) => Some(
+                    Ttl::parse(ttl)
+                        .map_err(|e| anyhow!("{DEFAULT_ITEM_TTL}: {e}"))?
+                        .from(today()),
+                ),
+            },
+        })
     }
 
     /// Records a vault change. Best effort: the change itself is already committed.
@@ -85,6 +106,9 @@ impl Vault {
         }
         if let Some(allowed) = change.run_allowed {
             row.run_allowed = allowed;
+        }
+        if let Some(expiry) = change.expiry {
+            row.expires_at = expiry.map(|e| e.to_string());
         }
         if let Some(status) = change.status {
             row.status = status.as_str().to_owned();

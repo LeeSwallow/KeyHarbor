@@ -10,6 +10,7 @@
 use crate::{ItemChange, Vault};
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
+    date::Expiry,
     policy::{Effect, Rule},
     ports::{AUDIT_ENABLED, Answer, Confirm},
     vault::ItemName,
@@ -23,9 +24,24 @@ pub const CAPTURE_ENABLED: &str = "capture_enabled";
 /// only ([`fmt::Display`]); which changes produce one is decided by the functions below.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WeakeningOp {
-    OriginBindingOff { item: String },
-    OriginsAdded { item: String, origins: Vec<String> },
-    RunAllowed { item: String },
+    OriginBindingOff {
+        item: String,
+    },
+    OriginsAdded {
+        item: String,
+        origins: Vec<String>,
+    },
+    RunAllowed {
+        item: String,
+    },
+    ExpiryExtended {
+        item: String,
+        from: Expiry,
+        to: Expiry,
+    },
+    ExpiryRemoved {
+        item: String,
+    },
     PolicyAllow(Rule),
     PolicyRemoveDeny(Rule),
     AuditOff,
@@ -40,6 +56,10 @@ impl fmt::Display for WeakeningOp {
                 write!(f, "adding {} to the origins of {item}", origins.join(", "))
             }
             Self::RunAllowed { item } => write!(f, "letting keyharbor run inject {item}"),
+            Self::ExpiryExtended { item, from, to } => {
+                write!(f, "extending the expiry of {item} from {from} to {to}")
+            }
+            Self::ExpiryRemoved { item } => write!(f, "removing the expiry of {item}"),
             Self::PolicyAllow(rule) => write!(f, "policy allow {}", target(rule)),
             Self::PolicyRemoveDeny(rule) => write!(f, "removing the rule {}", target(rule)),
             Self::AuditOff => write!(f, "settings set {AUDIT_ENABLED} false"),
@@ -114,7 +134,15 @@ impl Vault {
             }
         }
         if change.run_allowed == Some(true) && !current.run_allowed {
-            out.push(WeakeningOp::RunAllowed { item });
+            out.push(WeakeningOp::RunAllowed { item: item.clone() });
+        }
+        // Setting a first expiry or shortening one never asks (R-37).
+        match (current.expires_at, change.expiry) {
+            (Some(_), Some(None)) => out.push(WeakeningOp::ExpiryRemoved { item }),
+            (Some(from), Some(Some(to))) if to > from => {
+                out.push(WeakeningOp::ExpiryExtended { item, from, to });
+            }
+            _ => {}
         }
         Ok(out)
     }

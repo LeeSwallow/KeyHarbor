@@ -2,8 +2,13 @@
 //! facts the guard checks before a use.
 
 use super::{ItemSource, ItemStatus, ItemSummary, Vault};
-use anyhow::{Context, Result};
-use keyharbor_domain::vault::{Domain, ItemKind, ItemName, Origin};
+use crate::today;
+use anyhow::{Context, Result, anyhow};
+use keyharbor_domain::{
+    date::Expiry,
+    ports::ItemRow,
+    vault::{Domain, ItemKind, ItemName, Origin},
+};
 
 /// Verified, value-free facts about an item.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -12,9 +17,24 @@ pub struct ItemUse {
     pub domain: Domain,
     pub origin_binding: bool,
     pub run_allowed: bool,
+    pub expires_at: Option<Expiry>,
+    /// The expiry date has passed (as of today, UTC).
+    pub expired: bool,
     pub origins: Vec<Origin>,
     pub status: ItemStatus,
     pub fields: Vec<String>,
+}
+
+fn expiry(row: &ItemRow) -> Result<Option<Expiry>> {
+    row.expires_at
+        .as_deref()
+        .map(Expiry::parse)
+        .transpose()
+        .map_err(|_| anyhow!("invalid expiry in database"))
+}
+
+fn is_expired(row: &ItemRow) -> Result<bool> {
+    Ok(expiry(row)?.is_some_and(|e| e.is_expired(today())))
 }
 
 impl Vault {
@@ -22,6 +42,7 @@ impl Vault {
         let mut out = Vec::new();
         for row in self.store.item_list()? {
             let tampered = self.verified(&row).is_err();
+            let (expires_at, expired) = (expiry(&row)?, is_expired(&row)?);
             let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
             let fields = self
                 .store
@@ -36,6 +57,8 @@ impl Vault {
                 origins: row.origins,
                 origin_binding: row.origin_binding,
                 run_allowed: row.run_allowed,
+                expires_at,
+                expired,
                 status: ItemStatus::parse(&row.status).context("unknown status in database")?,
                 source: ItemSource::parse(&row.source).context("unknown source in database")?,
                 updated_at: row.updated_at,
@@ -66,6 +89,8 @@ impl Vault {
             domain: kind.domain(),
             origin_binding: row.origin_binding,
             run_allowed: row.run_allowed,
+            expires_at: expiry(&row)?,
+            expired: is_expired(&row)?,
             origins,
             status: ItemStatus::parse(&row.status).context("unknown status in database")?,
             fields: fields.into_iter().map(|f| f.field).collect(),

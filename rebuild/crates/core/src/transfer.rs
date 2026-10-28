@@ -29,6 +29,7 @@ struct ItemOut<'a> {
     origins: &'a [String],
     origin_binding: bool,
     run_allowed: bool,
+    expires_at: Option<String>,
     status: &'static str,
     source: &'static str,
     fields: BTreeMap<&'a str, &'a str>,
@@ -47,6 +48,8 @@ struct ItemIn {
     /// Absent in exports from before phase 3: the kind's default.
     #[serde(default)]
     run_allowed: Option<bool>,
+    #[serde(default)]
+    expires_at: Option<String>,
     status: String,
     fields: BTreeMap<String, String>,
 }
@@ -102,6 +105,7 @@ impl Vault {
                     origins: &s.origins,
                     origin_binding: s.origin_binding,
                     run_allowed: s.run_allowed,
+                    expires_at: s.expires_at.map(|e| e.to_string()),
                     status: s.status.as_str(),
                     source: s.source.as_str(),
                     fields: fields
@@ -172,6 +176,13 @@ impl Vault {
                 source: ItemSource::Import,
                 details: crate::ItemDetails {
                     run_allowed: item.run_allowed,
+                    expiry: match item.expires_at.as_deref() {
+                        Some(date) => crate::ExpiryChoice::On(
+                            keyharbor_domain::date::Expiry::parse(date)
+                                .map_err(|e| anyhow!("{e}"))?,
+                        ),
+                        None => crate::ExpiryChoice::Never,
+                    },
                 },
             })?;
             report.added += 1;

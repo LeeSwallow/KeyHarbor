@@ -4,8 +4,8 @@ use crate::adapters::TtyConfirm;
 use anyhow::{Result, anyhow, bail};
 use clap::{Args, Subcommand};
 use keyharbor_core::weaken;
-use keyharbor_domain::audit::AuditRecord;
 use keyharbor_domain::ports::*;
+use keyharbor_domain::{audit::AuditRecord, date::Ttl};
 use keyharbor_sqlite::SqliteStore;
 use std::path::Path;
 
@@ -22,7 +22,8 @@ pub struct AuditArgs {
 pub enum SettingsCmd {
     /// Print a setting
     Get { key: String },
-    /// Change a setting: audit_enabled true|false, capture_enabled true|false
+    /// Change a setting: audit_enabled true|false, capture_enabled true|false,
+    /// default_item_ttl <N>d|none
     Set { key: String, value: String },
 }
 
@@ -66,35 +67,63 @@ pub fn audit(root: &Path, args: AuditArgs) -> Result<()> {
     Ok(())
 }
 
-/// Every setting, its default and the values it takes.
-const SETTINGS: &[(&str, &str, &[&str])] = &[
-    (AUDIT_ENABLED, "true", &["true", "false"]),
-    (weaken::CAPTURE_ENABLED, "false", &["true", "false"]),
+/// One setting: its default and how a value is checked.
+struct Setting {
+    key: &'static str,
+    default: &'static str,
+    valid: fn(&str) -> Result<()>,
+}
+
+fn boolean(value: &str) -> Result<()> {
+    if !matches!(value, "true" | "false") {
+        bail!("must be true or false");
+    }
+    Ok(())
+}
+
+fn ttl(value: &str) -> Result<()> {
+    if value != keyharbor_core::NO_TTL {
+        Ttl::parse(value).map_err(|e| anyhow!("{e}, or none"))?;
+    }
+    Ok(())
+}
+
+/// Every setting.
+const SETTINGS: &[Setting] = &[
+    Setting {
+        key: AUDIT_ENABLED,
+        default: "true",
+        valid: boolean,
+    },
+    Setting {
+        key: weaken::CAPTURE_ENABLED,
+        default: "false",
+        valid: boolean,
+    },
+    Setting {
+        key: keyharbor_core::DEFAULT_ITEM_TTL,
+        default: keyharbor_core::NO_TTL,
+        valid: ttl,
+    },
 ];
 
-fn setting(key: &str) -> Result<&'static (&'static str, &'static str, &'static [&'static str])> {
-    SETTINGS
-        .iter()
-        .find(|(name, _, _)| *name == key)
-        .ok_or_else(|| {
-            let known: Vec<&str> = SETTINGS.iter().map(|(name, _, _)| *name).collect();
-            anyhow!("unknown setting; known settings: {}", known.join(", "))
-        })
+fn setting(key: &str) -> Result<&'static Setting> {
+    SETTINGS.iter().find(|s| s.key == key).ok_or_else(|| {
+        let known: Vec<&str> = SETTINGS.iter().map(|s| s.key).collect();
+        anyhow!("unknown setting; known settings: {}", known.join(", "))
+    })
 }
 
 pub fn settings(root: &Path, command: SettingsCmd) -> Result<()> {
     let store = SqliteStore::open(root)?;
     match command {
         SettingsCmd::Get { key } => {
-            let (_, default, _) = setting(&key)?;
+            let setting = setting(&key)?;
             let value = store.setting_get(&key)?;
-            println!("{}", value.as_deref().unwrap_or(default));
+            println!("{}", value.as_deref().unwrap_or(setting.default));
         }
         SettingsCmd::Set { key, value } => {
-            let (_, _, values) = setting(&key)?;
-            if !values.contains(&value.as_str()) {
-                bail!("{key} must be {}", values.join(" or "));
-            }
+            (setting(&key)?.valid)(&value).map_err(|e| anyhow!("{key} {e}"))?;
             // Turning the usage record off or changing capture needs a person (R-35).
             weaken::require(&TtyConfirm, weaken::setting(&key, &value).as_slice())?;
             store.setting_set(&key, &value)?;

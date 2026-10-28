@@ -2,6 +2,7 @@
 
 use crate::server::{Server, outcome};
 use keyharbor_domain::{
+    date::Expiry,
     ports::VaultStore,
     vault::{Domain, ItemKind},
 };
@@ -9,10 +10,17 @@ use keyharbor_sqlite::SqliteStore;
 use rmcp::{model::CallToolResult, tool, tool_router};
 use serde_json::{Value, json};
 
+/// Whether a stored expiry date has passed; an unreadable one counts as expired.
+fn expired(expires_at: Option<&str>) -> bool {
+    expires_at.is_some_and(|date| {
+        Expiry::parse(date).map_or(true, |e| e.is_expired(keyharbor_core::today()))
+    })
+}
+
 #[tool_router(router = vault_tools, vis = "pub(crate)")]
 impl Server {
     #[tool(
-        description = "List vault items: name, kind, domain, field names, origins, status and the placeholder for each field (use it in browser_fill or browser_type). Values are never returned."
+        description = "List vault items: name, kind, domain, field names, origins, run permission, expiry, status and the placeholder for each field (use it in browser_fill or browser_type). Values are never returned."
     )]
     async fn vault_list(&self) -> CallToolResult {
         outcome(
@@ -37,6 +45,9 @@ impl Server {
                         "placeholders": placeholders,
                         "origins": row.origins,
                         "origin_binding": row.origin_binding,
+                        "run_allowed": row.run_allowed,
+                        "expires_at": row.expires_at,
+                        "expired": expired(row.expires_at.as_deref()),
                         "status": row.status,
                         "source": row.source,
                     }));

@@ -393,6 +393,7 @@ mod tests {
             kind: "login".into(),
             origin_binding: true,
             run_allowed: false,
+            expires_at: None,
             status: "active".into(),
             source: "user".into(),
             meta_mac: vec![id; 32],

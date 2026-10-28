@@ -5,6 +5,7 @@
 //! Existence and metadata verification come first and are not checks: they produce the
 //! [`ItemUse`] every check reads.
 
+mod expiry;
 mod fields;
 mod focus;
 mod origin;
@@ -43,6 +44,7 @@ pub trait Check: Sync {
 /// Typing into a page (`fill`, `type`, `browser_login`).
 pub static BROWSER: &[&dyn Check] = &[
     &status::NotDiscarded,
+    &expiry::NotExpired,
     &policy::Allowed,
     &origin::BrowserOrigin,
     &fields::Exist,
@@ -53,6 +55,7 @@ pub static BROWSER: &[&dyn Check] = &[
 /// Injecting into a process (`keyharbor run`).
 pub static PROCESS: &[&dyn Check] = &[
     &status::NotDiscarded,
+    &expiry::NotExpired,
     &policy::Allowed,
     &origin::ProcessOrigin,
     &run::RunAllowed,

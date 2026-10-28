@@ -950,4 +950,28 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn expired_items_are_not_typed() {
+        let e = env();
+        let mut item = login("github", "KH-SYNTH-pw-87");
+        item.details.expiry = keyharbor_core::ExpiryChoice::On(
+            keyharbor_domain::date::Expiry::parse("2020-01-01").unwrap(),
+        );
+        init(&e).add(item).unwrap();
+        let (guard, probe) = guard(&e);
+        let mut fake = Fake::default();
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .type_text("{{secret:github.password}}"),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "denied: github (expired)");
+        assert!(fake.typed.is_empty());
+        assert_eq!(
+            probe.kinds(),
+            vec![(AuditKind::SecretDenied, "expired".into())]
+        );
+    }
 }

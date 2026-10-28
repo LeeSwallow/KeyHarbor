@@ -1,6 +1,6 @@
 //! `keyharbor vault …`. Never prints secret values; secrets arrive only by hidden prompt or stdin JSON.
 
-use crate::adapters::TtyConfirm;
+use crate::{adapters::TtyConfirm, expiry_args::ExpiryArgs};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use keyharbor_core::{
@@ -34,6 +34,8 @@ pub enum VaultCmd {
         /// Whether `keyharbor run` may inject the item (default: on for secret and env)
         #[arg(long, value_enum)]
         run_allowed: Option<Toggle>,
+        #[command(flatten)]
+        expiry: ExpiryArgs,
         #[arg(long)]
         draft: bool,
     },
@@ -53,6 +55,8 @@ pub enum VaultCmd {
         /// Whether `keyharbor run` may inject the item
         #[arg(long, value_enum)]
         run_allowed: Option<Toggle>,
+        #[command(flatten)]
+        expiry: ExpiryArgs,
         #[arg(long, value_enum)]
         status: Option<StatusArg>,
     },
@@ -246,7 +250,16 @@ fn summary_line(item: &ItemSummary) -> String {
         if item.tampered { " (tampered)" } else { "" },
         item.origins.join(","),
         item.fields.join(","),
-    )
+    ) + &expiry_column(item)
+}
+
+/// `\texpires 2027-01-31`, `\texpired`, or nothing for an item that never expires.
+fn expiry_column(item: &ItemSummary) -> String {
+    match item.expires_at {
+        Some(_) if item.expired => "\texpired".to_owned(),
+        Some(date) => format!("\texpires {date}"),
+        None => String::new(),
+    }
 }
 
 fn summary_json(item: &ItemSummary) -> serde_json::Value {
@@ -258,6 +271,8 @@ fn summary_json(item: &ItemSummary) -> serde_json::Value {
         "origins": item.origins,
         "origin_binding": item.origin_binding,
         "run_allowed": item.run_allowed,
+        "expires_at": item.expires_at.map(|e| e.to_string()),
+        "expired": item.expired,
         "status": item.status.as_str(),
         "source": item.source.as_str(),
         "updated_at": item.updated_at,
@@ -282,6 +297,7 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
             origins: o,
             no_origin_binding,
             run_allowed,
+            expiry,
             draft,
         } => {
             let kind = ItemKind::from(kind);
@@ -302,6 +318,7 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
                 source: ItemSource::User,
                 details: ItemDetails {
                     run_allowed: run_allowed.map(Toggle::on),
+                    expiry: expiry.for_new_item()?,
                 },
             })?;
             println!("added\t{}", name.as_str());
@@ -314,6 +331,7 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
             clear_origins,
             origin_binding,
             run_allowed,
+            expiry,
             status,
         } => {
             let name = item_name(&name)?;
@@ -341,6 +359,7 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
                 origins: new_origins,
                 origin_binding: origin_binding.map(Toggle::on),
                 run_allowed: run_allowed.map(Toggle::on),
+                expiry: expiry.for_change()?,
                 status: status.map(|s| match s {
                     StatusArg::Active => ItemStatus::Active,
                     StatusArg::Draft => ItemStatus::Draft,

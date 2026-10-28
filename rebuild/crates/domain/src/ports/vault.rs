@@ -24,6 +24,8 @@ pub struct ItemRow {
     pub origin_binding: bool,
     /// `keyharbor run` may inject the values (signed in the metadata MAC).
     pub run_allowed: bool,
+    /// The last day of use, `YYYY-MM-DD` (signed in the metadata MAC); `None` never expires.
+    pub expires_at: Option<String>,
     pub status: String,
     pub source: String,
     pub meta_mac: Vec<u8>,
