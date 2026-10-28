@@ -117,7 +117,7 @@ jobs:
       - name: the release build has no test-only features
         run: sh scripts/check-release-features.sh
       - run: cargo install cargo-about --locked --features cli
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --snapshot --clean
