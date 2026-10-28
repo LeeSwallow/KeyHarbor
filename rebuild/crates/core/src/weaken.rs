@@ -12,13 +12,13 @@ use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
     date::Expiry,
     policy::{Effect, Rule},
-    ports::{AUDIT_ENABLED, Answer, Confirm},
+    ports::{Answer, Confirm},
+    settings::SettingSpec,
     vault::ItemName,
 };
 use std::fmt;
 
-/// The setting that turns credential capture (phase 4) on or off.
-pub const CAPTURE_ENABLED: &str = "capture_enabled";
+pub use keyharbor_domain::settings::CAPTURE_ENABLED;
 
 /// Every operation that weakens a protection. What each one is shown as is defined here
 /// only ([`fmt::Display`]); which changes produce one is decided by the functions below.
@@ -44,8 +44,11 @@ pub enum WeakeningOp {
     },
     PolicyAllow(Rule),
     PolicyRemoveDeny(Rule),
-    AuditOff,
-    CaptureChanged(String),
+    /// A setting change the registry marks as weakening (`SettingSpec::weakens`).
+    Setting {
+        key: &'static str,
+        value: String,
+    },
 }
 
 impl fmt::Display for WeakeningOp {
@@ -62,8 +65,7 @@ impl fmt::Display for WeakeningOp {
             Self::ExpiryRemoved { item } => write!(f, "removing the expiry of {item}"),
             Self::PolicyAllow(rule) => write!(f, "policy allow {}", target(rule)),
             Self::PolicyRemoveDeny(rule) => write!(f, "removing the rule {}", target(rule)),
-            Self::AuditOff => write!(f, "settings set {AUDIT_ENABLED} false"),
-            Self::CaptureChanged(value) => write!(f, "settings set {CAPTURE_ENABLED} {value}"),
+            Self::Setting { key, value } => write!(f, "settings set {key} {value}"),
         }
     }
 }
@@ -101,13 +103,14 @@ pub fn policy_remove(existing: &Rule) -> Option<WeakeningOp> {
     (existing.effect == Effect::Deny).then(|| WeakeningOp::PolicyRemoveDeny(existing.clone()))
 }
 
-/// `settings set`: turning the usage record off, or changing capture at all.
+/// `settings set`: whatever the registry marks as weakening (turning the usage record off,
+/// changing capture at all).
 pub fn setting(key: &str, value: &str) -> Option<WeakeningOp> {
-    match key {
-        AUDIT_ENABLED if value != "true" => Some(WeakeningOp::AuditOff),
-        CAPTURE_ENABLED => Some(WeakeningOp::CaptureChanged(value.to_owned())),
-        _ => None,
-    }
+    let spec = SettingSpec::find(key)?;
+    spec.weakens(value).then(|| WeakeningOp::Setting {
+        key: spec.key,
+        value: value.to_owned(),
+    })
 }
 
 impl Vault {
@@ -152,7 +155,7 @@ impl Vault {
 mod tests {
     use super::*;
     use crate::tests::{env, init, login};
-    use keyharbor_domain::{policy::Resource, vault::Origin};
+    use keyharbor_domain::{policy::Resource, settings::AUDIT_ENABLED, vault::Origin};
     use std::cell::RefCell;
 
     /// Answers `answer` and remembers what it was asked.
@@ -179,8 +182,8 @@ mod tests {
         require(&yes, &[]).unwrap();
         assert!(yes.asked.borrow().is_empty());
         let ops = [
-            WeakeningOp::AuditOff,
-            WeakeningOp::CaptureChanged("true".into()),
+            setting(AUDIT_ENABLED, "false").unwrap(),
+            setting(CAPTURE_ENABLED, "true").unwrap(),
         ];
         require(&yes, &ops).unwrap();
         assert_eq!(

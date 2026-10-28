@@ -24,7 +24,7 @@ cargo run -p keyharbor -- list
 | crypto | `keyharbor-crypto` | 모든 암호 원시 연산, I/O 없음 ([ADR-0016](../docs/design/adr/0016-crypto-crate.md)) | `aead`, `envelope`, `kdf`, `mac`, `random`, `export` |
 | security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser`, 항목 add/edit 순서, 세션 작업 → 정책 Action 표 | `pdp/checks/<검사>`, `pep/{substitute, mask/variants/<변형>, origin, selector}`, `audit`, `run`, `items`, `session`, `guard`, `browser` |
 | application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess`, 약화 작업 판정(`weaken`) | `vault/{open, items, summary, resolve, developer}`, `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `dotenv`, `weaken` |
-| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `ports/{vault, session, access, audit, keys, browser, confirm, runtime}` |
+| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 설정 레지스트리 `SETTINGS`, placeholder 문법, 요청자 이름 `AgentName`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `settings`, `ports/{vault, session, access, audit, keys, browser, confirm, runtime}` |
 | dev tool | `keyharbor-design-check` | `design/` 디자인 시스템 검사(계층·테마·대비·아이콘·클래스), 쇼케이스 서버 `design-serve`. 출시물에 들어가지 않고 아무도 의존하지 않는다([ADR-0015](../docs/design/adr/0015-design-system-layers.md)) | `scanner`, `model`, `layers`, `rules/*`, `color`, `theme`, `report`, `serve` |
 
 - 평문 값은 `Vault::resolve`·`Vault::mask_values`에서만 나오고, 둘 다 guard가 검사 뒤 발급하는 `PlaintextAccess`를 요구한다. 브라우저 조작은 제어 socket → `ops` → `GuardedBrowser`로만 간다.
@@ -128,7 +128,7 @@ cargo run -p keyharbor -- vault list
 | `policy list [--json]` | `agent resource target effect` |
 | `policy allow\|deny --agent A --resource R [--target T]` · `policy rm …` | R은 `session`·`item`·`domain`·`create_session`·`raw_cdp`, T는 세션 id·항목 이름·도메인(`credentials`·`payment`·`personal`·`developer`) 또는 `*`(기본). A가 `*`면 모든 에이전트 |
 | `audit [--limit N] [--json]` | 사용 기록. `seq at agent kind item origin session result`. 값은 없다 |
-| `settings get\|set KEY [VALUE]` | `audit_enabled true\|false`(끄면 거부를 포함해 아무것도 기록하지 않는다), `capture_enabled true\|false`(4단계), `default_item_ttl <N>d\|none` |
+| `settings get\|set KEY [VALUE]` | `audit_enabled true\|false`(`false`로 끄면 거부를 포함해 아무것도 기록하지 않는다. 그 밖의 값은 켜짐), `capture_enabled true\|false`(4단계), `default_item_ttl <N>d\|none` |
 | `run [--agent A] (--env ITEM \| --env-file PATH)… -- CMD ARGS…` | `run_allowed` 항목(secret·env 기본 허용)만. env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣고, 그 stdout·stderr를 줄 단위로 가려서 내보낸다. 종료 코드를 그대로 전달하고(신호면 128+번호), 자식의 core dump를 끈다 |
 
 정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`, `substitution_locked`, `mask_probe`, `secret_denied_suppressed`(초당 10건을 넘은 거부 수), `first_use_origin`(identity·address가 처음 쓰인 origin).

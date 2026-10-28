@@ -110,7 +110,7 @@ flowchart TB
 
 | crate | 계층 | 의존 가능 (정상 의존) | 핵심 타입·책임 |
 |---|---|---|---|
-| `keyharbor-domain` | domain + ports | 없음 | `SessionId`·`State`·`Generation`, `vault`(`ItemKind`, `KINDS`, `Origin`, placeholder), `policy`(`Rule`), `audit`, `secret`(`SecretKey`, `VaultError`), `ports`(trait) |
+| `keyharbor-domain` | domain + ports | 없음 | `SessionId`·`State`·`Generation`, `vault`(`ItemKind`, `KINDS`, `Origin`, placeholder 문법 `PLACEHOLDER_OPEN`·`Display for PlaceholderRef`), `policy`(`Rule`, 요청자 `AgentName`), `settings`(`SETTINGS`), `audit`, `secret`(`SecretKey`, `VaultError`), `ports`(trait) |
 | `keyharbor-vault` | adapter | domain | 레코드 seal/open, 키 분리, 메타 MAC(I/O 없음), `KeyStore` 구현(`MacKeychain`, 테스트용 `FileKeyStore`) |
 | `keyharbor-core` | application | domain, vault(레코드 함수만) | `Vault` 유스케이스(`vault/{open, items, summary, resolve}`, 에이전트용 `catalog`), `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `PlaintextAccess` |
 | `keyharbor-guard` | security | domain, core | `pdp::decide`, `pep::substitute`, `pep::mask::Masker`, `pep::origin`, `audit`, `run`, `items`(항목 add/edit 순서), `session`(세션 작업 → 정책 Action 표), `Guard`, `GuardedBrowser` |
@@ -119,7 +119,7 @@ flowchart TB
 | `keyharbor-mcp` | interface | domain, core, guard, broker | `server`, `scope`, `tools/{session, browser, vault}`. 저장소·금고 opener·런타임은 생성자로 받는다(`Deps`) |
 | `keyharbor` (CLI) | interface | crypto를 뺀 전부 | `compose`(composition root), clap 명령, 감독자 조립(`__supervise`) |
 
-`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 crypto만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음, 표면(CLI `*_cmd`·MCP)은 저장소를 열거나 저장소 포트를 부르지 않음(규칙 A), 세션 수준 `Action`은 guard의 표만 고름(규칙 J). `scripts/test-scripts.sh`가 규칙마다 위반을 심은 사본(`CHECK_LAYERS_ROOT`)으로 검사가 실패하는지 확인한다.
+`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 crypto만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음, 표면(CLI `*_cmd`·MCP)은 저장소를 열거나 저장소 포트를 부르지 않음(규칙 A), 세션 수준 `Action`은 guard의 표만 고름(규칙 J), placeholder 문법은 domain에만(규칙 H), 요청자 이름 `*` 금지는 domain `AgentName`에만(규칙 I). `scripts/test-scripts.sh`가 규칙마다 위반을 심은 사본(`CHECK_LAYERS_ROOT`)으로 검사가 실패하는지 확인한다.
 
 ### 2.4.0 표면과 composition root
 
@@ -470,6 +470,14 @@ flowchart TB
 - `username`도 암호화한다. 계정 이름도 민감한 정보이기 때문이다. [설계자 판단]
 - 항목 이름, 종류, origin, 시각은 정책 판정과 목록 표시를 위해 **평문**이다. 이 메타데이터도 민감하다는 점을 문서와 관리 앱에 적는다. ([03 §3.5](03-security-whitepaper.md#35-저장-데이터-분류))
 - `AUDIT_EVENT`에는 값 컬럼이 **존재하지 않는다**. 스키마 수준에서 값 기록을 막는다.
+
+설정은 `keyharbor_domain::settings::SETTINGS` 한 표에 있다. 저장소는 문자열만 저장하고, 기본값·형식 검사·약화 방향은 표가 정한다. [J-73]
+
+| 설정 | 기본값 | 형식 | 약화(사람 확인) |
+|---|---|---|---|
+| `audit_enabled` | `true` | `true`·`false` | `false`로 바꿀 때. 값이 없거나 `false`가 아니면 기록은 켜져 있다 |
+| `capture_enabled` | `false` | `true`·`false` | 바꿀 때마다 |
+| `default_item_ttl` | `none` | `<N>d`·`none` | 없음 |
 
 ### 2.7.3 영속성 컨텍스트 맵 (R-32, R-33)
 

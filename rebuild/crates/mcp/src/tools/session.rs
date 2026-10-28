@@ -4,7 +4,7 @@ use crate::server::{Server, fail, outcome};
 use keyharbor_core::session::{
     self as lifecycle, OpenOptions, ResumeWait, SessionView, resume_check, wait_for_resume,
 };
-use keyharbor_domain::{RequestId, SessionName, vault::Description};
+use keyharbor_domain::{RequestId, SessionName, State, vault::Description};
 use keyharbor_guard::session::SessionOp;
 use rmcp::{
     handler::server::wrapper::Parameters, model::CallToolResult, schemars, tool, tool_router,
@@ -57,7 +57,7 @@ fn view_json(view: &SessionView) -> Value {
     json!({
         "id": row.id.to_string(),
         "name": row.name.as_str(),
-        "state": view.state,
+        "state": view.state.as_str(),
         "cdp": row.cdp,
         "description": row.description.as_ref().map(|d| d.as_str()),
     })
@@ -134,7 +134,7 @@ impl Server {
                     agent: inner.agent(),
                 };
                 lifecycle::open(&**inner.store()?, &*inner.runtime, id, &options)?;
-                Ok(json!({"id": id.to_string(), "state": "running"}))
+                Ok(json!({"id": id.to_string(), "state": State::Running.as_str()}))
             })
             .await,
         )
@@ -173,7 +173,7 @@ impl Server {
             self.blocking(move |inner| {
                 inner.allow(SessionOp::WaitAuth(id))?;
                 let request = lifecycle::wait_auth(&**inner.store()?, &*inner.runtime, id, origin.as_deref(), inner.agent())?;
-                Ok(json!({"id": id.to_string(), "state": "awaiting_user", "request_id": request.to_string()}))
+                Ok(json!({"id": id.to_string(), "state": State::AwaitingUser.as_str(), "request_id": request.to_string()}))
             })
             .await,
         )
@@ -207,7 +207,7 @@ impl Server {
                 // The store is held for one look at a time, not for the whole wait.
                 let check = || resume_check(&**inner.store()?, &*inner.runtime, id, request);
                 wait_for_resume(wait, check, std::thread::sleep)?;
-                Ok(json!({"id": id.to_string(), "state": "running", "note": "the user resumed; sign-in success is not verified"}))
+                Ok(json!({"id": id.to_string(), "state": State::Running.as_str(), "note": "the user resumed; sign-in success is not verified"}))
             })
             .await,
         )

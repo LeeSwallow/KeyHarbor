@@ -2,6 +2,7 @@
 
 use crate::server::{Server, outcome};
 use keyharbor_core::{CatalogEntry, ItemSummary, catalog};
+use keyharbor_domain::vault::placeholder;
 use rmcp::{model::CallToolResult, tool, tool_router};
 use serde_json::{Value, json};
 
@@ -10,7 +11,7 @@ fn summary_json(item: &ItemSummary) -> Value {
     let placeholders: Vec<String> = item
         .fields
         .iter()
-        .map(|f| format!("{{{{secret:{}.{f}}}}}", item.name))
+        .map(|f| placeholder(&item.name, f))
         .collect();
     json!({
         "name": item.name,

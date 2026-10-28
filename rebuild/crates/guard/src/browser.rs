@@ -17,11 +17,9 @@ use keyharbor_domain::{
         BrowserPort, FrameInspector, PageInput,
         browser::{Element, Focus, Page, WaitFor},
     },
-    vault::{Origin, parse_placeholders},
+    vault::{Origin, has_placeholder, parse_placeholders},
 };
 use serde_json::{Value, json};
-
-const PLACEHOLDER: &str = "{{secret:";
 
 pub struct GuardedBrowser<'a, B> {
     pub(crate) inner: &'a mut B,
@@ -169,7 +167,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
     }
 
     pub(crate) async fn fill_checked(&mut self, target: &Value, template: &str) -> Result<Value> {
-        if !template.contains(PLACEHOLDER) {
+        if !has_placeholder(template) {
             return self.inner.fill(target, template).await;
         }
         let page = self.inner.page().await?;
@@ -201,7 +199,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
     }
 
     async fn type_checked(&mut self, template: &str) -> Result<Value> {
-        if !template.contains(PLACEHOLDER) {
+        if !has_placeholder(template) {
             return self.inner.type_text(template).await;
         }
         let page = self.inner.page().await?;

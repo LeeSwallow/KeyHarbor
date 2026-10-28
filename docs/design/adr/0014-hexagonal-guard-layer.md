@@ -62,7 +62,7 @@ flowchart LR
 
 - 평문 경로가 `PlaintextAccess`를 받는 두 함수로 줄었고, 그 발급 지점이 검사 가능하다. 브라우저 입력의 검사 순서(포커스 frame origin → 정책 → 비우기 → 포커스 재확인 → 입력 → origin 재확인)는 `GuardedBrowser` 한 곳에만 있다.
 - 동작·CLI 출력·MCP 도구·DB 스키마·암호문 형식은 바뀌지 않았다. 기존 테스트 125개가 단언 변경 없이 통과한다(테스트 위치와 모듈 경로만 옮겼다).
-- 규칙은 `scripts/check-layers.sh`가 CI(repo-checks)에서 강제한다: 의존 표, 암호 원시 crate는 crypto만(ADR-0016), rusqlite 금지, 운영 코드의 원시 SQL 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출 위치, broker의 raw CDP 비공개, 컨텍스트 간 models 공유 금지, 표면은 저장소를 열거나 저장소 포트를 부르지 않음(A), 세션 수준 정책 Action은 guard 표만 고름(J). 규칙마다 위반을 심은 사본으로 실패하는지 `scripts/test-scripts.sh`가 확인한다.
+- 규칙은 `scripts/check-layers.sh`가 CI(repo-checks)에서 강제한다: 의존 표, 암호 원시 crate는 crypto만(ADR-0016), rusqlite 금지, 운영 코드의 원시 SQL 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출 위치, broker의 raw CDP 비공개, 컨텍스트 간 models 공유 금지, 표면은 저장소를 열거나 저장소 포트를 부르지 않음(A), 세션 수준 정책 Action은 guard 표만 고름(J), placeholder 문법은 domain에만(H), 요청자 이름 규칙은 domain `AgentName`에만(I). 규칙마다 위반을 심은 사본으로 실패하는지 `scripts/test-scripts.sh`가 확인한다.
 - `PlaintextAccess`는 컴파일러가 아니라 스크립트가 지킨다. 같은 OS 사용자의 악의적 코드를 막는 경계가 아니라 실수를 막는 경계다.
 - 도메인 crate가 `anyhow`·`serde_json`·`zeroize`·`getrandom`에 의존한다(포트의 오류·응답 타입과 `SecretKey`). I/O는 없다.
 - 데이터 경로·포트 추가만으로 4단계 컨텍스트(`site_states`, `vault_requests`)와 5단계 앱 인터페이스를 붙일 수 있다.

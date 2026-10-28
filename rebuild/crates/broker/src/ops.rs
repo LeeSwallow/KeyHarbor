@@ -6,7 +6,7 @@
 use crate::{browser::CdpBrowser, supervisor::Shared};
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
-    policy::{ANY, LOCAL_AGENT, parse_agent},
+    policy::AgentName,
     ports::{BrowserPort, browser::WaitFor},
     vault::ItemName,
 };
@@ -52,18 +52,15 @@ fn parse(request: &Value) -> Result<(String, Command)> {
         .get("op")
         .and_then(Value::as_str)
         .context("request has no op")?;
-    // `*` names every agent in rules; as a requester it would match only `*` rules and dodge
-    // the rules written for a real name. An empty name is refused by `parse_agent`.
     let agent = match request.get("agent") {
-        None => LOCAL_AGENT.to_owned(),
+        None => AgentName::local(),
         Some(agent) => {
             let agent = agent.as_str().context("agent must be a string")?;
-            if agent == ANY {
-                bail!("agent name * is reserved for rules that apply to every agent");
-            }
-            parse_agent(agent).map_err(|e| anyhow!("{e}"))?
+            AgentName::parse(agent).map_err(|e| anyhow!("{e}"))?
         }
-    };
+    }
+    .as_str()
+    .to_owned();
     let command = match op {
         "navigate" => Command::Navigate(str_arg(request, "url")?),
         "snapshot" => Command::Snapshot,
@@ -160,6 +157,7 @@ fn status(shared: &Shared) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use keyharbor_domain::policy::LOCAL_AGENT;
 
     #[test]
     fn requests_name_a_real_agent() {

@@ -4,7 +4,10 @@ use super::{models::NewSetting, schema::settings};
 use crate::SqliteStore;
 use anyhow::Result;
 use diesel::{prelude::*, upsert::excluded};
-use keyharbor_domain::ports::{AUDIT_ENABLED, SettingsStore};
+use keyharbor_domain::{
+    ports::{AUDIT_ENABLED, SettingsStore},
+    settings::audit_enabled as audit_on,
+};
 
 fn get(conn: &mut SqliteConnection, key: &str) -> QueryResult<Option<String>> {
     settings::table
@@ -14,9 +17,9 @@ fn get(conn: &mut SqliteConnection, key: &str) -> QueryResult<Option<String>> {
         .optional()
 }
 
-/// The usage record is on while `audit_enabled` is missing or exactly `true` (J-23).
+/// Whether the usage record is on, by the registry's rule (`settings::audit_enabled`, J-73).
 pub(crate) fn audit_enabled(conn: &mut SqliteConnection) -> QueryResult<bool> {
-    Ok(get(conn, AUDIT_ENABLED)?.as_deref().unwrap_or("true") == "true")
+    Ok(audit_on(get(conn, AUDIT_ENABLED)?.as_deref()))
 }
 
 impl SettingsStore for SqliteStore {

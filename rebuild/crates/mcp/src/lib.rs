@@ -12,9 +12,9 @@ mod tools;
 
 pub use server::DEFAULT_AGENT;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow};
 use keyharbor_broker::DEFAULT_BROWSER;
-use keyharbor_domain::ports::SessionRuntime;
+use keyharbor_domain::{policy::AgentName, ports::SessionRuntime};
 use keyharbor_guard::{SharedStore, VaultOpener};
 use rmcp::{ServiceExt, transport::stdio};
 use server::{Inner, Server};
@@ -42,12 +42,10 @@ pub struct Deps {
 
 /// Runs the server on stdin/stdout until the client disconnects.
 pub fn run(options: Options, deps: Deps) -> Result<()> {
-    if let Some(agent) = &options.agent {
-        if agent == keyharbor_domain::policy::ANY {
-            bail!("agent name * is reserved for rules that apply to every agent");
-        }
-        keyharbor_domain::policy::parse_agent(agent).map_err(|e| anyhow::anyhow!("{e}"))?;
-    }
+    let agent = match &options.agent {
+        Some(name) => AgentName::parse(name).map_err(|e| anyhow!("{e}"))?,
+        None => AgentName::parse(DEFAULT_AGENT).expect("valid default agent name"),
+    };
     let scope = match &options.session {
         Some(id) => Some(scope::claim(&deps.store, &options.data, id)?),
         None => None,
@@ -59,7 +57,7 @@ pub fn run(options: Options, deps: Deps) -> Result<()> {
         data: options.data,
         scope: scope.as_ref().map(|(id, _)| *id),
         allow_cdp: options.allow_cdp,
-        agent: options.agent,
+        agent,
         browser: options
             .browser
             .unwrap_or_else(|| PathBuf::from(DEFAULT_BROWSER)),

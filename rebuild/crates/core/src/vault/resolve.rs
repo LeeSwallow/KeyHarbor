@@ -5,7 +5,8 @@ use super::{MaskValues, Vault, vault_err};
 use crate::PlaintextAccess;
 use anyhow::{Context, Result, anyhow};
 use keyharbor_domain::vault::{
-    Domain, FieldName, ItemKind, ItemName, PlaceholderRef, parse_placeholders,
+    Domain, FieldName, ItemKind, ItemName, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN, PlaceholderRef,
+    parse_placeholders,
 };
 use keyharbor_vault::record::{FieldAd, open_field};
 use zeroize::Zeroizing;
@@ -102,8 +103,12 @@ pub fn fill_template(
     let mut out = Zeroizing::new(String::with_capacity(size));
     let mut rest = template;
     for value in &values {
-        let start = rest.find("{{secret:").expect("parsed placeholder");
-        let end = start + rest[start..].find("}}").expect("parsed placeholder") + 2;
+        let start = rest.find(PLACEHOLDER_OPEN).expect("parsed placeholder");
+        let end = start
+            + rest[start..]
+                .find(PLACEHOLDER_CLOSE)
+                .expect("parsed placeholder")
+            + PLACEHOLDER_CLOSE.len();
         out.push_str(&rest[..start]);
         out.push_str(value);
         rest = &rest[end..];

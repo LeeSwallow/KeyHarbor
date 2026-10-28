@@ -416,7 +416,26 @@ pub struct PlaceholderRef {
     pub field: FieldName,
 }
 
-const PLACEHOLDER_OPEN: &str = "{{secret:";
+/// Where a placeholder starts and ends: `{{secret:<item>.<field>}}`. Every other crate
+/// writes and finds placeholders through these and `Display`, never its own literal.
+pub const PLACEHOLDER_OPEN: &str = "{{secret:";
+pub const PLACEHOLDER_CLOSE: &str = "}}";
+
+/// The placeholder text for a field of an item, e.g. `{{secret:github.password}}`.
+pub fn placeholder(item: &str, field: &str) -> String {
+    format!("{PLACEHOLDER_OPEN}{item}.{field}{PLACEHOLDER_CLOSE}")
+}
+
+/// Whether `text` holds anything that starts a placeholder.
+pub fn has_placeholder(text: &str) -> bool {
+    text.contains(PLACEHOLDER_OPEN)
+}
+
+impl fmt::Display for PlaceholderRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&placeholder(self.item.as_str(), self.field.as_str()))
+    }
+}
 
 /// Finds every `{{secret:<item>.<field>}}` reference. A malformed reference fails the whole text.
 pub fn parse_placeholders(text: &str) -> Result<Vec<PlaceholderRef>, InvalidValue> {
@@ -425,7 +444,7 @@ pub fn parse_placeholders(text: &str) -> Result<Vec<PlaceholderRef>, InvalidValu
     while let Some(start) = rest.find(PLACEHOLDER_OPEN) {
         let after = &rest[start + PLACEHOLDER_OPEN.len()..];
         let end = after
-            .find("}}")
+            .find(PLACEHOLDER_CLOSE)
             .ok_or(InvalidValue("unterminated placeholder"))?;
         let (item, field) = after[..end]
             .split_once('.')
@@ -434,7 +453,7 @@ pub fn parse_placeholders(text: &str) -> Result<Vec<PlaceholderRef>, InvalidValu
             item: ItemName::parse(item)?,
             field: FieldName::parse(field)?,
         });
-        rest = &after[end + 2..];
+        rest = &after[end + PLACEHOLDER_CLOSE.len()..];
     }
     Ok(refs)
 }
@@ -442,6 +461,14 @@ pub fn parse_placeholders(text: &str) -> Result<Vec<PlaceholderRef>, InvalidValu
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn placeholders_display_as_they_parse() {
+        let text = "u={{secret:github.username}}";
+        let refs = parse_placeholders(text).unwrap();
+        assert_eq!(refs[0].to_string(), "{{secret:github.username}}");
+        assert_eq!(placeholder("github", "username"), refs[0].to_string());
+        assert!(has_placeholder(text) && !has_placeholder("{secret:x.y}"));
+    }
     #[test]
     fn kinds_map_to_domains() {
         assert_eq!(ItemKind::Login.domain(), Domain::Credentials);

@@ -7,7 +7,7 @@
 use crate::compose::App;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
-use keyharbor_domain::policy::{ANY, parse_agent};
+use keyharbor_domain::policy::AgentName;
 use keyharbor_guard::{pep::mask::Masker, run as guard_run};
 use std::{
     ffi::OsString,
@@ -86,10 +86,7 @@ fn spawn(argv: &[OsString], vars: &[(String, Zeroizing<String>)]) -> Result<Chil
 
 /// Runs the command and returns the exit code to pass on (128 + signal if it was killed).
 pub fn run(app: &App, args: RunArgs) -> Result<i32> {
-    if args.agent == ANY {
-        bail!("agent name * is reserved for rules that apply to every agent");
-    }
-    let agent = parse_agent(&args.agent).map_err(|e| anyhow!("{e}"))?;
+    let agent = AgentName::parse(&args.agent).map_err(|e| anyhow!("{e}"))?;
     if args.items.is_empty() && args.files.is_empty() {
         bail!("give at least one --env ITEM or --env-file PATH");
     }
@@ -99,7 +96,7 @@ pub fn run(app: &App, args: RunArgs) -> Result<i32> {
         &*store,
         &vault,
         &guard_run::Request {
-            agent: &agent,
+            agent: agent.as_str(),
             items: &args.items,
             files: &args.files,
         },

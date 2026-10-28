@@ -22,6 +22,11 @@
 # 8. (J) Which session operation needs which policy action is the guard's
 #    table (`keyharbor_guard::session`); interfaces never name a session-level
 #    `Action`.
+# 9. (H) The placeholder syntax `{{secret:item.field}}` is written and found
+#    only in keyharbor-domain (`PLACEHOLDER_OPEN`, `Display for PlaceholderRef`);
+#    comments, tool descriptions and tests may show it.
+# 10. (I) The rule "a requester is never `*`" lives in keyharbor-domain
+#    (`AgentName`); nobody else compares a requester with `ANY`.
 #
 # CHECK_LAYERS_ROOT replaces rebuild/crates (scripts/test-scripts.sh runs the
 # rules against copies with planted violations).
@@ -179,6 +184,20 @@ fi
 # --- 8. (J) the session policy table lives in the guard -----------------------------
 hits="$(grep -rnE 'Action::(OpenSession|CreateSession|RawCdp)' --include='*.rs' mcp cli 2>/dev/null || true)"
 [ -n "$hits" ] && no "interfaces choose session-level policy actions (use keyharbor_guard::session):
+$hits"
+
+# --- 9. (H) placeholder syntax in one place ------------------------------------------
+hits="$(outside_tests '[{][{]secret:' |
+	grep -v '^\./domain/src/vault\.rs:' |
+	grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' |
+	grep -vE 'description = "' || true)"
+[ -n "$hits" ] && no "placeholder syntax outside keyharbor-domain (use PlaceholderRef or vault::placeholder):
+$hits"
+
+# --- 10. (I) requester names in one place --------------------------------------------
+hits="$(grep -rnE 'reserved for rules that apply to every agent|[!=]= *(policy::)?ANY\b' --include='*.rs' . |
+	grep -vE '^\./(domain/src/|guard/src/pdp/)' | grep -v '/tests/' || true)"
+[ -n "$hits" ] && no "requester-name rule outside keyharbor-domain (use policy::AgentName):
 $hits"
 
 [ "$bad" -eq 0 ] && echo "layer rules hold"

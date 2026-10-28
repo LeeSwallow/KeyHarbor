@@ -15,7 +15,7 @@ use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     denial::DenialReason,
     ports::Store,
-    vault::{Domain, ItemName, Origin},
+    vault::{Domain, ItemName, Origin, placeholder},
 };
 use serde_json::Value;
 use std::{
@@ -292,7 +292,8 @@ impl Guard {
                     self.lock(agent, "mask_probe");
                 }
                 bail!(
-                    "denied: the request contains a vault value; write its {{{{secret:item.field}}}} placeholder instead"
+                    "denied: the request contains a vault value; write its {} placeholder instead",
+                    placeholder("item", "field")
                 )
             }
             _ => bail!("request withheld: vault values could not be loaded for checking"),
