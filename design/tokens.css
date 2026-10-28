@@ -70,6 +70,7 @@
   --c-dom-cred: #b45309;      --c-dom-cred-wash: #fbf0e1;
   --c-dom-pay: #7c3aed;       --c-dom-pay-wash: #f0eafd;
   --c-dom-personal: #047857;  --c-dom-personal-wash: #e1f4ec;
+  --c-dom-dev: #be185d;       --c-dom-dev-wash: #fce8f1;
 
   /* status — what state it is in */
   --c-ok: #15803d;      --c-ok-wash: #e5f5ea;
@@ -110,6 +111,7 @@
     --c-dom-cred: #f5c451; --c-dom-cred-wash: #2f2510;
     --c-dom-pay: #a78bfa; --c-dom-pay-wash: #241b3d;
     --c-dom-personal: #34d399; --c-dom-personal-wash: #0f2c22;
+    --c-dom-dev: #f472b6; --c-dom-dev-wash: #3a1428;
     --c-ok: #4ade80; --c-ok-wash: #11301d;
     --c-warn: #fbbf24; --c-warn-wash: #33270b;
     --c-danger: #f87171; --c-danger-wash: #3a1414; --c-danger-text: #2a0707;
@@ -130,6 +132,7 @@
   --c-dom-cred: #f5c451; --c-dom-cred-wash: #2f2510;
   --c-dom-pay: #a78bfa; --c-dom-pay-wash: #241b3d;
   --c-dom-personal: #34d399; --c-dom-personal-wash: #0f2c22;
+  --c-dom-dev: #f472b6; --c-dom-dev-wash: #3a1428;
   --c-ok: #4ade80; --c-ok-wash: #11301d;
   --c-warn: #fbbf24; --c-warn-wash: #33270b;
   --c-danger: #f87171; --c-danger-wash: #3a1414; --c-danger-text: #2a0707;

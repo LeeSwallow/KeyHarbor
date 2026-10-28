@@ -93,6 +93,7 @@
 .kh-chip.cred     { background: var(--c-dom-cred-wash);     color: var(--c-dom-cred);     border-color: transparent; }
 .kh-chip.pay      { background: var(--c-dom-pay-wash);      color: var(--c-dom-pay);      border-color: transparent; }
 .kh-chip.personal { background: var(--c-dom-personal-wash); color: var(--c-dom-personal); border-color: transparent; }
+.kh-chip.dev      { background: var(--c-dom-dev-wash);      color: var(--c-dom-dev);      border-color: transparent; }
 .kh-chip.agent    { background: var(--c-surface); border-color: var(--c-line-strong); color: var(--c-ink); }
 .kh-chip.agent .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c-ok); }
 
@@ -138,6 +139,7 @@
 .kh-row .glyph.cred { background: var(--c-dom-cred-wash); color: var(--c-dom-cred); }
 .kh-row .glyph.pay { background: var(--c-dom-pay-wash); color: var(--c-dom-pay); }
 .kh-row .glyph.personal { background: var(--c-dom-personal-wash); color: var(--c-dom-personal); }
+.kh-row .glyph.dev { background: var(--c-dom-dev-wash); color: var(--c-dom-dev); }
 .kh-row .glyph.session { background: var(--c-dom-session-wash); color: var(--c-dom-session); }
 .kh-row .main { flex: 1; min-width: 0; }
 .kh-row .title { font: var(--text-body-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

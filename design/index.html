@@ -72,7 +72,8 @@
       <div class="nav"><span class="kh-i" style="--i:url(icons/inbox.svg)"></span><t data-en="All items">모든 항목</t><span class="kh-count muted">24</span></div>
       <div class="group" data-en="Domains">도메인</div>
       <div class="nav"><span class="kh-i" style="--i:url(icons/globe.svg)"></span><t data-en="Sessions">세션</t><span class="kh-count muted">3</span></div>
-      <div class="nav is-on"><span class="kh-i" style="--i:url(icons/key-round.svg)"></span><t data-en="Credentials">자격 증명</t><span class="kh-count">11</span></div>
+      <div class="nav is-on"><span class="kh-i" style="--i:url(icons/key-round.svg)"></span><t data-en="Credentials">자격 증명</t><span class="kh-count">6</span></div>
+      <div class="nav"><span class="kh-i" style="--i:url(icons/square-terminal.svg)"></span><t data-en="Developer">개발자 비밀</t><span class="kh-count muted">5</span></div>
       <div class="nav"><span class="kh-i" style="--i:url(icons/credit-card.svg)"></span><t data-en="Payment">결제</t><span class="kh-count muted">2</span></div>
       <div class="nav"><span class="kh-i" style="--i:url(icons/id-card.svg)"></span><t data-en="Personal">개인 정보</t><span class="kh-count muted">8</span></div>
       <div class="group" data-en="Watch">살피기</div>
@@ -82,10 +83,10 @@
     </nav>
     <div class="list">
       <div class="kh-row is-selected"><div class="glyph cred"><span class="kh-i" style="--i:url(icons/key-round.svg)"></span></div><div class="main"><div class="title">github</div><div class="sub">login · github.com</div></div><span class="kh-badge active" data-en="active">사용 중</span></div>
-      <div class="kh-row"><div class="glyph cred"><span class="kh-i" style="--i:url(icons/braces.svg)"></span></div><div class="main"><div class="title">openai</div><div class="sub">env · 2 keys</div></div><span class="kh-badge expiring" data-en="12 days">12일</span></div>
+      <div class="kh-row"><div class="glyph dev"><span class="kh-i" style="--i:url(icons/braces.svg)"></span></div><div class="main"><div class="title">openai</div><div class="sub">env · 2 keys</div></div><span class="kh-badge expiring" data-en="12 days">12일</span></div>
       <div class="kh-row"><div class="glyph pay"><span class="kh-i" style="--i:url(icons/credit-card.svg)"></span></div><div class="main"><div class="title">visa-main</div><div class="sub">card · •••• 4242</div></div></div>
       <div class="kh-row"><div class="glyph personal"><span class="kh-i" style="--i:url(icons/map-pin.svg)"></span></div><div class="main"><div class="title">home</div><div class="sub">address</div></div></div>
-      <div class="kh-row"><div class="glyph cred"><span class="kh-i" style="--i:url(icons/key-square.svg)"></span></div><div class="main"><div class="title">stripe-test</div><div class="sub">secret</div></div><span class="kh-badge expired" data-en="expired">만료</span></div>
+      <div class="kh-row"><div class="glyph dev"><span class="kh-i" style="--i:url(icons/key-square.svg)"></span></div><div class="main"><div class="title">stripe-test</div><div class="sub">secret</div></div><span class="kh-badge expired" data-en="expired">만료</span></div>
     </div>
     <section class="detail">
       <div class="kh-itemhead"><div class="kh-row" style="padding:0;min-height:0"><div class="glyph cred"><span class="kh-i lg" style="--i:url(icons/key-round.svg)"></span></div></div><h3>github</h3>
@@ -161,6 +162,7 @@
     <span class="kh-chip cred"><span class="kh-i" style="--i:url(icons/key-round.svg)"></span><t data-en="credential">자격 증명</t></span>
     <span class="kh-chip pay"><span class="kh-i" style="--i:url(icons/credit-card.svg)"></span><t data-en="payment">결제</t></span>
     <span class="kh-chip personal"><span class="kh-i" style="--i:url(icons/id-card.svg)"></span><t data-en="personal">개인 정보</t></span>
+    <span class="kh-chip dev"><span class="kh-i" style="--i:url(icons/square-terminal.svg)"></span><t data-en="developer">개발자 비밀</t></span>
     <span class="kh-chip agent"><span class="dot"></span>claude-code</span>
     <span class="kh-chip">env</span>
   </div>
@@ -256,7 +258,7 @@ for (const v of VARIANTS) {
 }
 document.getElementById("btnmatrix").innerHTML = m;
 
-const COLORS = ["accent","accent-strong","accent-wash","bg","surface","surface-2","surface-3","line","line-strong","ink","ink-2","ink-3","ink-4","dom-session","dom-cred","dom-pay","dom-personal","ok","warn","danger","info","sealed","sealed-ink"];
+const COLORS = ["accent","accent-strong","accent-wash","bg","surface","surface-2","surface-3","line","line-strong","ink","ink-2","ink-3","ink-4","dom-session","dom-cred","dom-pay","dom-personal","dom-dev","ok","warn","danger","info","sealed","sealed-ink"];
 document.getElementById("colors").innerHTML = COLORS.map(c => `<div><i style="background:var(--c-${c})"></i><span>--c-${c}</span></div>`).join("");
 document.getElementById("type").innerHTML = ["display","title","heading","body-strong","body","small","label","mono","mono-sm"].map(t => `<div><code>--text-${t}</code><span style="font:var(--text-${t})">항구에 열쇠를 맡기다 Harbor 123</span></div>`).join("");
 document.getElementById("space").innerHTML = [1,2,3,4,5,6,7,8,9,10].map(n => `<div><code>--space-${n}</code><span class="bar" style="width:var(--space-${n})"></span></div>`).join("");
