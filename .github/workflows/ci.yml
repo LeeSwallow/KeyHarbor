@@ -68,9 +68,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # check-design.sh runs the design-check crate (ADR-0015).
+      - uses: dtolnay/rust-toolchain@stable
       - run: sh scripts/check-docs.sh
       - run: sh scripts/check-layers.sh
+      - run: sh scripts/check-design.sh
       - run: sh scripts/test-scripts.sh
+
+  extension:
+    # The browser extension (integrations/browser-extension): typecheck, build both browsers,
+    # web-ext lint, vitest. The real-Chrome smoke test skips here (no KEYHARBOR_TEST_CHROME).
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/browser-extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: integrations/browser-extension/package-lock.json
+      - run: npm ci
+      - run: npm run check
 
   commits:
     # A commit names the people who made it. AI tools are not listed as

@@ -1,0 +1,15 @@
+/* field — label, input, textarea, help text, input with a leading icon. */
+.kh-field { display: grid; gap: var(--space-1); }
+.kh-label { font: var(--text-label); letter-spacing: var(--tracking-label); color: var(--c-ink-3); text-transform: uppercase; }
+.kh-input, .kh-textarea { width: 100%; height: var(--control-h); padding: 0 var(--space-3); border-radius: var(--radius-sm);
+  border: var(--stroke-hairline) solid var(--c-line-strong); background: var(--c-surface-2); color: var(--c-ink); font: var(--text-body); }
+.kh-textarea { height: auto; min-height: var(--size-textarea); padding: var(--space-2) var(--space-3); resize: vertical; }
+.kh-input::placeholder, .kh-textarea::placeholder { color: var(--c-ink-4); }
+.kh-input:focus, .kh-input.is-focus, .kh-textarea:focus { outline: none; border-color: var(--c-focus); box-shadow: 0 0 0 var(--ring-focus) var(--c-accent-wash); }
+.kh-input.is-error { border-color: var(--c-danger); box-shadow: 0 0 0 var(--ring-focus) var(--c-danger-wash); }
+.kh-input[readonly] { color: var(--c-ink-3); background: var(--c-surface); border-style: dashed; }
+.kh-help { font: var(--text-small); color: var(--c-ink-3); }
+.kh-help.error { color: var(--c-danger); }
+.kh-inputwrap { position: relative; display: flex; align-items: center; }
+.kh-inputwrap .kh-i { position: absolute; left: var(--inset-icon); color: var(--c-ink-3); }
+.kh-inputwrap .kh-input { padding-left: var(--inset-icon-text); }

@@ -33,6 +33,8 @@ allowed() {
 	broker) echo "domain guard" ;;
 	mcp) echo "domain core guard broker sqlite vault" ;;
 	cli) echo "domain crypto vault core guard sqlite broker mcp" ;;
+	# A dev tool (ADR-0015): uses no keyharbor crate, and no crate may depend on it.
+	design-check) echo "" ;;
 	*) echo "?" ;;
 	esac
 }

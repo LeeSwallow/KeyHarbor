@@ -1,0 +1,4 @@
+/* base — the document root of a KeyHarbor surface. */
+*, *::before, *::after { box-sizing: border-box; }
+.kh { font: var(--text-body); color: var(--c-ink); background: var(--c-bg); -webkit-font-smoothing: antialiased; word-break: keep-all; }
+.kh :focus-visible { outline: var(--stroke-focus) solid var(--c-focus); outline-offset: var(--focus-offset); }

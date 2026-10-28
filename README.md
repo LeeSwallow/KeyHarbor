@@ -56,6 +56,8 @@ API 키는 `keyharbor vault import-env openai .env` 뒤 `keyharbor run --env ope
 |---|---|
 | [로드맵](ROADMAP.md) | 단계별 계획과 현재 상태 |
 | [설계 문서](docs/design/README.md) | 아키텍처, 보안 화이트페이퍼, 암호화 설계, ADR |
+| [디자인 시스템](design/README.md) | 토큰·컴포넌트·패턴 계층, 아이콘, 쇼케이스 |
+| [브라우저 확장](integrations/browser-extension/README.md) | 평소 Chrome·Firefox의 사이트 로그인을 에이전트 세션으로 넘기기(4단계에서 native host와 연결) |
 | [보안 정책](SECURITY.md) | 약속하는 것과 하지 않는 것, 취약점 신고 |
 | [기여 안내](CONTRIBUTING.md) | 이슈부터 릴리스까지의 흐름 |
 | [프로토타입](docs/prototype.md) | 루트 crate(브라우저 세션 프로토타입) 설명 |

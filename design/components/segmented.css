@@ -1,0 +1,5 @@
+/* segmented — one of a few. Children: button (is-on). */
+.kh-seg { display: inline-flex; padding: var(--space-half); gap: var(--space-half); border-radius: var(--radius-sm); background: var(--c-surface-2); border: 1px solid var(--c-line); }
+.kh-seg button { height: calc(var(--control-h) - var(--gap-tight)); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-xs); background: transparent;
+  color: var(--c-ink-2); font: var(--text-small); font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: var(--gap-tight); }
+.kh-seg button.is-on { background: var(--c-surface); color: var(--c-ink); box-shadow: var(--shadow-1); }

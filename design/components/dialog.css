@@ -1,0 +1,9 @@
+/* dialog — Elements: .body, .foot, .who. Modifier: secure (the secure input window). Hook: --dialog-width.
+ * kh-sealbar is the "sealed here" line inside a secure dialog. */
+.kh-dialog { --dialog-width: var(--width-dialog);
+  width: var(--dialog-width); border-radius: var(--radius-lg); background: var(--c-surface); border: 1px solid var(--c-line); box-shadow: var(--shadow-3); overflow: hidden; }
+.kh-dialog .body { padding: var(--space-5); display: grid; gap: var(--space-3); }
+.kh-dialog .foot { display: flex; justify-content: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-5); background: var(--c-surface-2); border-top: 1px solid var(--c-line); }
+.kh-dialog.secure { border: 1px solid color-mix(in srgb, var(--c-accent) 60%, transparent); box-shadow: 0 0 0 var(--ring-secure) var(--c-accent-wash), var(--shadow-3); }
+.kh-dialog .who { display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-3); border-radius: var(--radius-md); background: var(--c-accent-wash); color: var(--c-ink); }
+.kh-sealbar { display: flex; align-items: center; gap: var(--space-2); font: var(--text-small); color: var(--c-ink-3); }

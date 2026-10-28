@@ -1,0 +1,9 @@
+/* icon — an SVG from icons/ drawn in currentColor through a mask. Modifiers: sm, lg, xl. Hook: --icon-size.
+ * The page sets the image inline: <span class="kh-i" style="mask-image:url(icons/lock.svg)">. It must be
+ * inline: a relative url() inside a custom property resolves against the stylesheet that uses it, not the page. */
+.kh-i { --icon-size: var(--size-icon);
+  display: inline-block; width: var(--icon-size); height: var(--icon-size); flex: none; background: currentColor;
+  mask-position: center; mask-size: contain; mask-repeat: no-repeat; }
+.kh-i.sm { --icon-size: var(--size-icon-sm); }
+.kh-i.lg { --icon-size: var(--size-icon-lg); }
+.kh-i.xl { --icon-size: var(--size-icon-xl); }

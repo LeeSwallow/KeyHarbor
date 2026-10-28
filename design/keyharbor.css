@@ -1,0 +1,35 @@
+/* KeyHarbor design system — entry. Layer order matters: each layer uses only the ones above it.
+ * tokens/primitives → tokens/semantic → components/* → patterns/*  (see design/README.md, ADR-0015) */
+
+@import url("tokens/primitives.css");
+@import url("tokens/semantic.css");
+
+@import url("components/base.css");
+@import url("components/canvas.css");
+@import url("components/icon.css");
+@import url("components/button.css");
+@import url("components/icon-button.css");
+@import url("components/field.css");
+@import url("components/secret.css");
+@import url("components/placeholder.css");
+@import url("components/toggle.css");
+@import url("components/segmented.css");
+@import url("components/tabs.css");
+@import url("components/chip.css");
+@import url("components/badge.css");
+@import url("components/count.css");
+@import url("components/kbd.css");
+@import url("components/origins.css");
+@import url("components/toast.css");
+@import url("components/menu.css");
+@import url("components/row.css");
+@import url("components/audit.css");
+@import url("components/panel.css");
+@import url("components/window.css");
+@import url("components/dialog.css");
+@import url("components/empty.css");
+@import url("components/itemhead.css");
+
+@import url("patterns/app-shell.css");
+@import url("patterns/secure-dialog.css");
+@import url("patterns/extension-popup.css");

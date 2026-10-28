@@ -1,0 +1,11 @@
+/* extension-popup — the browser extension's popup: a narrow kh-dialog on the canvas.
+ * Elements: .head (brand + agent chip), .site (the tab's origin), .opts, .foot. Overrides component hooks only. */
+.kh-popup { width: var(--width-popup); min-height: 100%; margin: 0; padding: var(--space-3); }
+.kh-popup .kh-dialog { --dialog-width: 100%; }
+.kh-popup .kh-panel { --panel-pad: var(--space-3); }
+.kh-popup .head { display: flex; align-items: center; gap: var(--space-2); font: var(--text-heading); }
+.kh-popup .head .brand { margin-right: auto; display: inline-flex; align-items: center; gap: var(--space-2); }
+.kh-popup .head .brand .kh-i { color: var(--c-accent-strong); }
+.kh-popup .opts { display: grid; gap: var(--space-3); }
+.kh-popup .kh-dialog .foot .kh-btn.primary { flex: 1; justify-content: center; }
+.kh-popup [hidden] { display: none; }

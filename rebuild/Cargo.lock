@@ -1452,6 +1452,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyharbor-design-check"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "keyharbor-domain"
 version = "0.1.0"
 dependencies = [

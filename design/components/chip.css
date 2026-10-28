@@ -1,0 +1,13 @@
+/* chip — a domain or an actor. Modifiers: session · cred · dev · pay · personal (domains), agent (element .dot).
+ * Hooks: --chip-bg, --chip-fg, --chip-border. */
+.kh-chip { --chip-bg: var(--c-surface-2); --chip-fg: var(--c-ink-2); --chip-border: var(--c-line);
+  display: inline-flex; align-items: center; gap: var(--gap-tight); height: var(--size-chip); padding: 0 var(--space-2); border-radius: var(--radius-pill);
+  font: var(--text-small); font-weight: 600; background: var(--chip-bg); color: var(--chip-fg); border: 1px solid var(--chip-border); }
+.kh-chip .kh-i { --icon-size: var(--size-icon-sm); }
+.kh-chip.session  { --chip-bg: var(--c-dom-session-wash);  --chip-fg: var(--c-dom-session);  --chip-border: transparent; }
+.kh-chip.cred     { --chip-bg: var(--c-dom-cred-wash);     --chip-fg: var(--c-dom-cred);     --chip-border: transparent; }
+.kh-chip.pay      { --chip-bg: var(--c-dom-pay-wash);      --chip-fg: var(--c-dom-pay);      --chip-border: transparent; }
+.kh-chip.personal { --chip-bg: var(--c-dom-personal-wash); --chip-fg: var(--c-dom-personal); --chip-border: transparent; }
+.kh-chip.dev      { --chip-bg: var(--c-dom-dev-wash);      --chip-fg: var(--c-dom-dev);      --chip-border: transparent; }
+.kh-chip.agent    { --chip-bg: var(--c-surface); --chip-border: var(--c-line-strong); --chip-fg: var(--c-ink); }
+.kh-chip.agent .dot { width: var(--size-dot); height: var(--size-dot); border-radius: 50%; background: var(--c-ok); }

@@ -1,0 +1,6 @@
+/* audit — one usage-log line. Elements: .t (time), .kh-chip (who), .what, a badge (result). */
+.kh-audit { display: grid; grid-template-columns: var(--audit-col-time) var(--audit-col-who) 1fr auto; gap: var(--space-3); align-items: center;
+  padding: var(--gap-tight) var(--space-3); border-bottom: 1px solid var(--c-line); font: var(--text-small); }
+.kh-audit .kh-chip { justify-self: start; max-width: 100%; overflow: hidden; }
+.kh-audit .t { font: var(--text-mono-sm); color: var(--c-ink-3); }
+.kh-audit .what { font: var(--text-mono-sm); color: var(--c-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

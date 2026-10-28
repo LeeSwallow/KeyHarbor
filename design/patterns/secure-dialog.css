@@ -1,0 +1,3 @@
+/* secure-dialog — a kh-dialog.secure over a scrim, with who is asking shown first. */
+.kh-scrim { padding: var(--space-6); border-radius: var(--radius-lg); background: var(--scrim); display: grid; place-items: center; }
+.kh-scrim .kh-dialog .who .kh-i { color: var(--c-accent-strong); }

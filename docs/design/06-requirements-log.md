@@ -73,6 +73,11 @@ flowchart TD
 | R-38 | 설명 필드 (에이전트가 언제 무엇을 쓸지) | 설명 | **반영**: 항목·필드(FieldSpec 기본값 + 항목별)·세션 설명, 500자. 항목·필드 설명은 메타 MAC 서명. 금고 값이 든 설명은 거부. env 항목 계층은 만들지 않는다(이름 규칙과 설명으로 구분) | J-63, J-64 |
 | R-39 | `browser_login` MCP 도구 | 로그인 도구 | **반영**: username·password 칸을 찾아 기존 PEP 경로(`fill`)로 입력, 선택적 Enter | 02 §2.5.2, J-65 |
 | R-40 | "`secret`·`env` 종류를 자격 증명 도메인에서 새 도메인으로 분리" (쓰임새가 다르다: login은 허용된 사이트 입력칸으로, secret·env는 프로세스·도구로 주입. 릴리스 전이라 지금 나눈다) | 도메인 분할 | **반영**: 다섯 번째 도메인 `developer`(byte 4, 키 `DK_dev`). login만 자격 증명에 남는다. 기존 금고는 열 때 한 번, 한 트랜잭션으로 옮긴다 | 02 §2.7.1·§2.7.2, 03 §3.3, 07 §7.5, J-54 |
+| R-41 | "환경변수를 어떻게 쓸지(실행 스크립트나 명령어에 붙여넣을지 등)는 사용하기 나름", "python keyring이나 aws secretmanager를 확인해봐" | 개발자 비밀의 성격 | **결정**: 이름·메타·값만 아는 범용 저장소, 꺼내는 통로(환경 변수·파일·참조 치환)는 `run` 안에서만 연다. 통로 ④(실행 중 로컬 조회)는 미정. [설계 2판](../superpowers/specs/2026-10-29-developer-secrets-design.md) |
+| R-42 | "전용 프로필에서 드래그같은걸로 쓸수 있는 권한 복사 가능한 느낌으로" | 평소 브라우저의 로그인 넘기기 | **일부 반영**: Chrome·Firefox 확장(`integrations/browser-extension`)이 사이트 하나의 쿠키를 넘긴다. 받는 native host와 감독자 쪽은 4단계. [설계](../superpowers/specs/2026-10-29-site-handoff-and-grants-design.md) |
+| R-43 | "해당 도메인/환경변수 안에서 수행하면 되니까" | 권한 범위 | **결정**: grant(누구에게·어디까지·언제까지) 하나로 브라우저 사이트와 개발자 비밀을 다룬다. 4단계 |
+| R-44 | "rust 테스트 모듈이나 npm 써, python은 기존 패턴과 너무 안맞지 않아?" | 저장소 도구 언어 | **반영**: 디자인 검사는 dev 전용 crate `keyharbor-design-check`, 확장은 npm·TypeScript. 저장소 도구에 Python을 쓰지 않는다 |
+| R-45 | "다끝나면 릴리즈하고 stickypane처럼 dmg 설치까지 제대로 구성해봐" | 배포 | **결정**: 5단계 관리 앱 뒤에 릴리스하고, 앱 번들 안에 CLI를 넣은 DMG로 설치하게 한다 |
 
 ## 6.3 설계자 판단 목록
 
@@ -147,6 +152,9 @@ flowchart TD
 | J-65 | `browser_login`: username은 `autocomplete=username` → `type=email` → name·id에 user/email/login 순, password는 C1과 같은 판정. 같은 origin의 frame까지 찾는다(`documentURL`의 origin 비교). 항목에 username 필드가 없으면 password만 넣는다. 입력은 `fill`의 검사 경로를 그대로 부른다. login 종류만 받는다 | 02 §2.5.2 |
 | J-66 | Minor: 제어 socket의 `agent`가 `*`이면 거부(빈 문자열은 이미 거부). `RLIMIT_CORE=0`은 `keyharbor` 바이너리 시작 시 설정해 감독자(`__supervise`)와 CLI 모두에 적용된다. 거부 기록은 세션당 초당 10건, 넘친 수는 다음 초가 시작되거나 감독자가 끝날 때 `secret_denied_suppressed` 한 건(결과 = 개수)으로 남긴다 | 02 §2.7 |
 | J-67 | I4: 탐색 상태는 broker가 `Page.frameRequestedNavigation`·`frameStartedNavigating`·`frameStartedLoading`·`frameScheduledNavigation`(시작), `frameStoppedLoading`·`frameDetached`(끝)으로 판단한다. `frameClearedScheduledNavigation`은 끝으로 보지 않는다(Chrome이 실제 탐색이 시작될 때 보낸다). 정착 대기는 브라우저에 묻지 않는다: 탐색이 대기 중이면 페이지 명령(`Page.getFrameTree` 등)이 새 문서가 올 때까지 멈추기 때문 | 03 §3.8 |
+| J-68 | 디자인 시스템: 주 버튼과 개수 배지는 강조색이 아니라 한 단계 짙은 `--c-accent-fill`(라이트 `#047a7a`)을 칠한다. 흰 글자가 `#05a8a8` 위에서 2.93:1이라 AA를 넘지 못한다. 강조색은 포커스·토글·탭에 남긴다. `--c-ink-3`은 보조 글자로 3:1만 약속한다 | ADR-0015 |
+| J-69 | 확장의 쿠키 변환: host-only 쿠키는 CDP에 `domain` 없이 `url`로 준다. CDP는 `domain`이 있으면 도메인 쿠키로 넓히기 때문이다. `SameSite=None`인데 `Secure`가 아니면 sameSite를 뺀다. 파티션 쿠키는 최상위 사이트가 이 사이트인 것만 넘긴다 | integrations/browser-extension/README.md |
+| J-70 | 확장 권한에 `scripting`을 더한다. 사람이 `localStorage`도 넘기기를 고를 때 그 탭에서 읽는 데만 쓴다. 사이트 접근은 설치 때 받지 않고 넘길 때 그 사이트와 하위 도메인만 `permissions.request`로 묻는다 | integrations/browser-extension/README.md |
 
 ## 6.4 열린 질문
 

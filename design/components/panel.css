@@ -1,0 +1,3 @@
+/* panel — a solid card on the canvas. Hook: --panel-pad. */
+.kh-panel { --panel-pad: var(--pad-panel);
+  background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--radius-lg); padding: var(--panel-pad); box-shadow: var(--shadow-1); }

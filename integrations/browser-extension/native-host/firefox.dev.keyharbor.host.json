@@ -1,0 +1,9 @@
+{
+  "name": "dev.keyharbor.host",
+  "description": "KeyHarbor native host: receives one site login for an agent session (R-42)",
+  "path": "/usr/local/bin/keyharbor-native-host",
+  "type": "stdio",
+  "allowed_extensions": [
+    "browser-extension@keyharbor.dev"
+  ]
+}

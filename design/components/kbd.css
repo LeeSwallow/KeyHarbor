@@ -1,0 +1,3 @@
+/* kbd — a key. */
+.kh-kbd { display: inline-grid; place-items: center; min-width: var(--size-badge); height: var(--size-badge); padding: 0 var(--space-1); border-radius: var(--radius-xs);
+  border: 1px solid var(--c-line-strong); color: var(--c-ink-3); font: var(--text-mono-sm); }

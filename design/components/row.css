@@ -1,0 +1,14 @@
+/* row — an item or a session in a list. Elements: .glyph (+ domain modifier), .main, .title, .sub, .meta. States: is-hover, is-selected. */
+.kh-row { display: flex; align-items: center; gap: var(--space-3); min-height: var(--row-h); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); cursor: pointer; }
+.kh-row:hover, .kh-row.is-hover { background: var(--c-surface-3); }
+.kh-row.is-selected { background: var(--c-accent-wash); }
+.kh-row .glyph { display: grid; place-items: center; width: var(--size-glyph); height: var(--size-glyph); border-radius: var(--radius-glyph); flex: none; }
+.kh-row .glyph.cred { background: var(--c-dom-cred-wash); color: var(--c-dom-cred); }
+.kh-row .glyph.pay { background: var(--c-dom-pay-wash); color: var(--c-dom-pay); }
+.kh-row .glyph.personal { background: var(--c-dom-personal-wash); color: var(--c-dom-personal); }
+.kh-row .glyph.dev { background: var(--c-dom-dev-wash); color: var(--c-dom-dev); }
+.kh-row .glyph.session { background: var(--c-dom-session-wash); color: var(--c-dom-session); }
+.kh-row .main { flex: 1; min-width: 0; }
+.kh-row .title { font: var(--text-body-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kh-row .sub { font: var(--text-small); color: var(--c-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kh-row .meta { font: var(--text-small); color: var(--c-ink-3); white-space: nowrap; }

@@ -1,0 +1,7 @@
+/* window — an app window frame with a title bar and macOS lights. */
+.kh-window { background: var(--c-bg); border: 1px solid var(--c-line-strong); border-radius: var(--radius-window); box-shadow: var(--shadow-3); overflow: hidden; }
+.kh-titlebar { display: flex; align-items: center; gap: var(--space-3); height: var(--size-titlebar); padding: 0 var(--space-3); background: var(--c-surface); border-bottom: 1px solid var(--c-line); }
+.kh-lights { display: flex; gap: var(--gap-tight); }
+.kh-lights i { width: var(--size-light); height: var(--size-light); border-radius: 50%; background: var(--c-light-close); }
+.kh-lights i:nth-child(2) { background: var(--c-light-minimize); }
+.kh-lights i:nth-child(3) { background: var(--c-light-zoom); }
