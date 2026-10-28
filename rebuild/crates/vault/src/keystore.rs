@@ -134,10 +134,25 @@ mod mac {
     }
 }
 
-/// `KEYHARBOR_TEST_KEYSTORE_DIR` selects the insecure file store (tests only); otherwise the keychain.
+/// The plaintext test key directory, honoured only when built with `insecure-test-keystore`.
+pub fn test_keystore_dir() -> Option<PathBuf> {
+    #[cfg(feature = "insecure-test-keystore")]
+    {
+        std::env::var_os(TEST_KEYSTORE_ENV).map(PathBuf::from)
+    }
+    #[cfg(not(feature = "insecure-test-keystore"))]
+    {
+        None
+    }
+}
+
+/// The macOS keychain, or the insecure file store in test builds that set `KEYHARBOR_TEST_KEYSTORE_DIR`.
 pub fn keystore_from_env() -> Box<dyn KeyStore> {
-    if let Some(dir) = std::env::var_os(TEST_KEYSTORE_ENV) {
-        return Box::new(FileKeyStore::new(PathBuf::from(dir)));
+    if let Some(dir) = test_keystore_dir() {
+        eprintln!(
+            "warning: INSECURE test key store in use ({TEST_KEYSTORE_ENV}); the root key is stored in plaintext"
+        );
+        return Box::new(FileKeyStore::new(dir));
     }
     #[cfg(target_os = "macos")]
     {
@@ -214,5 +229,14 @@ mod tests {
     fn mac_keychain_follows_create_get_replace_delete_rules() {
         let account = format!("test-{}", uuid::Uuid::new_v4());
         exercise(&MacKeychain, &account);
+    }
+
+    #[cfg(not(feature = "insecure-test-keystore"))]
+    #[test]
+    fn test_keystore_dir_is_ignored_without_the_feature() {
+        // SAFETY: no other test in this crate reads or writes this variable.
+        unsafe { std::env::set_var(TEST_KEYSTORE_ENV, "/tmp/should-not-be-used") };
+        assert!(test_keystore_dir().is_none());
+        unsafe { std::env::remove_var(TEST_KEYSTORE_ENV) };
     }
 }

@@ -233,6 +233,8 @@ sequenceDiagram
   Note over C,DB: 어느 단계에서 중단돼도 DK 레코드의 kek_id를 보고<br/>현재 RK와 임시 RK 중 맞는 것을 고른다
 ```
 
+**동시 실행 안전성** [구현, 리뷰 I1·I2] — 교체는 데이터 폴더의 `vault.lock`에 배타 잠금을 잡고, 시작할 때 읽은 `vault.version`이 커밋 시점에도 같을 때만 커밋한다(CAS). 다른 프로세스가 그사이 항목을 바꿨다면 교체는 아무것도 바꾸지 않고 "vault changed during rotation"으로 끝난다. 금고를 여는 쪽은 잠금을 얻을 수 있을 때만 남은 `#next` 키를 지우고, 주 키로 열리지 않으면 잠금을 기다린 뒤 다시 시도한다. 모든 쓰기(`add`·`edit`)는 자신이 쓴 KEK ID와 도메인 키 ID가 DB의 현재 값과 같은지 같은 트랜잭션 안에서 확인하고, 다르면 "vault changed; reopen"으로 거부한다. 그래서 교체 전에 연 오래된 프로세스가 죽은 키로 봉인하거나 낡은 MK로 서명하지 못한다.
+
 **삭제** — 항목 삭제는 SQLite에서 `PRAGMA secure_delete = ON`으로 빈 페이지를 덮어쓴다. WAL 파일과 SSD 특성상 완전한 물리 삭제는 보장하지 않는다. 금고 전체 파기는 **Keychain의 RK를 지우는 것**으로 남은 암호문을 무의미하게 만든다(crypto-shredding).
 
 ## 7.9 03 화이트페이퍼에서 바뀌는 것

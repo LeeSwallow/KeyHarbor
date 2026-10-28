@@ -17,4 +17,5 @@ serde_json.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+keyharbor-vault = { path = "../vault", features = ["insecure-test-keystore"] }
 tempfile.workspace = true

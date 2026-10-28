@@ -10,7 +10,7 @@ pub use transfer::ImportReport;
 
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::vault::{Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
-use keyharbor_sqlite::{DomainKeyRow, FieldRow, ItemRow, SqliteStore, VaultRow};
+use keyharbor_sqlite::{DomainKeyRow, FieldRow, ItemRow, KeyGuard, SqliteStore, VaultRow};
 use keyharbor_vault::{
     VaultError,
     keys::{KeyId, KeySet, SecretKey, VaultId},
@@ -118,6 +118,7 @@ pub struct Vault {
     store: SqliteStore,
     keystore: Box<dyn KeyStore>,
     vault_id: VaultId,
+    kek_id: KeyId,
     keys: KeySet,
     domain_keys: BTreeMap<Domain, (KeyId, SecretKey)>,
 }
@@ -227,6 +228,7 @@ impl Vault {
             store,
             keystore,
             vault_id,
+            kek_id,
             keys,
             domain_keys,
         })
@@ -235,46 +237,66 @@ impl Vault {
     pub fn open(store: SqliteStore, keystore: Box<dyn KeyStore>) -> Result<Vault> {
         let row = store.vault_get()?.context("vault not initialized")?;
         let vault_id = VaultId::from_bytes(row.vault_id);
-        let root = match keystore.get(&account(&vault_id)) {
-            Ok(root) => root,
+        let main = account(&vault_id);
+        let next = rotate::next_account(&main);
+        let get_main = || match keystore.get(&main) {
+            Ok(root) => Ok(root),
             Err(VaultError::KeyNotFound) => {
                 bail!("vault key not found; refusing to create a new one")
             }
-            Err(e) => return Err(vault_err(e)),
+            Err(e) => Err(vault_err(e)),
         };
-        let main = account(&vault_id);
-        let next = rotate::next_account(&main);
-        let keys = KeySet::derive(&root, &vault_id);
+        let keys = KeySet::derive(&get_main()?, &vault_id);
         let (keys, domain_keys) = match Self::unwrap_all(&store, &keys, &vault_id) {
             Ok(domain_keys) => {
-                // A parked key from an interrupted rotation that never reached the DB, or that was
-                // already promoted, is no longer needed.
-                match keystore.delete(&next) {
-                    Ok(()) | Err(VaultError::KeyNotFound) => {}
-                    Err(e) => return Err(vault_err(e)),
+                // A parked key left by an interrupted rotation is only safe to drop when no
+                // rotation is running; otherwise it may be the key the DB is about to depend on.
+                if let Some(_lock) = rotate::try_rotation_lock(&store)? {
+                    match keystore.delete(&next) {
+                        Ok(()) | Err(VaultError::KeyNotFound) => {}
+                        Err(e) => return Err(vault_err(e)),
+                    }
                 }
                 (keys, domain_keys)
             }
             Err(original) => {
-                // The DB was re-keyed but the new root key was not promoted yet: finish the rotation.
-                let Ok(parked) = keystore.get(&next) else {
-                    return Err(original);
-                };
-                let parked_keys = KeySet::derive(&parked, &vault_id);
-                let domain_keys =
-                    Self::unwrap_all(&store, &parked_keys, &vault_id).map_err(|_| original)?;
-                keystore.replace(&main, &parked).map_err(vault_err)?;
-                keystore.delete(&next).map_err(vault_err)?;
-                (parked_keys, domain_keys)
+                // The DB was re-keyed under a root key that is not promoted yet. Wait for any
+                // running rotation, then retry the main key before finishing the promotion.
+                let _lock = rotate::rotation_lock(&store)?;
+                let keys = KeySet::derive(&get_main()?, &vault_id);
+                if let Ok(domain_keys) = Self::unwrap_all(&store, &keys, &vault_id) {
+                    (keys, domain_keys)
+                } else {
+                    let Ok(parked) = keystore.get(&next) else {
+                        return Err(original);
+                    };
+                    let parked_keys = KeySet::derive(&parked, &vault_id);
+                    let domain_keys =
+                        Self::unwrap_all(&store, &parked_keys, &vault_id).map_err(|_| original)?;
+                    keystore.replace(&main, &parked).map_err(vault_err)?;
+                    keystore.delete(&next).map_err(vault_err)?;
+                    (parked_keys, domain_keys)
+                }
             }
         };
+        let kek_id = KeyId::from_bytes(store.vault_get()?.context("vault not initialized")?.kek_id);
         Ok(Vault {
             store,
             keystore,
             vault_id,
+            kek_id,
             keys,
             domain_keys,
         })
+    }
+
+    /// The key generation this handle seals and signs with; stale handles are refused on write.
+    fn guard(&self, domain: Domain) -> KeyGuard {
+        KeyGuard {
+            kek_id: *self.kek_id.as_bytes(),
+            domain: domain.as_byte(),
+            dk_id: *self.domain_keys[&domain].0.as_bytes(),
+        }
     }
 
     pub(crate) fn unwrap_all(
@@ -402,7 +424,7 @@ impl Vault {
             .iter()
             .map(|(name, value)| self.seal(&id, domain, name, value))
             .collect();
-        self.store.item_insert(&row, &fields)
+        self.store.item_insert(&self.guard(domain), &row, &fields)
     }
 
     pub fn edit(&self, name: &ItemName, change: ItemChange) -> Result<()> {
@@ -436,7 +458,7 @@ impl Vault {
         }
         row.updated_at = now_rfc3339();
         row.meta_mac = self.mac_for(&row, kind, &name, &origins);
-        self.store.item_update(&row, &kept)
+        self.store.item_update(&self.guard(domain), &row, &kept)
     }
 
     pub fn remove(&self, name: &ItemName) -> Result<bool> {

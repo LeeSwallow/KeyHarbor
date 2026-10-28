@@ -54,6 +54,37 @@ fn id16(bytes: Vec<u8>) -> rusqlite::Result<[u8; 16]> {
     })
 }
 
+/// The key generation a writer sealed and signed with. Writes are refused if it is stale.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyGuard {
+    pub kek_id: [u8; 16],
+    pub domain: u8,
+    pub dk_id: [u8; 16],
+}
+
+fn check_guard(tx: &Transaction, guard: &KeyGuard) -> Result<()> {
+    let current: i64 = tx.query_row(
+        "SELECT count(*) FROM vault v, domain_keys d WHERE v.kek_id=?1 AND d.domain=?2 AND d.dk_id=?3",
+        params![guard.kek_id, guard.domain, guard.dk_id],
+        |row| row.get(0),
+    )?;
+    if current != 1 {
+        bail!("vault changed (keys were rotated); reopen it and retry");
+    }
+    Ok(())
+}
+
+fn bump_from(tx: &Transaction, expected_version: i64) -> Result<()> {
+    if tx.execute(
+        "UPDATE vault SET version = version + 1 WHERE version = ?1",
+        [expected_version],
+    )? != 1
+    {
+        bail!("vault changed during rotation; nothing was changed");
+    }
+    Ok(())
+}
+
 fn bump(tx: &Transaction) -> Result<()> {
     if tx.execute("UPDATE vault SET version = version + 1", [])? != 1 {
         bail!("vault not initialized");
@@ -129,8 +160,9 @@ impl SqliteStore {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    pub fn item_insert(&self, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
+    pub fn item_insert(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
         let tx = self.write_tx()?;
+        check_guard(&tx, guard)?;
         let inserted = tx.execute(
             "INSERT INTO vault_items (id, name, domain, kind, origin_binding, status, source, meta_mac, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(name) DO NOTHING",
             params![item.id, item.name, item.domain, item.kind, item.origin_binding, item.status, item.source, item.meta_mac, item.updated_at],
@@ -144,8 +176,9 @@ impl SqliteStore {
         Ok(())
     }
 
-    pub fn item_update(&self, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
+    pub fn item_update(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
         let tx = self.write_tx()?;
+        check_guard(&tx, guard)?;
         let updated = tx.execute(
             "UPDATE vault_items SET name=?2, domain=?3, kind=?4, origin_binding=?5, status=?6, source=?7, meta_mac=?8, updated_at=?9 WHERE id=?1",
             params![item.id, item.name, item.domain, item.kind, item.origin_binding, item.status, item.source, item.meta_mac, item.updated_at],
@@ -233,11 +266,13 @@ impl SqliteStore {
     /// Re-wraps all domain keys under a new KEK and replaces every item's metadata MAC atomically.
     pub fn rekey_domain_keys(
         &self,
+        expected_version: i64,
         new_kek_id: [u8; 16],
         dks: &[DomainKeyRow],
         metas: &[([u8; 16], Vec<u8>)],
     ) -> Result<()> {
         let tx = self.write_tx()?;
+        bump_from(&tx, expected_version)?;
         tx.execute("UPDATE vault SET kek_id=?1", [new_kek_id])?;
         for dk in dks {
             if tx.execute(
@@ -254,14 +289,19 @@ impl SqliteStore {
                 params![id, mac],
             )?;
         }
-        bump(&tx)?;
         tx.commit()?;
         Ok(())
     }
 
     /// Replaces one domain key and the given re-encrypted fields atomically.
-    pub fn replace_domain(&self, dk: &DomainKeyRow, fields: &[([u8; 16], FieldRow)]) -> Result<()> {
+    pub fn replace_domain(
+        &self,
+        expected_version: i64,
+        dk: &DomainKeyRow,
+        fields: &[([u8; 16], FieldRow)],
+    ) -> Result<()> {
         let tx = self.write_tx()?;
+        bump_from(&tx, expected_version)?;
         if tx.execute(
             "UPDATE domain_keys SET dk_id=?2, wrapped=?3 WHERE domain=?1",
             params![dk.domain, dk.dk_id, dk.wrapped],
@@ -278,7 +318,6 @@ impl SqliteStore {
                 bail!("field not found during domain rotation");
             }
         }
-        bump(&tx)?;
         tx.commit()?;
         Ok(())
     }
@@ -303,6 +342,12 @@ impl SqliteStore {
 mod tests {
     use super::*;
     use crate::SqliteStore;
+
+    const G: KeyGuard = KeyGuard {
+        kek_id: [8; 16],
+        domain: 1,
+        dk_id: [1; 16],
+    };
 
     fn store() -> (tempfile::TempDir, SqliteStore) {
         let tmp = tempfile::tempdir().unwrap();
@@ -376,7 +421,7 @@ mod tests {
     fn item_roundtrip_and_cascade() {
         let (_t, s) = store();
         with_vault(&s);
-        s.item_insert(&item("github", 1), &fields()).unwrap();
+        s.item_insert(&G, &item("github", 1), &fields()).unwrap();
         let (row, f) = s.item_get("github").unwrap().unwrap();
         assert_eq!(row, item("github", 1));
         assert_eq!(f, fields());
@@ -390,8 +435,10 @@ mod tests {
     fn duplicate_name_fails_without_partial_rows() {
         let (_t, s) = store();
         with_vault(&s);
-        s.item_insert(&item("github", 1), &fields()).unwrap();
-        let err = s.item_insert(&item("github", 2), &fields()).unwrap_err();
+        s.item_insert(&G, &item("github", 1), &fields()).unwrap();
+        let err = s
+            .item_insert(&G, &item("github", 2), &fields())
+            .unwrap_err();
         assert!(err.to_string().contains("item already exists"), "{err}");
         assert_eq!(s.count_rows("vault_items").unwrap(), 1);
         assert_eq!(s.count_rows("vault_fields").unwrap(), 2);
@@ -401,14 +448,14 @@ mod tests {
     fn update_replaces_fields_and_origins() {
         let (_t, s) = store();
         with_vault(&s);
-        s.item_insert(&item("github", 1), &fields()).unwrap();
+        s.item_insert(&G, &item("github", 1), &fields()).unwrap();
         let mut changed = item("github", 1);
         changed.origins = vec![
             "https://gist.github.com".into(),
             "https://github.com".into(),
         ];
         changed.status = "draft".into();
-        s.item_update(&changed, &fields()[..1]).unwrap();
+        s.item_update(&G, &changed, &fields()[..1]).unwrap();
         let (row, f) = s.item_get("github").unwrap().unwrap();
         assert_eq!(row, changed);
         assert_eq!(f.len(), 1);
@@ -418,24 +465,67 @@ mod tests {
         let (_t, s) = store();
         with_vault(&s);
         let v0 = s.vault_version().unwrap();
-        s.item_insert(&item("github", 1), &fields()).unwrap();
-        s.item_update(&item("github", 1), &fields()).unwrap();
+        s.item_insert(&G, &item("github", 1), &fields()).unwrap();
+        s.item_update(&G, &item("github", 1), &fields()).unwrap();
         s.item_delete("github").unwrap();
         assert_eq!(s.vault_version().unwrap(), v0 + 3);
+    }
+    #[test]
+    fn stale_guard_and_version_are_refused() {
+        let (_t, s) = store();
+        with_vault(&s);
+        let stale = KeyGuard {
+            kek_id: [7; 16],
+            ..G
+        };
+        assert!(
+            s.item_insert(&stale, &item("github", 1), &fields())
+                .unwrap_err()
+                .to_string()
+                .contains("vault changed")
+        );
+        let stale_dk = KeyGuard {
+            dk_id: [2; 16],
+            ..G
+        };
+        assert!(
+            s.item_insert(&stale_dk, &item("github", 1), &fields())
+                .is_err()
+        );
+        assert!(s.item_list().unwrap().is_empty());
+        let v = s.vault_version().unwrap();
+        let dk = DomainKeyRow {
+            domain: 1,
+            dk_id: [0x10; 16],
+            wrapped: vec![0x11; 8],
+        };
+        assert!(
+            s.replace_domain(v + 1, &dk, &[])
+                .unwrap_err()
+                .to_string()
+                .contains("vault changed")
+        );
+        assert!(s.rekey_domain_keys(v + 1, [5; 16], &[], &[]).is_err());
+        assert_eq!(s.vault_get().unwrap().unwrap().kek_id, [8; 16]);
     }
     #[test]
     fn rekey_is_atomic() {
         let (_t, s) = store();
         with_vault(&s);
-        s.item_insert(&item("github", 1), &fields()).unwrap();
+        s.item_insert(&G, &item("github", 1), &fields()).unwrap();
         let bad = [DomainKeyRow {
             domain: 4,
             dk_id: [0; 16],
             wrapped: vec![0],
         }];
         assert!(
-            s.rekey_domain_keys([5; 16], &bad, &[([1; 16], vec![0; 32])])
-                .is_err()
+            s.rekey_domain_keys(
+                s.vault_version().unwrap(),
+                [5; 16],
+                &bad,
+                &[([1; 16], vec![0; 32])]
+            )
+            .is_err()
         );
         assert_eq!(s.vault_get().unwrap().unwrap().kek_id, [8; 16]);
         assert_eq!(
@@ -449,8 +539,13 @@ mod tests {
                 wrapped: vec![0xee; 8],
             })
             .collect();
-        s.rekey_domain_keys([5; 16], &good, &[([1; 16], vec![0xaa; 32])])
-            .unwrap();
+        s.rekey_domain_keys(
+            s.vault_version().unwrap(),
+            [5; 16],
+            &good,
+            &[([1; 16], vec![0xaa; 32])],
+        )
+        .unwrap();
         assert_eq!(s.vault_get().unwrap().unwrap().kek_id, [5; 16]);
         assert_eq!(
             s.item_get("github").unwrap().unwrap().0.meta_mac,
@@ -467,7 +562,7 @@ mod tests {
     fn replace_domain_swaps_key_and_fields_together() {
         let (_t, s) = store();
         with_vault(&s);
-        s.item_insert(&item("github", 1), &fields()).unwrap();
+        s.item_insert(&G, &item("github", 1), &fields()).unwrap();
         let dk = DomainKeyRow {
             domain: 1,
             dk_id: [0x10; 16],
@@ -480,7 +575,8 @@ mod tests {
                 sealed: vec![9, 9],
             },
         )];
-        s.replace_domain(&dk, &new_fields).unwrap();
+        s.replace_domain(s.vault_version().unwrap(), &dk, &new_fields)
+            .unwrap();
         assert!(s.domain_keys().unwrap().contains(&dk));
         let (_, f) = s.item_get("github").unwrap().unwrap();
         assert!(f.contains(&FieldRow {

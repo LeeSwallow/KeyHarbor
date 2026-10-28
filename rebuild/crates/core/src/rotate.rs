@@ -1,27 +1,70 @@
 //! Root and domain key rotation (docs/design/07-cryptography-design.md §7.8).
 //! Root rotation never re-encrypts fields: it re-wraps the three domain keys and re-signs metadata.
+//!
+//! Rotations hold an exclusive lock on `<data dir>/vault.lock` and commit only if the vault
+//! version is unchanged since they read it, so concurrent writers make them abort, not corrupt.
 
 use crate::{Vault, account, vault_err};
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::vault::{Domain, FieldName};
-use keyharbor_sqlite::{DomainKeyRow, FieldRow};
+use keyharbor_sqlite::{DomainKeyRow, FieldRow, SqliteStore};
 use keyharbor_vault::{
     keys::{KeyId, KeySet, SecretKey},
     record::{FieldAd, open_field, seal_field, wrap_domain_key},
 };
+use std::fs::{File, TryLockError};
 
 pub(crate) fn next_account(vault: &str) -> String {
     format!("{vault}#next")
 }
 
+fn lock_file(store: &SqliteStore) -> Result<File> {
+    let path = store.root().join("vault.lock");
+    File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .with_context(|| format!("cannot open {}", path.display()))
+}
+
+/// Blocks until no other process is rotating keys.
+pub(crate) fn rotation_lock(store: &SqliteStore) -> Result<File> {
+    let file = lock_file(store)?;
+    file.lock().context("cannot take the vault rotation lock")?;
+    Ok(file)
+}
+
+/// `None` while another process holds the rotation lock.
+pub(crate) fn try_rotation_lock(store: &SqliteStore) -> Result<Option<File>> {
+    let file = lock_file(store)?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(TryLockError::WouldBlock) => Ok(None),
+        Err(TryLockError::Error(e)) => Err(e).context("cannot take the vault rotation lock"),
+    }
+}
+
 impl Vault {
     pub fn rotate_root(&mut self) -> Result<()> {
-        self.rotate_root_with_failpoint(0)
+        self.rotate_root_inner(0, || {})
     }
 
-    /// `stop_after` 1–3 aborts after that step, to test recovery. 0 runs to completion.
+    /// `stop_after` 1–3 aborts after that step, to test recovery.
     #[doc(hidden)]
     pub fn rotate_root_with_failpoint(&mut self, stop_after: u8) -> Result<()> {
+        self.rotate_root_inner(stop_after, || {})
+    }
+
+    /// Runs `hook` after the vault was read and before the re-key commits, to test races.
+    #[doc(hidden)]
+    pub fn rotate_root_with_hook(&mut self, hook: impl FnOnce()) -> Result<()> {
+        self.rotate_root_inner(0, hook)
+    }
+
+    fn rotate_root_inner(&mut self, stop_after: u8, hook: impl FnOnce()) -> Result<()> {
+        let _lock = rotation_lock(&self.store)?;
+        let version = self.store.vault_version()?;
         let items = self.store.item_list()?;
         for row in &items {
             self.verified(row).with_context(|| {
@@ -59,27 +102,25 @@ impl Vault {
             })
             .collect();
         let old_keys = std::mem::replace(&mut self.keys, new_keys);
-        let metas = items
+        let committed = items
             .iter()
             .map(|row| {
                 let (kind, name, origins) = self.verified_with(&old_keys, row)?;
                 Ok((row.id, self.mac_for(row, kind, &name, &origins)))
             })
-            .collect::<Result<Vec<_>>>();
-        let metas = match metas {
-            Ok(m) => m,
-            Err(e) => {
-                self.keys = old_keys;
-                return Err(e);
-            }
-        };
-        if let Err(e) = self
-            .store
-            .rekey_domain_keys(*kek_id.as_bytes(), &dks, &metas)
-        {
+            .collect::<Result<Vec<_>>>()
+            .and_then(|metas| {
+                hook();
+                self.store
+                    .rekey_domain_keys(version, *kek_id.as_bytes(), &dks, &metas)
+            });
+        if let Err(e) = committed {
             self.keys = old_keys;
+            // Nothing references the parked key yet.
+            let _ = self.keystore.delete(&next);
             return Err(e);
         }
+        self.kek_id = kek_id;
         if stop_after == 2 {
             bail!("failpoint");
         }
@@ -93,7 +134,18 @@ impl Vault {
     }
 
     pub fn rotate_domain(&mut self, domain: Domain) -> Result<()> {
+        self.rotate_domain_with_hook(domain, || {})
+    }
+
+    /// Runs `hook` after the fields were re-encrypted and before the commit, to test races.
+    #[doc(hidden)]
+    pub fn rotate_domain_with_hook(&mut self, domain: Domain, hook: impl FnOnce()) -> Result<()> {
+        let _lock = rotation_lock(&self.store)?;
+        let version = self.store.vault_version()?;
         let vault = self.store.vault_get()?.context("vault not initialized")?;
+        if vault.kek_id != *self.kek_id.as_bytes() {
+            bail!("vault changed (keys were rotated); reopen it and retry");
+        }
         let old_dk = self.domain_keys[&domain].1.clone();
         let (new_id, new_dk) = (KeyId::new(), SecretKey::generate());
         let mut fields = Vec::new();
@@ -125,20 +177,20 @@ impl Vault {
                 ));
             }
         }
-        let kek_id = KeyId::from_bytes(vault.kek_id);
         let dk_row = DomainKeyRow {
             domain: domain.as_byte(),
             dk_id: *new_id.as_bytes(),
             wrapped: wrap_domain_key(
                 self.keys.kek(),
-                &kek_id,
+                &self.kek_id,
                 &self.vault_id,
                 domain,
                 &new_id,
                 &new_dk,
             ),
         };
-        self.store.replace_domain(&dk_row, &fields)?;
+        hook();
+        self.store.replace_domain(version, &dk_row, &fields)?;
         self.domain_keys.insert(domain, (new_id, new_dk));
         Ok(())
     }
@@ -243,5 +295,109 @@ mod tests {
         .unwrap();
         assert!(v.rotate_root().is_err());
         assert!(v.list().unwrap()[0].tampered);
+    }
+
+    #[test]
+    fn open_does_not_delete_parked_key_during_rotation() {
+        use keyharbor_vault::keystore::{FileKeyStore, KeyStore};
+        let e = env();
+        let v = init(&e);
+        v.add(login("github", "pw")).unwrap();
+        let parked = format!("{}#next", v.vault_id().to_uuid_string());
+        FileKeyStore::new(e.keys.clone())
+            .create(&parked, &keyharbor_vault::keys::SecretKey::generate())
+            .unwrap();
+        let lock = std::fs::File::create(e.data.join("vault.lock")).unwrap();
+        lock.lock().unwrap();
+        reopen(&e).unwrap();
+        assert!(
+            next_key_exists(&e),
+            "parked key deleted while a rotation holds the lock"
+        );
+        drop(lock);
+        reopen(&e).unwrap();
+        assert!(!next_key_exists(&e));
+    }
+
+    #[test]
+    fn stale_vault_cannot_write_after_root_rotation() {
+        let e = env();
+        let v1 = init(&e);
+        let mut v2 = reopen(&e).unwrap();
+        v2.rotate_root().unwrap();
+        let err = v1.add(login("late", "x")).unwrap_err().to_string();
+        assert!(err.contains("vault changed"), "{err}");
+        reopen(&e).unwrap().add(login("late", "x")).unwrap();
+        assert!(
+            !reopen(&e)
+                .unwrap()
+                .list()
+                .unwrap()
+                .iter()
+                .any(|i| i.tampered)
+        );
+    }
+
+    #[test]
+    fn stale_vault_cannot_write_after_domain_rotation() {
+        let e = env();
+        let v1 = init(&e);
+        let mut v2 = reopen(&e).unwrap();
+        v2.rotate_domain(Domain::Payment).unwrap();
+        let err = v1.add(card("visa", "4242")).unwrap_err().to_string();
+        assert!(err.contains("vault changed"), "{err}");
+        v1.add(login("github", "pw")).unwrap();
+        let fresh = reopen(&e).unwrap();
+        fresh.add(card("visa", "4242")).unwrap();
+        assert_eq!(&*fresh.resolve(&pref("visa", "number")).unwrap(), "4242");
+    }
+
+    #[test]
+    fn domain_rotation_aborts_when_vault_changes_midway() {
+        let e = env();
+        let mut v = init(&e);
+        v.add(card("visa", "4242")).unwrap();
+        let err = v
+            .rotate_domain_with_hook(Domain::Payment, || {
+                reopen(&e)
+                    .unwrap()
+                    .edit(
+                        &ItemName::parse("visa").unwrap(),
+                        crate::ItemChange {
+                            set_fields: vec![(
+                                FieldName::parse("number").unwrap(),
+                                Zeroizing::new("5555".into()),
+                            )],
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+            })
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("vault changed"), "{err}");
+        assert_eq!(
+            &*reopen(&e)
+                .unwrap()
+                .resolve(&pref("visa", "number"))
+                .unwrap(),
+            "5555"
+        );
+    }
+
+    #[test]
+    fn root_rotation_aborts_when_vault_changes_midway() {
+        let e = env();
+        let mut v = init(&e);
+        v.add(login("github", "pw")).unwrap();
+        let err = v
+            .rotate_root_with_hook(|| reopen(&e).unwrap().add(login("late", "x")).unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("vault changed"), "{err}");
+        let again = reopen(&e).unwrap();
+        assert!(!again.list().unwrap().iter().any(|i| i.tampered));
+        assert_eq!(&*again.resolve(&pref("late", "password")).unwrap(), "x");
+        assert!(!next_key_exists(&e));
     }
 }
