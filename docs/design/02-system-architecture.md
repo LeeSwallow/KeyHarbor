@@ -6,7 +6,9 @@
 
 | 관점 | 선택 | 근거 |
 |---|---|---|
-| 전체 구조 | **헥사고날(Ports & Adapters)**. 도메인은 I/O에 의존하지 않는다 | 기존 `rebuild/ARCHITECTURE.md`의 의존 방향을 그대로 따른다 |
+| 전체 구조 | **헥사고날(Ports & Adapters) + Clean Architecture 의존 규칙**. 도메인과 포트(trait)는 I/O에 의존하지 않고, 어댑터가 포트를 구현하며, 인터페이스(CLI·MCP)가 조립한다(composition root) | R-30, R-31, [ADR-0014](adr/0014-hexagonal-guard-layer.md) |
+| 보안 계층 | 평문을 다루는 판단·집행을 **`keyharbor-guard`** 한 crate에 모은다. PDP(정책 판정)와 PEP(치환·마스킹), 브라우저 데코레이터 `GuardedBrowser`, capability `PlaintextAccess` | 평문 경로를 하나로 만들어 검사 지점을 좁힌다 ([ADR-0014](adr/0014-hexagonal-guard-layer.md)) |
+| 영속성 | **Diesel 2.3**(동기 ORM) + Repository/Data Mapper, 바운디드 컨텍스트별 스키마·내장 마이그레이션 | R-32, R-33 ([§2.7.3](#273-영속성-컨텍스트-맵-r-32-r-33)) |
 | 실행 모델 | **서버 없는 CLI + 세션별 감독 프로세스**. 상시 데몬은 필수가 아니다 | 기존 프로토타입에서 검증한 모델 ([ADR-0004](adr/0004-supervisor-owns-cdp.md)) |
 | 저장소 | **SQLite (WAL)** 하나에 메타데이터·암호문·정책·기록을 둔다 | [`architecture-proposal.md`](../architecture-proposal.md)의 DB 비교 |
 | 브라우저 제어 | 감독 프로세스가 **CDP를 소유**하고, 에이전트에는 도구만 준다 | 마스킹·정책을 강제할 수 있는 유일한 위치 ([ADR-0004](adr/0004-supervisor-owns-cdp.md)) |
@@ -75,42 +77,87 @@ flowchart LR
 
 ## 2.4 C4 Level 3 — 컴포넌트 (crate 구조)
 
+헥사고날 구조에 의존 규칙(바깥 → 안쪽만)을 더했다. 화살표는 정상 의존(dev 제외)이다. [사용자 결정 R-30, R-31, ADR-0014]
+
 ```mermaid
 flowchart TB
-  subgraph interfaces["interfaces"]
-    c_cli["kh-cli"]
-    c_mcp["kh-mcp"]
-    c_app["kh-app (Tauri)"]
-  end
-  subgraph application["application"]
-    c_core["kh-core<br/>유스케이스: open · fill · reveal · policy · handoff"]
-  end
-  subgraph domain["domain (I/O 없음)"]
-    c_dom["kh-domain<br/>Session · State · Generation<br/>VaultItem · Placeholder · Policy<br/>SiteState · AuditEvent"]
+  subgraph interfaces["interfaces (composition root)"]
+    cli["keyharbor (CLI)"]
+    mcp["keyharbor-mcp"]
+    app["keyharbor-app (5단계, Tauri)"]
   end
   subgraph adapters["adapters"]
-    c_sql["kh-sqlite"]
-    c_vault["kh-vault<br/>AEAD · 포맷 · Keychain"]
-    c_broker["kh-broker<br/>감독자 · CDP · 치환 · 마스킹"]
+    broker["keyharbor-broker<br/>CDP · 감독자 · 제어 socket<br/>BrowserPort · PageInput · FrameInspector · SessionRuntime 구현"]
+    sqlite["keyharbor-sqlite<br/>Diesel · 컨텍스트별 repo<br/>저장소 포트 구현"]
+    vault["keyharbor-vault<br/>AEAD · 레코드 v1 · 메타 MAC<br/>KeyStore 구현(Keychain)"]
   end
-  c_cli & c_mcp & c_app --> c_core
-  c_core --> c_dom
-  c_sql & c_vault & c_broker --> c_dom
-  c_core --> c_sql & c_vault & c_broker
+  subgraph security["security (PDP / PEP)"]
+    guard["keyharbor-guard<br/>pdp · pep::{substitute, mask, origin}<br/>audit · run · GuardedBrowser"]
+  end
+  subgraph application["application (use cases)"]
+    core["keyharbor-core<br/>vault · session · rotate · transfer<br/>PlaintextAccess"]
+  end
+  subgraph domain["domain + ports (I/O 없음)"]
+    dom["keyharbor-domain<br/>엔티티 · 값 객체 · KINDS 레지스트리<br/>ports: VaultStore · SessionStore · PolicyStore<br/>AuditStore · SettingsStore · KeyStore<br/>BrowserPort · PageInput · FrameInspector<br/>SessionRuntime · StoreFactory"]
+  end
+  cli --> mcp & broker & sqlite & vault & guard & core
+  mcp --> broker & sqlite & vault & guard & core
+  broker --> guard
+  guard --> core
+  core --> vault
+  broker & sqlite & vault & guard & core --> dom
 ```
 
-| crate | 상태 | 핵심 타입·책임 |
-|---|---|---|
-| `kh-domain` | 기존 `rebuild/crates/domain` 확장 | 모듈 = 도메인([§2.7.1](#271-도메인-분할-r-24-r-25)): `session`(`SessionId`, `State::permits`, `Generation`, `SiteState`), `credentials`(`Login`, `Secret`, `EnvSet`), `payment`(`Card`), `personal`(`Identity`, `Address`), 공통 `vault`(`VaultItem`, `Domain`, `Placeholder::parse`, `Origin`), `policy`(`Policy::decide`), `audit`(`AuditEvent`) |
-| `kh-sqlite` | 기존 `rebuild/crates/sqlite` 확장 | 조건부 갱신(generation CAS), 마이그레이션, 백업 |
-| `kh-vault` | 신규 | `VaultKey`(zeroize), `seal/open`, 암호문 레코드 v1, Keychain 어댑터, 내보내기(Argon2id) |
-| `kh-broker` | 신규 (프로토타입 `src/lib.rs`·`main.rs`의 감독 로직 이식) | 프로세스 감독, CDP pipe 클라이언트, 제어 socket 서버, 치환기, 마스커 |
-| `kh-core` | 신규 | 인터페이스가 공유하는 유스케이스. 정책 판정과 기록을 한곳에서 |
-| `kh-cli` | 기존 `rebuild/crates/cli` 확장 | clap 명령 |
-| `kh-mcp` | 신규 (프로토타입 `src/mcp.rs` 이식) | rmcp 도구 정의 |
-| `kh-app` | 신규 | Tauri 명령 ↔ `kh-core` |
+| crate | 계층 | 의존 가능 (정상 의존) | 핵심 타입·책임 |
+|---|---|---|---|
+| `keyharbor-domain` | domain + ports | 없음 | `SessionId`·`State`·`Generation`, `vault`(`ItemKind`, `KINDS`, `Origin`, placeholder), `policy`(`Rule`), `audit`, `secret`(`SecretKey`, `VaultError`), `ports`(trait) |
+| `keyharbor-vault` | adapter | domain | 레코드 seal/open, 키 분리, 메타 MAC(I/O 없음), `KeyStore` 구현(`MacKeychain`, 테스트용 `FileKeyStore`) |
+| `keyharbor-core` | application | domain, vault(레코드 함수만) | `Vault` 유스케이스(`vault/{open, items, summary, resolve}`), `session/{lifecycle, handoff}`, `rotate`, `transfer`, `PlaintextAccess` |
+| `keyharbor-guard` | security | domain, core | `pdp::decide`, `pep::substitute`, `pep::mask::Masker`, `pep::origin`, `audit`, `run`, `Guard`, `GuardedBrowser` |
+| `keyharbor-sqlite` | adapter | domain | `SqliteStore`(저장소 포트 전부), `SqliteStores`(`StoreFactory`), 컨텍스트 레지스트리 |
+| `keyharbor-broker` | adapter | domain, guard | `CdpBrowser`(crate 내부), `supervisor`, `control`, `ProcessRuntime`(`SessionRuntime`) |
+| `keyharbor-mcp` | interface | domain, core, guard, broker, sqlite, vault | `server`, `scope`, `tools/{session, browser, vault}` |
+| `keyharbor` (CLI) | interface | 전부 | clap 명령, 감독자 조립(`__supervise`) |
 
-crate 이름과 경계는 구현자가 조정할 수 있다. 지켜야 할 것은 **의존 방향**(adapters → domain ← application ← interfaces)과 **평문 비밀이 `kh-broker`와 `kh-vault` 밖으로 나가지 않는다**는 점이다. 예외는 관리 앱의 평문 보기 경로(`kh-core::reveal`)이며, 이 경로는 MCP에서 호출할 수 없다.
+`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 vault만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음.
+
+### 2.4.1 PDP / PEP와 평문 경로
+
+평문 값이 만들어지는 곳은 두 군데뿐이다: `Vault::resolve`와 `Vault::mask_values`. 둘 다 `&PlaintextAccess`를 요구하고, 그 값은 guard가 검사를 마친 뒤에만 발급한다(예외: 사용자가 요청한 age 내보내기). core는 guard를 알 수 없으므로 생성자는 `#[doc(hidden)] pub`이고, 호출 위치를 스크립트가 제한한다(Rust에서 crate 사이 sealed 생성자의 가장 단순한 근사).
+
+```mermaid
+flowchart LR
+  req["control 요청<br/>(MCP · CLI → socket)"] --> ops["broker::ops<br/>요청 → Command"]
+  ops --> gb["GuardedBrowser<br/>(BrowserPort 데코레이터)"]
+  subgraph guard["keyharbor-guard"]
+    gb --> sub["PEP substitute<br/>항목 · 상태 · 정책 · origin 확인"]
+    sub --> pdp["PDP decide<br/>(rules, agent, action)"]
+    sub --> org["pep::origin<br/>frame origin 정확 일치"]
+    sub -->|"통과 시에만 PlaintextAccess 발급"| res["core Vault::resolve"]
+    gb --> mask["PEP mask<br/>응답·오류를 한 번만 가림"]
+    mask -->|"PlaintextAccess"| mv["core Vault::mask_values"]
+    sub -.->|"거부·사용"| aud["audit (값 없음)"]
+  end
+  gb --> raw["CdpBrowser (broker 내부)<br/>BrowserPort · PageInput · FrameInspector"]
+  raw --> chrome["Chrome (CDP pipe)"]
+```
+
+- **데코레이터**: `GuardedBrowser<'a, B: BrowserPort + PageInput + FrameInspector>`는 그 자신이 `BrowserPort`다. placeholder가 있는 `fill`·`type_text`는 `PageInput` 단계(포커스 → 검사 → 비우기 → 포커스 재확인 → 입력)를 직접 밟고, 나머지는 raw 어댑터에 위임한 뒤 결과와 오류 메시지를 마스킹한다. 요청마다 `Guard::browser(&mut raw, agent)`로 만든다. [J-44, J-45]
+- broker는 `browser`·`cdp` 모듈을 crate 밖에 공개하지 않는다. 그래서 MCP·CLI가 브라우저에 닿는 길은 제어 socket → `ops` → `GuardedBrowser` 하나뿐이다.
+- `keyharbor run`은 같은 PDP·origin 규칙을 `guard::run`에서 쓰고, 프로세스 실행과 출력 펌프만 CLI에 남는다.
+
+### 2.4.2 세션 유스케이스와 런타임 포트
+
+broker는 core에 의존할 수 없으므로, 세션 열기·멈추기·인계·복구·endpoint의 순서와 오류 메시지는 `keyharbor-core::session`에 있고 프로세스·OS 잠금·socket·`DevToolsActivePort` 파일은 `SessionRuntime` 포트 뒤(broker의 `ProcessRuntime`)에 있다. 감독자 프로세스는 `StoreFactory`(SQLite 어댑터)와 금고 opener를 인터페이스에게서 받는다(`supervisor::Adapters`). [J-47]
+
+```mermaid
+flowchart LR
+  cli["CLI · MCP"] -->|"SqliteStore + ProcessRuntime"| uc["core::session<br/>open · stop · wait_auth · resume · recover · endpoint"]
+  uc -->|"SessionStore · AuditStore"| st["sqlite"]
+  uc -->|"SessionRuntime"| rt["broker::ProcessRuntime<br/>lock · start(__supervise) · close · endpoint"]
+  rt --> sup["감독자 프로세스<br/>supervisor::run(Adapters)"]
+  sup --> guardbox["Guard + GuardedBrowser"]
+```
 
 ## 2.5 런타임 뷰
 
@@ -407,6 +454,60 @@ flowchart TB
 - 항목 이름, 종류, origin, 시각은 정책 판정과 목록 표시를 위해 **평문**이다. 이 메타데이터도 민감하다는 점을 문서와 관리 앱에 적는다. ([03 §3.5](03-security-whitepaper.md#35-저장-데이터-분류))
 - `AUDIT_EVENT`에는 값 컬럼이 **존재하지 않는다**. 스키마 수준에서 값 기록을 막는다.
 
+### 2.7.3 영속성 컨텍스트 맵 (R-32, R-33)
+
+`keyharbor-sqlite`는 기술 계층(models/·repos/)이 아니라 **바운디드 컨텍스트**로 나눈다. 컨텍스트마다 `schema.rs`(Diesel `table!`)·`models.rs`(저장 형태)·`mappers.rs`(저장 형태 ↔ 도메인)·`repo.rs`(포트 구현)와 자기 마이그레이션 디렉터리를 가진다. `contexts::CONTEXTS` 레지스트리 순서대로 각 컨텍스트의 `embed_migrations!`를 실행한다. 스키마 내용은 바꾸지 않았다. [사용자 결정 R-32, R-33, 세부는 J-48, J-49]
+
+```mermaid
+flowchart LR
+  subgraph reg["contexts::CONTEXTS (마이그레이션 순서)"]
+    direction LR
+    v["vault<br/>vault · domain_keys · vault_items<br/>vault_fields · item_origins<br/>→ VaultStore"]
+    s["session<br/>sessions · generations · handoff_requests<br/>→ SessionStore"]
+    a["access<br/>policy_rules<br/>→ PolicyStore"]
+    au["audit<br/>audit<br/>→ AuditStore"]
+    c["config<br/>settings<br/>→ SettingsStore"]
+  end
+  v --> s --> a --> au --> c
+  au -.->|"config::audit_enabled (mod.rs 인터페이스)"| c
+  conn["connection.rs<br/>0700 · WAL · busy_timeout 5s<br/>foreign_keys · secure_delete<br/>BEGIN IMMEDIATE 안에서 마이그레이션"] --> reg
+```
+
+- 마이그레이션 디렉터리: `crates/sqlite/migrations/<context>/<timestamp>_<context>_<name>/up.sql`. 버전(타임스탬프)은 모든 컨텍스트에서 유일해야 한다. 초기 마이그레이션은 `CREATE TABLE IF NOT EXISTS`라 마이그레이션 이전에 만든 DB도 그대로 열리고, `__diesel_schema_migrations`만 더해진다.
+- 쓰기는 모두 `immediate_transaction`(BEGIN IMMEDIATE). generation CAS는 `UPDATE … WHERE state = from AND EXISTS(generation)`의 영향 행 수, 금고 키 교체는 `version = expected` 조건의 영향 행 수로 판정한다.
+- 컨텍스트끼리는 models·mappers·repo를 가져다 쓰지 않는다. 다른 컨텍스트의 데이터가 필요하면 그 컨텍스트의 `mod.rs` 인터페이스를 부른다(예: audit → `config::audit_enabled`). 테이블을 한 쿼리에 섞는 `allow_tables_to_appear_in_same_query!`는 컨텍스트 안에서 실제로 join하는 곳(vault, session)에만 둔다.
+- **컨텍스트 추가**(예: 4단계 `site_states`, `vault_requests`): 모듈 하나 + 마이그레이션 디렉터리 하나 + `CONTEXTS`에 한 줄. 포트는 `keyharbor-domain::ports`에 더한다.
+- 원시 SQL은 `migrations/`에만 있다. 운영 코드에서 `sql_query`는 금지이고 테스트 전용 도우미(`#[cfg(test)]`, `test-support` 기능)만 쓴다. [J-50]
+
+### 2.7.4 항목 종류 레지스트리 (R-33)
+
+항목 종류는 흩어진 `match` 대신 `keyharbor_domain::vault::KINDS` 표 하나로 정의한다. 스키마(`ItemKind::schema`), 도메인, origin 바인딩 기본값, CLI가 명령행 인자(`--set`)를 거부하는 비밀 필드, 마스킹 대상이 모두 이 표를 읽는다. [J-51]
+
+```mermaid
+classDiagram
+  class KindSpec {
+    kind: ItemKind
+    name: &str
+    domain: Domain
+    fields: &[FieldSpec]
+    free_fields: bool
+    default_origin_binding: bool
+  }
+  class FieldSpec {
+    name: &str
+    secret: bool
+    maskable: bool
+  }
+  KindSpec "1" o-- "*" FieldSpec
+  KindSpec ..> ItemKind : schema() · domain() · default_origin_binding()
+  FieldSpec ..> CLI : is_secret_field → --set 거부
+  FieldSpec ..> Vault : maskable → mask_values
+```
+
+- 비밀 필드: `password`, `totp_seed`, `value`, `number`, `cvc`, `note`, 그리고 `env`의 모든 필드(`free_fields` → `FREE_FIELD`). 종류에 없는 필드 이름은 다른 종류가 비밀로 선언했으면 비밀로 본다(이전 `SECRET_FIELDS` 상수와 같은 동작).
+- 지금은 모든 필드가 `maskable`이다. 알 수 없는 종류의 값은 전부 가린다(가리는 쪽으로 실패).
+- 종류 추가: `ItemKind` 변형 하나 + `KINDS` 항목 하나.
+
 ## 2.8 정책 판정
 
 ```mermaid
@@ -474,5 +575,5 @@ flowchart TB
 | 오류 메시지 | 값·placeholder 치환 결과를 담지 않는다. 항목 이름과 이유 코드만 |
 | 로깅 | `tracing` 사용. 비밀 타입은 `Debug`/`Display`를 구현하지 않거나 `[REDACTED]`를 출력 |
 | 동시성 | SQLite 짧은 트랜잭션 + generation CAS. 브라우저 대기 중 트랜잭션을 잡고 있지 않는다 |
-| 마이그레이션 | 단일 실행자 잠금 + 트랜잭션. 실패 시 원본을 보존한다 |
+| 마이그레이션 | 컨텍스트별 Diesel 내장 마이그레이션을 `BEGIN IMMEDIATE` 하나 안에서 실행(동시에 연 프로세스는 기다렸다가 할 일이 없음을 확인). 실패하면 롤백되어 원본이 남는다 ([§2.7.3](#273-영속성-컨텍스트-맵-r-32-r-33)) |
 | 테스트 | 합성 비밀(`KH-SYNTH-<uuid>`)로 모든 출력 채널을 스캔하는 누출 검사 |

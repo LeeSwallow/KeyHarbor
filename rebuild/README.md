@@ -8,9 +8,27 @@ cargo run -p keyharbor -- create work
 cargo run -p keyharbor -- list
 ```
 
-crate: `keyharbor-domain`(규칙), `keyharbor-sqlite`(저장), `keyharbor-vault`(암호), `keyharbor-core`(금고 유스케이스·정책 판정·마스커), `keyharbor-broker`(감독자·CDP·제어 socket·치환), `keyharbor-mcp`(MCP 서버), `keyharbor`(CLI).
-
 기본 데이터 경로는 `~/Library/Application Support/KeyHarbor`이며 `--data-dir` 또는 `KEYHARBOR_HOME`으로 변경할 수 있다. 세션 이름과 금고 항목 이름·종류·사이트(origin) 같은 메타데이터는 SQLite에 평문으로 저장된다. 이름에 비밀을 넣지 않는다.
+
+## crate 지도
+
+헥사고날(Ports & Adapters) 구조다. 의존은 위에서 아래로만 가고, `sh ../scripts/check-layers.sh`가 이 규칙을 검사한다. 설계: [02 §2.4](../docs/design/02-system-architecture.md#24-c4-level-3--컴포넌트-crate-구조), [ADR-0014](../docs/design/adr/0014-hexagonal-guard-layer.md).
+
+| 계층 | crate | 하는 일 | 주요 모듈 |
+|---|---|---|---|
+| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립, `run`의 프로세스 실행 | `session_cmd`, `vault_cmd`, `policy_cmd`, `audit_cmd`, `run_cmd` |
+| | `keyharbor-mcp` | stdio MCP 서버 | `server`, `scope`, `tools/{session, browser, vault}` |
+| adapters | `keyharbor-broker` | 감독자, Chrome CDP pipe, 제어 socket, `SessionRuntime` | `cdp/{client, protocol}`, `browser/{navigate, snapshot, input, tabs, screenshot, wait, frames}`(crate 내부), `supervisor/{launch, lock}`, `ops`, `runtime` |
+| | `keyharbor-sqlite` | Diesel 저장소, 저장소 포트 구현 | `connection`, `contexts/{vault, session, access, audit, config}/{schema, models, mappers, repo}` |
+| | `keyharbor-vault` | 암호 레코드·메타 MAC·키 분리, `KeyStore`(Keychain) | `record`, `meta`, `keys`, `keystore` |
+| security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser` | `pdp`, `pep/{substitute, mask, origin}`, `audit`, `run`, `guard`, `browser` |
+| application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess` | `vault/{open, items, summary, resolve}`, `session/{lifecycle, handoff}`, `rotate`, `transfer`, `dotenv` |
+| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 포트(trait) | `vault`, `policy`, `audit`, `secret`, `ports/{vault, session, access, audit, keys, browser, runtime}` |
+
+- 평문 값은 `Vault::resolve`·`Vault::mask_values`에서만 나오고, 둘 다 guard가 검사 뒤 발급하는 `PlaintextAccess`를 요구한다. 브라우저 조작은 제어 socket → `ops` → `GuardedBrowser`로만 간다.
+- **스키마 확장**: 저장소는 바운디드 컨텍스트별로 나뉘어 있다. 새 컨텍스트(예: 4단계 `site_states`)는 `crates/sqlite/src/contexts/<이름>/`(schema·models·mappers·repo) + `crates/sqlite/migrations/<이름>/<timestamp>_<이름>_<설명>/up.sql` + `contexts::CONTEXTS`에 한 줄이면 된다. 버전 타임스탬프는 모든 컨텍스트에서 유일해야 한다. 원시 SQL은 마이그레이션과 테스트에만 쓴다.
+- **항목 종류 확장**: `keyharbor_domain::vault::KINDS`에 `KindSpec` 하나(필드마다 `secret`·`maskable`)와 `ItemKind` 변형 하나를 더한다. 스키마·origin 바인딩 기본값·CLI의 비밀 필드 거부·마스킹이 이 표를 읽는다.
+- 테스트 전용 기능: `keyharbor-vault/insecure-test-keystore`, `keyharbor-sqlite/test-support`. 릴리스 빌드에 켜지지 않는지 `scripts/check-release-features.sh`가 확인한다.
 
 ## 브라우저 세션 (1단계)
 

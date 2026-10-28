@@ -37,5 +37,8 @@ out="$(sh scripts/check-version.sh v9.9.9 2>&1)" && no "check-version accepted a
 # The shipped binary has no test-only features (dev-dependencies excluded).
 sh scripts/check-release-features.sh >/dev/null 2>&1 && ok "release build has no test-only features" || no "check-release-features failed"
 
+# The layer rules hold for rebuild/ (ADR-0014).
+sh scripts/check-layers.sh >/dev/null 2>&1 && ok "layer rules hold" || no "check-layers failed"
+
 [ "$fail" -eq 0 ] && echo "all script tests passed"
 exit "$fail"
