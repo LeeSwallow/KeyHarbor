@@ -18,12 +18,12 @@
 
   <main>
     <section class="install" aria-labelledby="install-title">
-      <h2 id="install-title">설치 <span class="badge">v0.1.0 · macOS</span></h2>
-      <p><a class="button" href="https://github.com/LeeSwallow/KeyHarbor/releases/latest">GitHub Releases에서 받기</a></p>
-      <pre class="cmd"><code>tar xzf keyharbor_0.1.0_darwin_arm64.tar.gz
-xattr -d com.apple.quarantine keyharbor   # 서명 없는 바이너리라 처음 한 번
-mv keyharbor /usr/local/bin/</code></pre>
-      <p class="muted">Apple Silicon은 <code>arm64</code>, Intel Mac은 <code>amd64</code> 파일을 받으세요. Homebrew 설치는 다음 릴리스부터 제공합니다.</p>
+      <h2 id="install-title">소스에서 빌드 <span class="badge">개발 중 · macOS</span></h2>
+      <pre class="cmd"><code>git clone https://github.com/LeeSwallow/KeyHarbor
+cd KeyHarbor/rebuild
+cargo build --release -p keyharbor
+cp target/release/keyharbor /usr/local/bin/</code></pre>
+      <p class="muted">아직 릴리스 전입니다. 에이전트 연동·관리 앱·플러그인까지 갖춰지면 첫 릴리스와 Homebrew 설치를 제공합니다. <a href="https://github.com/LeeSwallow/KeyHarbor/blob/main/ROADMAP.md">로드맵 보기</a></p>
     </section>
 
     <section class="demos" aria-label="사용 예시">
@@ -47,7 +47,7 @@ exported  /Users/me/keyharbor-backup.age</code></pre>
   browser_fill       #id  {{secret:blog.username}}
   browser_fill       #pw  {{secret:blog.password}}   <span class="c"># 값은 에이전트에게 보이지 않음</span>
   browser_click      로그인
-  browser_fill       #editor  "KeyHarbor 0.1.0을 소개합니다 …"
+  browser_fill       #editor  "KeyHarbor를 소개합니다 …"
   browser_click      발행
 <span class="ok">✓ 게시됨</span> — 비밀번호를 사람이 입력하지 않았습니다</code></pre>
         <p class="note">이 흐름은 아직 쓸 수 없습니다. <a href="https://github.com/LeeSwallow/KeyHarbor/blob/main/ROADMAP.md">로드맵</a>을 보세요.</p>

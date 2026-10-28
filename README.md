@@ -6,19 +6,20 @@
 
 KeyHarbor는 Claude Code·Codex 같은 AI 에이전트가 권한 정책 안에서 중단 없이 일하도록, 비밀번호·카드·개인정보·`.env` 변수와 브라우저 세션을 **내 컴퓨터 안에서만** 관리하는 무료 오픈소스 도구입니다. 외부 금고나 클라우드 계정이 필요 없습니다.
 
-> **상태: v0.1.0 — 로컬 암호화 금고 CLI (macOS).** 에이전트가 브라우저에 비밀번호를 대신 입력하는 기능, MCP 도구, 관리 앱은 [로드맵](ROADMAP.md)의 다음 단계입니다.
+> **상태: 개발 중 — 아직 릴리스하지 않았습니다.** 지금 동작하는 것은 로컬 암호화 금고 CLI(macOS)입니다. 에이전트가 브라우저에 비밀번호를 대신 입력하는 기능, MCP 도구, 관리 앱, Claude Code 플러그인은 [로드맵](ROADMAP.md)에 따라 만들고 있으며, 모두 갖춰지면 첫 릴리스를 냅니다.
 
-## 설치
+## 소스에서 빌드
 
-[Releases](https://github.com/LeeSwallow/KeyHarbor/releases/latest)에서 `keyharbor_<버전>_darwin_<arm64|amd64>.tar.gz`를 받아 압축을 풀고 `PATH`에 둡니다. Apple 서명이 없는 바이너리라서 처음 한 번 격리 표시를 풀어야 합니다.
+[Rust](https://rustup.rs) stable과 macOS가 필요합니다.
 
 ```sh
-tar xzf keyharbor_0.1.0_darwin_arm64.tar.gz
-xattr -d com.apple.quarantine keyharbor
-mv keyharbor /usr/local/bin/
+git clone https://github.com/LeeSwallow/KeyHarbor
+cd KeyHarbor/rebuild
+cargo build --release -p keyharbor
+cp target/release/keyharbor /usr/local/bin/    # 또는 PATH에 있는 아무 곳
 ```
 
-Homebrew(`brew install --cask leeswallow/tap/keyharbor`)는 다음 릴리스부터 제공합니다.
+첫 릴리스부터는 [Releases](https://github.com/LeeSwallow/KeyHarbor/releases)의 바이너리와 Homebrew(`brew install --cask leeswallow/tap/keyharbor`)로 설치할 수 있습니다.
 
 ## 빠른 시작
 
