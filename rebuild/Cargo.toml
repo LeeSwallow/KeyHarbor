@@ -29,4 +29,4 @@ serde_json = "1"
 rpassword = "7.5"
 tokio = { version = "1.54", features = ["rt-multi-thread", "process", "net", "io-util", "time", "sync", "macros"] }
 libc = "0.2"
-base64 = "0.22"
+base64 = "0.23"
