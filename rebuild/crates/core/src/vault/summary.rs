@@ -6,7 +6,7 @@ use crate::today;
 use anyhow::{Context, Result, anyhow};
 use keyharbor_domain::{
     date::Expiry,
-    ports::ItemRow,
+    ports::{ItemRow, VaultStore},
     vault::{Domain, ItemKind, ItemName, Origin},
 };
 use std::collections::BTreeMap;
@@ -58,38 +58,76 @@ fn is_expired(row: &ItemRow) -> Result<bool> {
     Ok(expiry(row)?.is_some_and(|e| e.is_expired(today())))
 }
 
+/// One item as agents may see it. A tampered item shows only its name: its origins, run
+/// permission, expiry and descriptions are unverified and could have been planted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CatalogEntry {
+    Verified(ItemSummary),
+    Tampered { name: String },
+}
+
+/// What agents may know about the vault (MCP `vault_list`): every item, verified or marked
+/// tampered, never a value. Nothing while no vault exists; `open` opens it otherwise.
+pub fn catalog(
+    store: &dyn VaultStore,
+    open: impl FnOnce() -> Result<Vault>,
+) -> Result<Vec<CatalogEntry>> {
+    if store.vault_get()?.is_none() {
+        return Ok(Vec::new());
+    }
+    open()?.catalog()
+}
+
 impl Vault {
+    /// Every item with its metadata MAC checked; see [`CatalogEntry`].
+    pub fn catalog(&self) -> Result<Vec<CatalogEntry>> {
+        let mut out = Vec::new();
+        for row in self.store.item_list()? {
+            if self.verified(&row).is_err() {
+                out.push(CatalogEntry::Tampered { name: row.name });
+                continue;
+            }
+            out.push(CatalogEntry::Verified(self.summary(row, false)?));
+        }
+        Ok(out)
+    }
+
+    /// Every item as the local user may see it, tampered ones included and marked.
     pub fn list(&self) -> Result<Vec<ItemSummary>> {
         let mut out = Vec::new();
         for row in self.store.item_list()? {
             let tampered = self.verified(&row).is_err();
-            let (expires_at, expired) = (expiry(&row)?, is_expired(&row)?);
-            let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
-            let fields: Vec<String> = self
-                .store
-                .item_get(&row.name)?
-                .map(|(_, f)| f.into_iter().map(|f| f.field).collect())
-                .unwrap_or_default();
-            let field_descriptions = effective_descriptions(kind, &fields, &row.field_descriptions);
-            out.push(ItemSummary {
-                name: row.name,
-                kind,
-                domain: kind.domain(),
-                fields,
-                origins: row.origins,
-                origin_binding: row.origin_binding,
-                run_allowed: row.run_allowed,
-                expires_at,
-                expired,
-                description: row.description,
-                field_descriptions,
-                status: ItemStatus::parse(&row.status).context("unknown status in database")?,
-                source: ItemSource::parse(&row.source).context("unknown source in database")?,
-                updated_at: row.updated_at,
-                tampered,
-            });
+            out.push(self.summary(row, tampered)?);
         }
         Ok(out)
+    }
+
+    fn summary(&self, row: ItemRow, tampered: bool) -> Result<ItemSummary> {
+        let (expires_at, expired) = (expiry(&row)?, is_expired(&row)?);
+        let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
+        let fields: Vec<String> = self
+            .store
+            .item_get(&row.name)?
+            .map(|(_, f)| f.into_iter().map(|f| f.field).collect())
+            .unwrap_or_default();
+        let field_descriptions = effective_descriptions(kind, &fields, &row.field_descriptions);
+        Ok(ItemSummary {
+            name: row.name,
+            kind,
+            domain: kind.domain(),
+            fields,
+            origins: row.origins,
+            origin_binding: row.origin_binding,
+            run_allowed: row.run_allowed,
+            expires_at,
+            expired,
+            description: row.description,
+            field_descriptions,
+            status: ItemStatus::parse(&row.status).context("unknown status in database")?,
+            source: ItemSource::parse(&row.source).context("unknown source in database")?,
+            updated_at: row.updated_at,
+            tampered,
+        })
     }
 
     /// Whether the item is origin-bound, and its origins once its metadata verifies.
@@ -130,7 +168,7 @@ impl Vault {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{env, init, login};
+    use crate::tests::{env, init, login, open_store};
 
     #[test]
     fn item_use_reports_verified_metadata() {
@@ -158,5 +196,32 @@ mod tests {
         let before = v.version().unwrap();
         v.remove(&ItemName::parse("github").unwrap()).unwrap();
         assert_eq!(v.version().unwrap(), before + 1);
+    }
+
+    #[test]
+    fn the_catalog_shows_a_tampered_item_by_name_only() {
+        let e = env();
+        assert!(
+            catalog(&open_store(&e.data), || unreachable!())
+                .unwrap()
+                .is_empty()
+        );
+        let v = init(&e);
+        v.add(login("github", "pw")).unwrap();
+        v.add(login("gitlab", "pw")).unwrap();
+        open_store(&e.data).execute_for_tests(
+            "UPDATE vault_items SET description = 'planted', expires_at = 'x' WHERE name = 'github'",
+        );
+        let entries = v.catalog().unwrap();
+        assert_eq!(
+            entries[0],
+            CatalogEntry::Tampered {
+                name: "github".into()
+            }
+        );
+        let CatalogEntry::Verified(gitlab) = &entries[1] else {
+            panic!("{entries:?}")
+        };
+        assert_eq!((gitlab.name.as_str(), gitlab.tampered), ("gitlab", false));
     }
 }

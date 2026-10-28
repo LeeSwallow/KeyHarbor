@@ -141,7 +141,7 @@ flowchart TD
 | J-54 | R-40 구현. (1) 요청은 `DK_dev`를 "HKDF info 라벨만 새로" 만들라고 했지만 이 설계의 도메인 키는 RK에서 유도하지 않고 CSPRNG로 만들어 KEK로 감싼다(07 §7.5). 그래서 `DK_dev`도 같은 방식(무작위 32B, `keyharbor/dk/v1` envelope, AD의 domain 바이트 = 4)이고 새 HKDF 라벨은 없다. 기존 KAT(HKDF·자격 증명 필드 레코드)는 그대로이고 developer 필드 레코드 KAT를 더했다. (2) 정책 target은 다른 도메인과 같은 문법(`--resource domain --target developer`)이다. (3) SQLite는 CHECK를 바꿀 수 없어 vault 마이그레이션 `000007`이 `domain_keys`·`vault_items`(와 자식 표)를 한 트랜잭션에서 다시 만든다. 자식 표를 먼저 옆으로 복사하고 지워 `ON DELETE CASCADE`가 아무것도 지우지 않게 한다. (4) 값 이동은 키가 필요해 SQL이 아니라 `Vault::open`이 한다: `vault.lock`을 잡고, 자기 도메인에서 MAC이 맞는 secret·env 항목만 `DK_dev`로 다시 봉인하고 다시 서명해 새 키와 함께 `add_domain` 한 트랜잭션(버전 CAS)으로 커밋한다. `DK_dev`가 있으면 이전은 끝난 것이다(멱등). 변조된 항목은 옮기지 않아 계속 tampered로 남는다 | 02 §2.7.1, 07 §7.5 |
 | J-55 | 사용 검사는 guard `pdp/checks/`의 작은 검사 객체 체인이다(`trait Check`, 파일 하나에 검사 하나). 브라우저 체인 `BROWSER`(폐기 → 정책 → origin/no-origin → 필드 존재 → 필드 종류 → 포커스)와 프로세스 체인 `PROCESS`(폐기 → 정책 → 바인딩 → run 허용 → 필드 존재)를 등록 순서대로 돌리고 첫 거부가 이긴다. 항목 존재·MAC 검증은 검사가 아니라 검사가 읽는 `ItemUse`를 만드는 단계다. 거부 사유는 domain의 `DenialReason` enum 하나이고 표시 문자열(`not_found`, `field-kind` …)은 그 enum에만 있다. 포커스 검사가 항목마다 돌므로 여러 항목을 쓴 템플릿에서는 둘째 항목의 정책보다 포커스 거부가 먼저 나올 수 있다(기존 단일 항목 결과는 같다) | 02 §2.5.2 |
 | J-56 | 마스킹 변형은 `pep/mask/variants/`의 `trait Variant` 레지스트리다. 요청은 `expand(&[u8]) -> Vec<Vec<u8>>`였지만 값이 UTF-8 문자열이고 만든 형태를 지워야 하므로 `expand(&str) -> Vec<Zeroizing<String>>`로 했다. 최소 길이와 중복 제거는 레지스트리 함수 한 곳에서 한다 | 03 §3.7 |
-| J-57 | 사람 확인은 domain 포트 `Confirm`(답 `Yes`/`No`/`Unavailable`)이고 CLI 어댑터 `TtyConfirm`(`cli/src/adapters/`)이 stdin·stderr가 모두 터미널일 때만 `/dev/tty`에 묻는다. 무엇이 약화인지와 그 표시는 core `weaken::WeakeningOp` 한 곳이다. 계획은 C3에서 env만 기본 run 허용이라 했지만 뒤의 R-36이 secret도 허용하라고 해 `KindSpec::default_run_allowed`를 secret·env 참으로 했다. 실행 중인 브라우저 입력의 검사 상한(탐색 대기 3 초, probe 3회, 초당 거부 기록 10건)은 설정이 아니라 고정값이다: 에이전트가 바꿀 수 있으면 안 되고, 높이면 추측에 답을 더 준다 | 03 §3.12 |
+| J-57 | 사람 확인은 domain 포트 `Confirm`(답 `Yes`/`No`/`Unavailable`)이고 CLI 어댑터 `TtyConfirm`(`cli/src/tty_confirm.rs`)이 stdin·stderr가 모두 터미널일 때만 `/dev/tty`에 묻는다. 무엇이 약화인지와 그 표시는 core `weaken::WeakeningOp` 한 곳이다. 계획은 C3에서 env만 기본 run 허용이라 했지만 뒤의 R-36이 secret도 허용하라고 해 `KindSpec::default_run_allowed`를 secret·env 참으로 했다. 실행 중인 브라우저 입력의 검사 상한(탐색 대기 3 초, probe 3회, 초당 거부 기록 10건)은 설정이 아니라 고정값이다: 에이전트가 바꿀 수 있으면 안 되고, 높이면 추측에 답을 더 준다 | 03 §3.12 |
 | J-58 | R-36의 "origin 목록이 있을 때만 브라우저 입력 허용"을 개발자 도메인 항목은 브라우저에서 언제나 origin에 묶인 것으로 다루는 것으로 구현했다: 목록이 비면 `no-origin`, 프레임이 목록에 없으면 `origin`. `origin_binding` 값은 `keyharbor run`(바인딩된 항목은 주입하지 않음)에만 쓰인다. identity·address의 첫 사용 origin은 access 컨텍스트 `origin_uses` 표로 판정한다(사용 기록을 끄면 기록이 남지 않아도 판정은 된다) | 03 §3.8 |
 | J-59 | 암호 원시 연산을 `keyharbor-crypto`로 모은다([ADR-0016](adr/0016-crypto-crate.md)). 요청과 다른 점: (1) `KeyPurpose`에 도메인 키(`DK_cred`·`DK_pay`·`DK_personal`·`DK_dev`)를 넣지 않았다. 도메인 키는 유도하지 않고 무작위로 만들어 KEK로 감싸기 때문이다(07 §7.5). (2) 필드·도메인 키 레코드의 AD 내용과 메타 MAC 입력은 금고의 형식이라 vault에 남기고 crypto의 `envelope`·`mac`만 부른다. 그래서 KAT도 HKDF만 crypto로 옮기고(기대값 그대로) 레코드·메타 KAT는 vault에 둔다. (3) `SecretKey`·`VaultError`는 KeyStore 포트가 쓰므로 domain에 두고 crypto가 다시 내보내며, `SecretKey::generate`는 `crypto::random::key`로 옮겼다. (4) DK_dev 커밋 뒤에 했다(요청은 가능하면 먼저) | 07 §7.12 |
 | J-60 | 3단계 강화 계획(`docs/superpowers/plans/2026-10-29-phase3-hardening.md`) 구현 기록. C1: 치환받은 요소는 snapshot에서 placeholder가 아니라 `value="[redacted]"`로 보인다(값이 바뀌어도 가리려면 값이 아니라 요소를 가려야 하므로). 기존 테스트 두 곳(`mcp_stdio`·`substitution_chrome`)의 단언을 그에 맞게 바꿨다. password 칸은 예전처럼 값을 아예 보이지 않는다. C2: 입력 뒤 포커스가 바뀌면 경고가 아니라 오류를 돌려주고 세션 치환을 잠근다(origin 변경은 예전처럼 경고). C3: 확인 포트는 `Confirm`, TTY 어댑터는 `TtyConfirm`(J-57). 확인 경로의 통합 테스트는 `script(1)`로 pty를 만들어 `yes`를 친다(`tests/common::on_terminal`). 이 방법이 곧 약한 경계의 증거다. 기존 테스트 중 정책 allow·deny 규칙 삭제·기록 끄기를 하던 곳(`policy_cli`·`audit_cli`·`substitution_chrome`)은 그 명령을 pty로 실행하게 바꿨다 | 03 §3.12.1 |
@@ -155,29 +155,5 @@ flowchart TD
 | J-68 | 디자인 시스템: 주 버튼과 개수 배지는 강조색이 아니라 한 단계 짙은 `--c-accent-fill`(라이트 `#047a7a`)을 칠한다. 흰 글자가 `#05a8a8` 위에서 2.93:1이라 AA를 넘지 못한다. 강조색은 포커스·토글·탭에 남긴다. `--c-ink-3`은 보조 글자로 3:1만 약속한다 | ADR-0015 |
 | J-69 | 확장의 쿠키 변환: host-only 쿠키는 CDP에 `domain` 없이 `url`로 준다. CDP는 `domain`이 있으면 도메인 쿠키로 넓히기 때문이다. `SameSite=None`인데 `Secure`가 아니면 sameSite를 뺀다. 파티션 쿠키는 최상위 사이트가 이 사이트인 것만 넘긴다 | integrations/browser-extension/README.md |
 | J-70 | 확장 권한에 `scripting`을 더한다. 사람이 `localStorage`도 넘기기를 고를 때 그 탭에서 읽는 데만 쓴다. 사이트 접근은 설치 때 받지 않고 넘길 때 그 사이트와 하위 도메인만 `permissions.request`로 묻는다 | integrations/browser-extension/README.md |
-
-## 6.4 열린 질문
-
-| # | 질문 | 위치 |
-|---|---|---|
-| Q-01 | ~~셸을 가진 에이전트가 CLI로 평문을 꺼내는 경로~~ → **A(없음)로 확정** (J-26) | 03 §3.12 |
-
-## 6.5 2단계 최종 검토에서 보류한 사소한 문제
-
-2026-10-28 브랜치 검토(별도 에이전트)의 Minor 판정. 수정하지 않았고, 이후 단계에서 판단한다.
-
-| # | 내용 |
-|---|---|
-| M1 | `MacKeychain::create`가 조회 후 쓰기라 짧은 경쟁 구간이 있다 (`SecItemAdd`로 원자화 가능) |
-| M2 | 실수로 넣은 위치 인자(비밀일 수 있음)를 clap이 오류 메시지에 그대로 보여 준다 |
-| M3 | `--stdin` JSON의 중복 키가 마지막 값으로 조용히 덮인다 |
-| M4 | 카드 명의자·유효기간, 신원 필드가 `--set`으로 들어가 `ps`에 보인다 |
-| M5 | `vault edit`이 터미널에서 프롬프트를 띄우지 않는다 |
-| M6 | age 가져오기가 항목 단위로 원자적이지 않다 |
-| M7 | `.env`의 여러 줄 따옴표 값, BOM, `export`+탭을 받지 않는다 |
-| M8 | DB에 알 수 없는 종류·출처 값이 있으면 `list` 전체가 실패한다 |
-| M9 | 스택 복사본·serde 문자열 등 메모리 정리 빈틈 |
-| M10 | 복호화 전에 레코드의 KEK ID를 비교하지 않는다 |
-| M11 | 필드 레코드 KAT를 독립 구현으로 계산해 확인하지 않았다 |
-| M12 | 항목 이름을 NFC로 정규화하지 않는다 |
-| M13 | 변조 항목을 다시 서명하거나 건너뛸 방법이 없다 |
+| J-71 | #10: 세션 작업이 볼 정책 Action은 guard `session::SessionOp` 표 하나가 정하고 MCP는 작업 이름만 준다(check-layers 규칙 J). 이전에 검사가 없던 `session_stop`·`session_wait_auth`·`session_wait_for_resume`도 그 세션의 `session` 규칙을 본다. 막힌 에이전트가 다른 에이전트의 작업을 끝내거나 사람에게 로그인 요청을 띄우지 못하게 하려는, 더 안전한 쪽의 선택이다(동작 변경, 테스트 `an_agent_denied_a_session_cannot_stop_it_or_ask_the_user_in_it`). `session_list`는 검사하지 않는다(이름·상태·설명만, 범위 지정 서버는 자기 세션만). CLI는 사람의 표면이라 세션 정책을 보지 않는다 | 02 §2.8 |
+| J-72 | #10: MCP `vault_list`는 이제 core `catalog`로 금고를 열어 메타 MAC을 검증한다. 변조된 항목은 `{"name", "tampered": true}`만 보이고 검증되지 않은 origin·`run_allowed`·설명·만료일을 내지 않는다(동작 변경, 이전에는 저장된 값을 그대로 냈다). 만료 판정은 core 하나다. 그래서 MCP 프로세스가 `vault_list` 때마다 키 저장소를 읽는다. 감독자도 같은 바이너리로 금고를 열므로 새로 생기는 노출은 없다. 금고가 없으면 빈 목록이다. 조립은 바이너리마다 한 곳(`cli/src/compose.rs`)이고, MCP 서버는 저장소 하나를 `Mutex`로 받아 도구 호출이 저장소를 쓰는 동안 직렬화된다(`session_open`·`session_stop`은 최대 15초). `session_wait_for_resume`은 확인 한 번마다만 잠근다. 세션 생성은 포트 `create_described`로 설명까지 한 번에 쓴다. `run`은 금고가 자기 연결을 가지므로 연결 둘을 연다(J-48) | 02 §2.4.0 |

@@ -1,13 +1,14 @@
 //! Handing the browser to the user: request, inspect and resume (02 §2.5.4).
 
 use super::{note, note_event, require_supervisor, session};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
-    RequestId, SessionId,
+    HandoffStatus, RequestId, SessionId, State,
     audit::{AuditEvent, AuditKind},
-    ports::{SessionRuntime, Store},
+    ports::{SessionRuntime, SessionStore, Store},
     vault::Origin,
 };
+use std::time::Duration;
 
 /// Marks a running session as waiting for the user and returns the new request ID.
 pub fn wait_auth(
@@ -58,4 +59,121 @@ pub fn resume(
     store.resume_handoff(id, generation, request)?;
     note(store, agent, AuditKind::HandoffResumed, id, "running");
     Ok(())
+}
+
+/// How long an agent waits for the user to resume a request.
+///
+/// Fixed, not a setting: the bounds keep one tool call shorter than an MCP client's own
+/// timeout, and an agent that needs longer asks again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResumeWait(Duration);
+
+impl ResumeWait {
+    pub const DEFAULT_SECONDS: u64 = 120;
+    pub const MAX_SECONDS: u64 = 300;
+    /// How often the request is looked at while waiting.
+    pub const POLL: Duration = Duration::from_millis(250);
+
+    /// The wait an agent asked for, in seconds (`None` for the default).
+    pub fn seconds(requested: Option<u64>) -> Result<Self> {
+        let seconds = requested.unwrap_or(Self::DEFAULT_SECONDS);
+        if !(1..=Self::MAX_SECONDS).contains(&seconds) {
+            bail!(
+                "timeout_seconds must be between 1 and {}",
+                Self::MAX_SECONDS
+            );
+        }
+        Ok(Self(Duration::from_secs(seconds)))
+    }
+}
+
+/// One look at a handoff request: `true` once the user resumed and the session runs again,
+/// `false` while it is pending under a live supervisor, an error for every other outcome.
+pub fn resume_check(
+    store: &dyn SessionStore,
+    runtime: &dyn SessionRuntime,
+    id: SessionId,
+    request: RequestId,
+) -> Result<bool> {
+    let status = store.handoff_status(id, request)?;
+    match status.context("authentication request not found")? {
+        HandoffStatus::Superseded => bail!("request was replaced by a newer one"),
+        HandoffStatus::Cancelled => bail!("request was cancelled because the session stopped"),
+        HandoffStatus::Resumed => {
+            let state = store.get(id)?.map(|row| row.state);
+            if state != Some(State::Running) {
+                bail!(
+                    "request was resumed but the session is now {}",
+                    state.map_or("gone", State::as_str)
+                );
+            }
+            Ok(true)
+        }
+        HandoffStatus::Pending if !runtime.is_alive(id) => {
+            bail!("session supervisor is not running; the user must run recover")
+        }
+        HandoffStatus::Pending => Ok(false),
+    }
+}
+
+/// Looks with `check` (normally [`resume_check`]) every [`ResumeWait::POLL`], sleeping with
+/// `sleep`, until it says resumed, fails, or `wait` has been slept.
+pub fn wait_for_resume(
+    wait: ResumeWait,
+    mut check: impl FnMut() -> Result<bool>,
+    mut sleep: impl FnMut(Duration),
+) -> Result<()> {
+    let mut waited = Duration::ZERO;
+    loop {
+        if check()? {
+            return Ok(());
+        }
+        if waited >= wait.0 {
+            bail!("Timed out waiting for resume; the session may still be awaiting the user");
+        }
+        let step = ResumeWait::POLL.min(wait.0 - waited);
+        sleep(step);
+        waited += step;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn resume_waits_are_bounded() {
+        assert_eq!(ResumeWait::seconds(None).unwrap().0.as_secs(), 120);
+        assert_eq!(ResumeWait::seconds(Some(300)).unwrap().0.as_secs(), 300);
+        for bad in [0, 301] {
+            assert_eq!(
+                ResumeWait::seconds(Some(bad)).unwrap_err().to_string(),
+                "timeout_seconds must be between 1 and 300"
+            );
+        }
+    }
+
+    #[test]
+    fn waiting_polls_until_resumed_or_the_time_is_slept() {
+        let looks = Cell::new(0);
+        let slept = Cell::new(Duration::ZERO);
+        let wait = ResumeWait::seconds(Some(1)).unwrap();
+        let sleep = |d| slept.set(slept.get() + d);
+        wait_for_resume(
+            wait,
+            || {
+                looks.set(looks.get() + 1);
+                Ok(looks.get() == 3)
+            },
+            sleep,
+        )
+        .unwrap();
+        assert_eq!(slept.get(), ResumeWait::POLL * 2);
+        let err = wait_for_resume(wait, || Ok(false), sleep).unwrap_err();
+        assert!(err.to_string().starts_with("Timed out"), "{err}");
+        assert_eq!(slept.get(), ResumeWait::POLL * 2 + Duration::from_secs(1));
+        let failed = wait_for_resume(wait, || bail!("request was replaced by a newer one"), sleep);
+        assert!(failed.is_err());
+    }
 }

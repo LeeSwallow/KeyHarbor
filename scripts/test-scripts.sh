@@ -40,6 +40,26 @@ sh scripts/check-release-features.sh >/dev/null 2>&1 && ok "release build has no
 # The layer rules hold for rebuild/ (ADR-0014).
 sh scripts/check-layers.sh >/dev/null 2>&1 && ok "layer rules hold" || no "check-layers failed"
 
+# Each layer rule fails on a planted violation (a copy of rebuild/crates).
+# $1 = name, $2 = file to append to (relative to the copy), $3 = line, $4 = expected message.
+planted() {
+	fx="$tmp/layers-$1"
+	cp -R rebuild/crates "$fx"
+	printf '%s\n' "$3" >> "$fx/$2"
+	out="$(CHECK_LAYERS_ROOT="$fx" sh scripts/check-layers.sh 2>&1)" && no "check-layers accepted $1" || {
+		printf '%s' "$out" | grep -qF "$4" && ok "check-layers rejects $1" || no "check-layers gave no reason for $1: $out"
+	}
+	rm -rf "$fx"
+}
+planted "mcp-depends-on-sqlite" mcp/Cargo.toml 'keyharbor-sqlite = { path = "../sqlite" }' \
+	"mcp must not depend on keyharbor-sqlite"
+planted "a-cli-command-opening-the-store" cli/src/policy_cmd.rs 'fn x() { let _ = keyharbor_sqlite::SqliteStore::open; }' \
+	"interfaces build adapters outside the composition root"
+planted "an-mcp-tool-calling-a-storage-port" mcp/src/tools/vault.rs 'fn x(s: &dyn S) { let _ = s.policy_rules(); }' \
+	"interfaces call storage ports directly"
+planted "an-interface-choosing-a-session-action" mcp/src/server.rs 'fn x() { let _ = Action::RawCdp; }' \
+	"interfaces choose session-level policy actions"
+
 # The design-system rules hold for design/ (ADR-0015).
 sh scripts/check-design.sh >/dev/null 2>&1 && ok "design rules hold" || no "check-design failed"
 

@@ -2,14 +2,18 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
-mod adapters;
 mod audit_cmd;
+mod compose;
 mod description_args;
 mod expiry_args;
 mod policy_cmd;
 mod run_cmd;
 mod session_cmd;
+mod settings_cmd;
+mod tty_confirm;
 mod vault_cmd;
+
+use compose::App;
 
 #[derive(Parser)]
 #[command(version, about = "Local browser session management")]
@@ -31,7 +35,7 @@ enum Command {
         /// Allow sessions with a raw CDP endpoint (bypasses KeyHarbor's protections)
         #[arg(long)]
         allow_cdp: bool,
-        /// Name of the agent using this server (used by policies in a later phase)
+        /// Name of the agent using this server, for policies and the usage record
         #[arg(long)]
         agent: Option<String>,
         #[arg(long)]
@@ -47,7 +51,7 @@ enum Command {
     Audit(audit_cmd::AuditArgs),
     /// Read or change settings
     #[command(subcommand)]
-    Settings(audit_cmd::SettingsCmd),
+    Settings(settings_cmd::SettingsCmd),
     /// Run a command with env items injected; its output is masked
     Run(run_cmd::RunArgs),
 }
@@ -80,28 +84,32 @@ fn main() -> Result<()> {
             std::env::var_os("HOME").context("HOME is not set; use --data-dir")?,
         )),
     };
+    let app = App::new(root);
     match args.command {
-        Command::Vault(command) => vault_cmd::run(&root, command),
-        Command::Policy(command) => policy_cmd::run(&root, command),
-        Command::Audit(args) => audit_cmd::audit(&root, args),
-        Command::Settings(command) => audit_cmd::settings(&root, command),
+        Command::Vault(command) => vault_cmd::run(&app, command),
+        Command::Policy(command) => policy_cmd::run(&*app.store()?, command),
+        Command::Audit(args) => audit_cmd::run(&*app.store()?, args),
+        Command::Settings(command) => settings_cmd::run(&*app.store()?, command),
         Command::Run(args) => {
-            let code = run_cmd::run(&root, args)?;
+            let code = run_cmd::run(&app, args)?;
             std::process::exit(code)
         }
-        Command::Session(command) => session_cmd::run(&root, command),
+        Command::Session(command) => session_cmd::run(&app, command),
         Command::Mcp {
             session,
             allow_cdp,
             agent,
             browser,
-        } => keyharbor_mcp::run(keyharbor_mcp::Options {
-            data: root,
-            session,
-            allow_cdp,
-            agent,
-            browser,
-        }),
+        } => keyharbor_mcp::run(
+            keyharbor_mcp::Options {
+                data: app.root().to_path_buf(),
+                session,
+                allow_cdp,
+                agent,
+                browser,
+            },
+            app.mcp_deps()?,
+        ),
     }
 }
 

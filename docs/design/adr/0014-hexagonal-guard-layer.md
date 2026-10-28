@@ -12,7 +12,7 @@
 
 ## 결정
 
-1. **헥사고날(Ports & Adapters) + Clean Architecture 의존 규칙.** 포트(trait)는 `keyharbor-domain::ports`에 둔다: `VaultStore`, `SessionStore`, `PolicyStore`, `AuditStore`, `SettingsStore`, `KeyStore`, `BrowserPort`, `PageInput`, `FrameInspector`, `SessionRuntime`, `StoreFactory`. 어댑터(sqlite, vault, broker)가 구현하고, core는 포트만 쓰며, 인터페이스(CLI, MCP)가 조립한다(composition root).
+1. **헥사고날(Ports & Adapters) + Clean Architecture 의존 규칙.** 포트(trait)는 `keyharbor-domain::ports`에 둔다: `VaultStore`, `SessionStore`, `PolicyStore`, `AuditStore`, `SettingsStore`, `KeyStore`, `BrowserPort`, `PageInput`, `FrameInspector`, `SessionRuntime`, `StoreFactory`. 어댑터(sqlite, vault, broker)가 구현하고, core는 포트만 쓰며, 바이너리의 composition root 한 곳(`cli/src/compose.rs`)이 조립한다. 표면(CLI 명령, MCP 도구)은 저장소를 열지도 저장소 포트를 부르지도 않고 core·guard 유스케이스만 부른다. MCP 서버는 의존을 생성자로 받는다.
 2. **보안 계층 `keyharbor-guard`.** PDP(`pdp::decide`)와 PEP(`pep::substitute`, `pep::mask`, `pep::origin`), `audit`, `run`을 모은다.
 3. **데코레이터 `GuardedBrowser`.** `BrowserPort`를 구현하며 raw 브라우저를 감싼다. 입력의 placeholder는 PEP를 거쳐서만 풀리고, 결과와 오류는 정확히 한 번 마스킹된다. broker는 raw CDP 어댑터를 crate 밖에 공개하지 않으므로 제어 요청이 브라우저에 닿는 길은 이것 하나다.
 4. **Capability `PlaintextAccess`.** `Vault::resolve`·`Vault::mask_values`가 요구한다. core가 guard를 알 수 없으므로 생성자는 숨긴 `pub`이고, 호출 위치(guard, core의 age 내보내기, 테스트)를 `scripts/check-layers.sh`가 제한한다.
@@ -41,8 +41,8 @@ flowchart TB
 | guard | domain, core |
 | sqlite | domain |
 | broker | domain, guard |
-| mcp | domain, core, guard, broker, sqlite, vault |
-| cli | 전부 |
+| mcp | domain, core, guard, broker |
+| cli | crypto를 뺀 전부 |
 
 ```mermaid
 flowchart LR
@@ -62,7 +62,7 @@ flowchart LR
 
 - 평문 경로가 `PlaintextAccess`를 받는 두 함수로 줄었고, 그 발급 지점이 검사 가능하다. 브라우저 입력의 검사 순서(포커스 frame origin → 정책 → 비우기 → 포커스 재확인 → 입력 → origin 재확인)는 `GuardedBrowser` 한 곳에만 있다.
 - 동작·CLI 출력·MCP 도구·DB 스키마·암호문 형식은 바뀌지 않았다. 기존 테스트 125개가 단언 변경 없이 통과한다(테스트 위치와 모듈 경로만 옮겼다).
-- 규칙은 `scripts/check-layers.sh`가 CI(repo-checks)에서 강제한다: 의존 표, 암호 원시 crate는 vault만, rusqlite 금지, 운영 코드의 원시 SQL 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출 위치, broker의 raw CDP 비공개, 컨텍스트 간 models 공유 금지.
+- 규칙은 `scripts/check-layers.sh`가 CI(repo-checks)에서 강제한다: 의존 표, 암호 원시 crate는 crypto만(ADR-0016), rusqlite 금지, 운영 코드의 원시 SQL 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출 위치, broker의 raw CDP 비공개, 컨텍스트 간 models 공유 금지, 표면은 저장소를 열거나 저장소 포트를 부르지 않음(A), 세션 수준 정책 Action은 guard 표만 고름(J). 규칙마다 위반을 심은 사본으로 실패하는지 `scripts/test-scripts.sh`가 확인한다.
 - `PlaintextAccess`는 컴파일러가 아니라 스크립트가 지킨다. 같은 OS 사용자의 악의적 코드를 막는 경계가 아니라 실수를 막는 경계다.
 - 도메인 crate가 `anyhow`·`serde_json`·`zeroize`·`getrandom`에 의존한다(포트의 오류·응답 타입과 `SecretKey`). I/O는 없다.
 - 데이터 경로·포트 추가만으로 4단계 컨텍스트(`site_states`, `vault_requests`)와 5단계 앱 인터페이스를 붙일 수 있다.

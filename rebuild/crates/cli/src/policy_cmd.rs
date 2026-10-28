@@ -1,17 +1,12 @@
 //! `keyharbor policy …`: rules that limit what each agent may use (02 §2.8).
 //! With no rules everything is allowed; `*` as the agent applies a rule to every agent.
 
-use crate::adapters::TtyConfirm;
-use anyhow::{Context, Result, anyhow, bail};
+use crate::tty_confirm::TtyConfirm;
+use anyhow::{Context, Result, anyhow};
 use clap::{Args, Subcommand};
-use keyharbor_core::weaken;
-use keyharbor_domain::ports::*;
-use keyharbor_domain::{
-    audit::{AuditEvent, AuditKind},
-    policy::{Effect, Resource, Rule, normalize_target, parse_agent},
-};
-use keyharbor_sqlite::SqliteStore;
-use std::path::Path;
+use keyharbor_core::policy;
+use keyharbor_domain::policy::{Effect, Resource, Rule};
+use keyharbor_domain::ports::Store;
 
 #[derive(Subcommand)]
 pub enum PolicyCmd {
@@ -51,91 +46,75 @@ fn rule(args: &RuleArgs, effect: Effect) -> Result<Rule> {
         .map_err(|e| anyhow!("{e}"))
 }
 
-pub fn run(root: &Path, command: PolicyCmd) -> Result<()> {
-    let store = SqliteStore::open(root)?;
-    match command {
-        PolicyCmd::List { json } => {
-            let rules = store.policy_rules()?;
-            if json {
-                let values: Vec<_> = rules
-                    .iter()
-                    .map(|r| {
-                        serde_json::json!({
-                            "agent": r.agent,
-                            "resource": r.resource.as_str(),
-                            "target": r.target,
-                            "effect": r.effect.as_str(),
-                        })
-                    })
-                    .collect();
-                println!("{}", serde_json::Value::Array(values));
-            } else {
-                for r in &rules {
-                    println!(
-                        "{}\t{}\t{}\t{}",
-                        r.agent,
-                        r.resource.as_str(),
-                        r.target,
-                        r.effect.as_str()
-                    );
-                }
-            }
-        }
-        PolicyCmd::Allow(args) => set(&store, rule(&args, Effect::Allow)?)?,
-        PolicyCmd::Deny(args) => set(&store, rule(&args, Effect::Deny)?)?,
-        PolicyCmd::Rm(args) => {
-            let agent = parse_agent(&args.agent).map_err(|e| anyhow!("{e}"))?;
-            let resource = resource(&args.resource)?;
-            let target = normalize_target(resource, &args.target).map_err(|e| anyhow!("{e}"))?;
-            let existing = store
-                .policy_rules()?
-                .into_iter()
-                .find(|r| r.agent == agent && r.resource == resource && r.target == target)
-                .context("rule not found")?;
-            // Removing a deny rule widens access (R-35).
-            weaken::require(&TtyConfirm, weaken::policy_remove(&existing).as_slice())?;
-            if !store.policy_remove(&agent, resource, &target)? {
-                bail!("rule not found");
-            }
-            changed(
-                &store,
-                &format!("removed {agent} {} {target}", resource.as_str()),
-            );
-            println!("removed\t{agent}\t{}\t{target}", resource.as_str());
-        }
+fn list(store: &dyn Store, json: bool) -> Result<()> {
+    let rules = policy::list(store)?;
+    if json {
+        let values: Vec<_> = rules
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "agent": r.agent,
+                    "resource": r.resource.as_str(),
+                    "target": r.target,
+                    "effect": r.effect.as_str(),
+                })
+            })
+            .collect();
+        println!("{}", serde_json::Value::Array(values));
+        return Ok(());
+    }
+    for r in &rules {
+        println!("{}", line(r));
     }
     Ok(())
 }
 
-fn set(store: &SqliteStore, rule: Rule) -> Result<()> {
-    // Any allow rule widens access (R-35).
-    weaken::require(&TtyConfirm, weaken::policy_set(&rule).as_slice())?;
-    store.policy_set(&rule)?;
-    changed(
-        store,
-        &format!(
-            "{} {} {} {}",
-            rule.effect.as_str(),
-            rule.agent,
-            rule.resource.as_str(),
-            rule.target
-        ),
-    );
-    println!(
+fn line(r: &Rule) -> String {
+    format!(
         "{}\t{}\t{}\t{}",
-        rule.effect.as_str(),
-        rule.agent,
-        rule.resource.as_str(),
-        rule.target
-    );
+        r.agent,
+        r.resource.as_str(),
+        r.target,
+        r.effect.as_str()
+    )
+}
+
+fn set(store: &dyn Store, rule: Rule) -> Result<()> {
+    policy::set(store, &TtyConfirm, &rule)?;
+    println!("{}", line_effect_first(&rule));
     Ok(())
 }
 
-/// Records a policy change. Best effort: the change is already saved.
-fn changed(store: &SqliteStore, what: &str) {
-    let _ = store.record(&AuditEvent::new(
-        keyharbor_core::LOCAL_AGENT,
-        AuditKind::PolicyChanged,
-        what,
-    ));
+fn line_effect_first(r: &Rule) -> String {
+    format!(
+        "{}\t{}\t{}\t{}",
+        r.effect.as_str(),
+        r.agent,
+        r.resource.as_str(),
+        r.target
+    )
+}
+
+pub fn run(store: &dyn Store, command: PolicyCmd) -> Result<()> {
+    match command {
+        PolicyCmd::List { json } => list(store, json)?,
+        PolicyCmd::Allow(args) => set(store, rule(&args, Effect::Allow)?)?,
+        PolicyCmd::Deny(args) => set(store, rule(&args, Effect::Deny)?)?,
+        PolicyCmd::Rm(args) => {
+            let removed = policy::remove(
+                store,
+                &TtyConfirm,
+                &args.agent,
+                resource(&args.resource)?,
+                &args.target,
+            )?;
+            println!(
+                "removed\t{}\t{}\t{}",
+                removed.agent,
+                removed.resource.as_str(),
+                removed.target
+            );
+        }
+    }
+    Ok(())
 }
