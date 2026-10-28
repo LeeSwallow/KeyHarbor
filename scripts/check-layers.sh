@@ -4,7 +4,8 @@
 #
 # 1. Normal dependencies (dev-dependencies excluded) between keyharbor crates
 #    follow the allowed table below.
-# 2. Only keyharbor-vault depends on or names the AEAD/KDF/MAC crates.
+# 2. Only keyharbor-crypto depends on or names a cryptographic primitive crate
+#    (chacha20poly1305, hkdf, hmac, sha2, age, getrandom; ADR-0016).
 # 3. rusqlite is not used anywhere. Production code runs no raw SQL: schema
 #    SQL lives in crates/sqlite/migrations/, and `sql_query(`/`batch_execute(`
 #    appear only in test code (`#[cfg(test)]` items, the `test-support`
@@ -24,13 +25,14 @@ no() { echo "✗ $*"; bad=1; }
 allowed() {
 	case "$1" in
 	domain) echo "" ;;
-	vault) echo "domain" ;;
-	core) echo "domain vault" ;;
+	crypto) echo "domain" ;;
+	vault) echo "domain crypto" ;;
+	core) echo "domain vault crypto" ;;
 	guard) echo "domain core" ;;
 	sqlite) echo "domain" ;;
 	broker) echo "domain guard" ;;
 	mcp) echo "domain core guard broker sqlite vault" ;;
-	cli) echo "domain vault core guard sqlite broker mcp" ;;
+	cli) echo "domain crypto vault core guard sqlite broker mcp" ;;
 	*) echo "?" ;;
 	esac
 }
@@ -70,8 +72,8 @@ for manifest in */Cargo.toml; do
 		rusqlite)
 			no "$crate depends on rusqlite; persistence goes through Diesel in keyharbor-sqlite"
 			;;
-		chacha20poly1305 | hkdf | hmac)
-			[ "$crate" = vault ] || no "$crate depends on $dep; only keyharbor-vault uses cryptographic primitives"
+		chacha20poly1305 | hkdf | hmac | sha2 | age | getrandom)
+			[ "$crate" = crypto ] || no "$crate depends on $dep; only keyharbor-crypto uses cryptographic primitives"
 			;;
 		diesel | diesel_migrations | libsqlite3-sys)
 			[ "$crate" = sqlite ] || no "$crate depends on $dep; only keyharbor-sqlite talks to the database"
@@ -84,8 +86,9 @@ if grep -q '^rusqlite' ../Cargo.toml 2>/dev/null; then
 fi
 
 # --- 2. cryptographic primitives ----------------------------------------------
-hits="$(grep -rnE '\b(chacha20poly1305|hkdf|hmac)::' --include='*.rs' . | grep -v '^\./vault/' || true)"
-[ -n "$hits" ] && no "cryptographic primitives used outside keyharbor-vault:
+hits="$(grep -rnE '\b(chacha20poly1305|hkdf|hmac|sha2|age|getrandom)(::|;|\b *as\b)' --include='*.rs' . |
+	grep -E 'use |::' | grep -v '^\./crypto/' || true)"
+[ -n "$hits" ] && no "cryptographic primitives used outside keyharbor-crypto:
 $hits"
 
 # --- 3. raw SQL ------------------------------------------------------------------
