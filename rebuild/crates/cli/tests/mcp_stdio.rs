@@ -308,3 +308,183 @@ fn browser_tools_round_trip_with_chrome() {
     mcp.ok("session_stop", json!({"id": id}));
     mcp.finish();
 }
+
+#[test]
+fn policies_limit_session_tools() {
+    let tmp = short_tempdir();
+    let data = tmp.path().join("data");
+    let browser = fake_browser(tmp.path());
+    let browser_arg = browser.to_str().unwrap();
+    let id = String::from_utf8(cli(&data, &["create", "work"]).stdout)
+        .unwrap()
+        .split('\t')
+        .next()
+        .unwrap()
+        .to_owned();
+    for rule in [
+        ["deny", "codex", "session", "*"],
+        ["deny", "codex", "create_session", "*"],
+        ["deny", "*", "raw_cdp", "*"],
+    ] {
+        let out = cli(
+            &data,
+            &[
+                "policy",
+                rule[0],
+                "--agent",
+                rule[1],
+                "--resource",
+                rule[2],
+                "--target",
+                rule[3],
+            ],
+        );
+        assert!(out.status.success());
+    }
+    let mut codex = Mcp::start(
+        &data,
+        tmp.path(),
+        &["--browser", browser_arg, "--agent", "codex", "--allow-cdp"],
+    );
+    let denied = codex.err("session_open", json!({"id": id}));
+    assert!(denied.contains("denied by policy"), "{denied}");
+    assert!(denied.contains("codex session * deny"), "{denied}");
+    assert!(
+        codex
+            .err("browser_snapshot", json!({"session": id}))
+            .contains("denied by policy")
+    );
+    assert!(
+        codex
+            .err("session_create", json!({"name": "x"}))
+            .contains("denied by policy")
+    );
+    codex.finish();
+
+    // Other agents may open the session, but not with raw CDP.
+    let mut claude = Mcp::start(
+        &data,
+        tmp.path(),
+        &["--browser", browser_arg, "--agent", "claude", "--allow-cdp"],
+    );
+    assert!(
+        claude
+            .err("session_open", json!({"id": id, "cdp": true}))
+            .contains("raw_cdp")
+    );
+    claude.ok("session_open", json!({"id": id}));
+    assert!(
+        claude
+            .err("session_endpoint", json!({"id": id}))
+            .contains("denied by policy")
+    );
+    claude.ok("session_create", json!({"name": "second"}));
+    claude.ok("session_stop", json!({"id": id}));
+    claude.finish();
+    let audit = String::from_utf8(cli(&data, &["audit"]).stdout).unwrap();
+    assert!(audit.contains("\tclaude\tsession_opened\t"), "{audit}");
+    assert!(audit.contains("\tclaude\tsession_stopped\t"), "{audit}");
+    let mut bad = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+        .arg("--data-dir")
+        .arg(&data)
+        .args(["mcp", "--agent", "*"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    assert!(!bad.wait().unwrap().success());
+}
+
+#[test]
+fn placeholders_through_mcp_with_chrome() {
+    let Some(chrome) = chrome() else { return };
+    let site = common::serve_pages();
+    let tmp = short_tempdir();
+    let data = tmp.path().join("data");
+    let keys = tmp.path().join("keys");
+    let secret = format!(
+        "KH-SYNTH-{}",
+        tmp.path().file_name().unwrap().to_string_lossy()
+    );
+    let vault = |args: &[&str], stdin: &str| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+            .arg("--data-dir")
+            .arg(&data)
+            .args(args)
+            .env("KEYHARBOR_TEST_KEYSTORE_DIR", &keys)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stdin.as_bytes())
+            .unwrap();
+        assert!(child.wait().unwrap().success(), "{args:?}");
+    };
+    vault(&["vault", "init"], "");
+    vault(
+        &[
+            "vault", "add", "site", "--kind", "login", "--origin", &site.base, "--stdin",
+        ],
+        &json!({"username": secret}).to_string(),
+    );
+    let mut mcp = Mcp::start(
+        &data,
+        tmp.path(),
+        &["--browser", chrome.to_str().unwrap(), "--agent", "claude"],
+    );
+    let mut transcript = String::new();
+    let listed = mcp.ok("vault_list", json!({}));
+    assert!(
+        listed[0]["placeholders"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("{{secret:site.username}}")),
+        "{listed}"
+    );
+    assert_eq!(listed[0]["origin_binding"], true);
+    let id = mcp.ok("session_create", json!({"name": "c"}))["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    mcp.ok("session_open", json!({"id": id}));
+    mcp.ok(
+        "browser_navigate",
+        json!({"session": id, "url": format!("{}/", site.base)}),
+    );
+    let (error, text) = mcp.call(
+        "browser_fill",
+        json!({"session": id, "selector": "#user", "text": "{{secret:site.username}}"}),
+    );
+    assert!(!error, "{text}");
+    transcript.push_str(&text);
+    let (_, snapshot) = mcp.call("browser_snapshot", json!({"session": id}));
+    assert!(snapshot.contains("{{secret:site.username}}"), "{snapshot}");
+    transcript.push_str(&snapshot);
+    mcp.ok("browser_click", json!({"session": id, "selector": "#go"}));
+    mcp.ok("browser_wait", json!({"session": id, "selector": "#done"}));
+    let (_, after) = mcp.call("browser_snapshot", json!({"session": id}));
+    assert!(after.contains("{{secret:site.username}}"), "{after}");
+    transcript.push_str(&after);
+    assert_eq!(
+        site.posted.lock().unwrap().first(),
+        Some(&("user".to_owned(), secret.clone()))
+    );
+    let denied = mcp.err(
+        "browser_type",
+        json!({"session": id, "text": "{{secret:site.password}}"}),
+    );
+    transcript.push_str(&denied);
+    assert_eq!(denied, "denied: site (not_found)");
+    mcp.ok("session_stop", json!({"id": id}));
+    mcp.finish();
+    let audit = String::from_utf8(cli(&data, &["audit"]).stdout).unwrap();
+    assert!(audit.contains("\tclaude\tsecret_used\tsite\t"), "{audit}");
+    transcript.push_str(&audit);
+    assert!(!transcript.contains(&secret), "{transcript}");
+}

@@ -1,7 +1,8 @@
 //! `keyharbor mcp`: a stdio MCP server with session, browser and vault-metadata tools.
 //!
 //! Browser tools go through the session supervisor's control socket (ADR-0004); this server
-//! never talks CDP itself. No tool returns a vault value.
+//! never talks CDP itself. No tool returns a vault value: placeholders are resolved and
+//! responses masked in the supervisor. Session tools apply the agent's policy (02 §2.8).
 
 use anyhow::{Context, Result, bail};
 use keyharbor_broker::{
@@ -9,6 +10,7 @@ use keyharbor_broker::{
     lifecycle::{self, DEFAULT_BROWSER, OpenOptions},
     paths, supervisor,
 };
+use keyharbor_core::policy::{Action, Decision, decide};
 use keyharbor_domain::{
     RequestId, SessionId, SessionName, State,
     vault::{Domain, ItemKind},
@@ -104,6 +106,15 @@ impl Inner {
     fn agent(&self) -> &str {
         self.agent.as_deref().unwrap_or(DEFAULT_AGENT)
     }
+
+    /// Fails unless the policy allows this server's agent `action`.
+    fn allow(&self, action: &Action) -> Result<()> {
+        let rules = SqliteStore::open(&self.data)?.policy_rules()?;
+        match decide(&rules, self.agent(), action) {
+            Decision::Allow => Ok(()),
+            Decision::Deny { rule } => bail!("denied by policy ({rule})"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -162,8 +173,11 @@ impl Server {
             Err(error) => return fail(error.to_string()),
         };
         outcome(
-            self.blocking(move |inner| client::call(&inner.data, &id, &request))
-                .await,
+            self.blocking(move |inner| {
+                inner.allow(&Action::OpenSession(id))?;
+                client::call(&inner.data, &id, &request)
+            })
+            .await,
         )
     }
 }
@@ -228,13 +242,13 @@ struct Fill {
     reference: Option<u64>,
     /// CSS selector, used when ref is not given.
     selector: Option<String>,
-    /// Text that replaces the element's value.
+    /// Text that replaces the element's value. May contain {{secret:item.field}} placeholders.
     text: String,
 }
 #[derive(Deserialize, schemars::JsonSchema)]
 struct Text {
     session: String,
-    /// Text typed into the focused element.
+    /// Text typed into the focused element. May contain {{secret:item.field}} placeholders.
     text: String,
 }
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -299,6 +313,7 @@ impl Server {
         }
         outcome(
             self.blocking(move |inner| {
+                inner.allow(&Action::CreateSession)?;
                 let name = SessionName::parse(&name)?;
                 let session = SqliteStore::open(&inner.data)?.create(name)?;
                 Ok(json!({"id": session.id.to_string(), "name": session.name.as_str(), "state": session.state.as_str()}))
@@ -325,6 +340,10 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
+                inner.allow(&Action::OpenSession(id))?;
+                if cdp {
+                    inner.allow(&Action::RawCdp)?;
+                }
                 let options = OpenOptions {
                     url: url.as_deref(),
                     cdp,
@@ -463,6 +482,8 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
+                inner.allow(&Action::OpenSession(id))?;
+                inner.allow(&Action::RawCdp)?;
                 Ok(json!({"endpoint": lifecycle::endpoint(&inner.data, id)?, "warning": "full browser control; KeyHarbor protections do not apply"}))
             })
             .await,
@@ -516,7 +537,9 @@ impl Server {
         }
     }
 
-    #[tool(description = "Replace the value of an input given by ref or CSS selector with text.")]
+    #[tool(
+        description = "Replace the value of an input given by ref or CSS selector with text. To enter a secret, write its placeholder from vault_list, e.g. {{secret:github.password}}: KeyHarbor types the value only if the policy allows it and, for origin-bound items, the input's frame is one of the item's origins. You never see the value; results show placeholders instead."
+    )]
     async fn browser_fill(
         &self,
         Parameters(Fill {
@@ -538,7 +561,9 @@ impl Server {
         }
     }
 
-    #[tool(description = "Type text into the focused element.")]
+    #[tool(
+        description = "Type text into the focused element. Accepts {{secret:item.field}} placeholders under the same checks as browser_fill."
+    )]
     async fn browser_type(
         &self,
         Parameters(Text { session, text }): Parameters<Text>,
@@ -604,7 +629,7 @@ impl Server {
     }
 
     #[tool(
-        description = "List vault items: name, kind, domain, field names and origins. Values are never returned."
+        description = "List vault items: name, kind, domain, field names, origins, status and the placeholder for each field (use it in browser_fill or browser_type). Values are never returned."
     )]
     async fn vault_list(&self) -> CallToolResult {
         outcome(
@@ -617,12 +642,20 @@ impl Server {
                         .item_get(&row.name)?
                         .map(|(_, fields)| fields.into_iter().map(|f| f.field).collect())
                         .unwrap_or_default();
+                    let placeholders: Vec<String> = fields
+                        .iter()
+                        .map(|f| format!("{{{{secret:{}.{f}}}}}", row.name))
+                        .collect();
                     items.push(json!({
                         "name": row.name,
                         "kind": kind.map(ItemKind::as_str),
                         "domain": kind.map(ItemKind::domain).map(Domain::as_str),
                         "fields": fields,
+                        "placeholders": placeholders,
                         "origins": row.origins,
+                        "origin_binding": row.origin_binding,
+                        "status": row.status,
+                        "source": row.source,
                     }));
                 }
                 Ok(Value::Array(items))

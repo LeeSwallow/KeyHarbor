@@ -69,20 +69,31 @@ flowchart LR
 | `vault rotate-root` · `vault rotate-domain <domain>` | 중간 중단(프로세스 kill) 후 전부 읽힘 ([07 §7.8](07-cryptography-design.md#78-키-수명-주기)) |
 | 키 부재 시 동작 | Keychain 항목을 지운 뒤 실행하면 새 키를 만들지 않고 오류 |
 
-### 3단계 — 치환·마스킹·정책·기록
+### 3단계 — 치환·마스킹·정책·기록 ✅ 구현됨 (2026-10-28, 브랜치 `feat/phase3-substitution-masking`)
+
+테스트: `keyharbor-domain`(정책 규칙 검증, 사용 기록 종류), `keyharbor-core`(`policy::decide` 전 분기, `mask` 겹침·변형·짧은 값·카드 형식·JSON·바이트, `Vault::masker`, `item_use`, `fill_template`), `keyharbor-sqlite`(정책 upsert, 기록·꺼짐·`audit` 스키마에 값 컬럼 없음), `keyharbor` CLI `tests/policy_cli.rs`, `tests/audit_cli.rs`(금고·정책·세션 이벤트, 기록 끄기), `tests/run_cli.rs`(자식 출력 마스킹·종료 코드·`RLIMIT_CORE`·거부 시 미실행), `tests/substitution_chrome.rs`(실제 Chrome: 허용 입력, 피싱 origin, 교차 출처 iframe, 정책·없는 항목, 페이지에 다시 보이는 값·카드 번호 공백 형식·URL의 percent-encoding 마스킹, 금고 변경 반영), `tests/mcp_stdio.rs`(세션 도구 정책, MCP로 치환·마스킹 왕복).
 
 | 범위 | 완료 조건 |
 |---|---|
-| placeholder 파서 | 잘못된 형식·없는 항목·없는 필드는 거부, 이스케이프 규칙 정의 |
-| `browser_fill`/`browser_type` 치환 | 로컬 HTTPS 테스트 사이트 로그인 성공 |
-| frame origin 확인 | 교차 출처 iframe, 다른 포트, 서브도메인 입력 거부 |
-| 응답 마스킹 | 금고 값이 페이지 텍스트·속성·URL에 있을 때 placeholder로 치환 |
-| 정책 저장·판정 | [02 §2.8](02-system-architecture.md#28-정책-판정) 흐름도의 모든 분기 단위 테스트 |
-| 사용 기록 | 이벤트 종류별 기록, 기록 끄기 설정. 끄면 거부·경고를 포함해 **모두** 기록하지 않음(P2) [설계자 판단] |
-| `keyharbor run --env` / `--env-file` | 자식 프로세스에 변수 주입, stdout·stderr 마스킹, 종료 코드 전달, 정책 거부 시 실행하지 않음 |
-| 카드 입력 | 결제사 iframe을 흉내 낸 교차 origin 테스트 페이지에서 등록된 origin만 입력 |
-| 등록 경로 ([08](08-registration-flows.md)) | `vault_generate`·`vault_put`·로그인 포착이 draft를 만들고, `logged_in` 기록으로 확정. 기존 항목 덮어쓰기 거부 |
-| 메타데이터 MAC ([07 §7.6.3](07-cryptography-design.md#763-메타데이터-mac)) | DB에서 origin 목록을 바꾸면 입력 거부 |
+| placeholder 파서 | 잘못된 형식·없는 항목·없는 필드는 거부 ✅. 이스케이프는 두지 않는다: `{{secret:`는 항상 참조의 시작이다 |
+| `browser_fill`/`browser_type` 치환 | 로컬 테스트 사이트 로그인 성공 ✅ (localhost HTTP. HTTPS 테스트 사이트는 쓰지 않았다) |
+| frame origin 확인 | 교차 출처 iframe·다른 포트 입력 거부 ✅. 서브도메인은 정확 일치 규칙(`Origin` 단위 테스트)으로 다룬다 |
+| 응답 마스킹 | 금고 값이 페이지 텍스트·입력 값·URL에 있을 때 placeholder로 치환 ✅. 오류 메시지도 같은 마스커를 거친다 |
+| 정책 저장·판정 | [02 §2.8](02-system-architecture.md#28-정책-판정)의 모든 분기 단위 테스트 ✅ |
+| 사용 기록 | 이벤트 종류별 기록, 기록 끄기 ✅. 끄면 거부·경고를 포함해 아무것도 기록하지 않는다 |
+| `keyharbor run --env` / `--env-file` | 주입, stdout·stderr 마스킹, 종료 코드 전달, 정책 거부 시 실행 안 함 ✅ |
+| 카드 입력 | 같은 프로세스의 교차 출처 iframe에서 등록된 origin만 입력 ✅. **다른 사이트 iframe(OOPIF, 예: 실제 결제사 도메인)은 미완**: 그 iframe은 별도 CDP target이라 snapshot·ref가 닿지 않는다 |
+| 등록 경로 ([08](08-registration-flows.md)) | **미완**: 이번 계획 범위 밖. `vault_generate`·`vault_put`·로그인 포착은 이후 단계에서 |
+| 메타데이터 MAC ([07 §7.6.3](07-cryptography-design.md#763-메타데이터-mac)) | DB에서 origin 목록을 바꾸면 입력 거부 ✅ (`denied: <item> (tampered)`) |
+| Keychain 접근 확인창 실험 (1단계에서 이월) | **미완**: 자동화 테스트는 파일 키 저장소를 쓴다. 실제 Keychain으로 감독자의 첫 치환·마스킹 때 창이 뜨는지는 사람이 확인해야 한다 |
+
+구현하며 정한 것 ([06 §6.3](06-requirements-log.md#63-설계자-판단-목록) J-34–J-42):
+
+- 감독자는 금고를 첫 치환이나 첫 응답 마스킹 때 연다. `vault_version`이 바뀌면 금고를 다시 열고 마스커를 다시 만든다(키 교체 뒤에도 맞는 키를 쓴다). 금고가 없으면 아무것도 가리지 않고, 값을 읽지 못하면 응답을 보내지 않는다.
+- 입력할 frame은 포커스가 있는 요소로 판정한다. 각 frame의 격리 world에서 `document.activeElement`를 읽어 페이지 스크립트가 결과를 바꿀 수 없게 한다.
+- 거부 응답은 `denied: <항목> (<이유>)` 하나다. 이유: `policy`, `origin`, `not_found`, `tampered`, `discarded`, `focus`, `frame`, `vault`.
+- `keyharbor run`은 origin 바인딩이 켜진 항목을 주입하지 않는다.
+- MCP의 세션 도구는 `OpenSession`·`CreateSession`·`RawCdp`를, 감독자는 `UseItem`을 판정한다. 에이전트 이름은 MCP가 제어 요청에 붙이고, 없으면 `cli`다.
 
 ### 4단계 — 사이트 로그인 상태
 

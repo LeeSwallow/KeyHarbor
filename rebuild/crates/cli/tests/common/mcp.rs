@@ -22,6 +22,7 @@ impl Mcp {
             .args(args)
             .env("TEST_DIR", test_dir)
             .env("KEYHARBOR_BROWSER_HEADLESS", "1")
+            .env("KEYHARBOR_TEST_KEYSTORE_DIR", test_dir.join("keys"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()

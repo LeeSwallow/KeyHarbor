@@ -6,7 +6,7 @@
 
 KeyHarbor는 Claude Code·Codex 같은 AI 에이전트가 권한 정책 안에서 중단 없이 일하도록, 비밀번호·카드·개인정보·`.env` 변수와 브라우저 세션을 **내 컴퓨터 안에서만** 관리하는 무료 오픈소스 도구입니다. 외부 금고나 클라우드 계정이 필요 없습니다.
 
-> **상태: 개발 중 — 아직 릴리스하지 않았습니다.** 지금 동작하는 것은 로컬 암호화 금고 CLI와 브라우저 세션·조작 MCP 도구(macOS)입니다. 에이전트가 비밀번호를 보지 않고 브라우저에 입력하는 기능, 관리 앱, Claude Code 플러그인은 [로드맵](ROADMAP.md)에 따라 만들고 있으며, 모두 갖춰지면 첫 릴리스를 냅니다.
+> **상태: 개발 중 — 아직 릴리스하지 않았습니다.** 지금 동작하는 것은 로컬 암호화 금고 CLI, 브라우저 세션·조작 MCP 도구, 에이전트가 값을 보지 않고 `{{secret:항목.필드}}`로 입력하는 치환·응답 마스킹·권한 정책·사용 기록, `.env` 변수를 자식 프로세스에만 넣는 `keyharbor run`입니다(macOS). 관리 앱과 Claude Code 플러그인은 [로드맵](ROADMAP.md)에 따라 만들고 있으며, 모두 갖춰지면 첫 릴리스를 냅니다.
 
 ## 소스에서 빌드
 
@@ -30,7 +30,12 @@ printf '{"password":"…"}' | keyharbor vault add blog \
 keyharbor vault list                                   # 이름·종류·사이트만, 값은 보이지 않음
 keyharbor vault import-env myapp ./.env                # .env 변수 묶음 가져오기
 keyharbor vault export ~/keyharbor-backup.age          # age 형식 암호화 백업
+keyharbor run --env myapp -- npm test                  # 자식에만 변수 주입, 출력의 값은 가려짐
+keyharbor policy deny --agent codex --resource domain --target payment
+keyharbor audit --limit 20                             # 누가 어떤 항목을 어디에 썼는지 (값 없음)
 ```
+
+에이전트는 MCP 도구 `browser_fill`에 `{{secret:blog.password}}`처럼 placeholder를 넘깁니다. 등록된 사이트(origin)의 입력란일 때만 값이 들어가고, 에이전트가 받는 결과에서는 값이 다시 placeholder로 바뀝니다.
 
 항목 종류는 `login`, `secret`, `env`, `card`, `identity`, `address`이고 자격 증명·결제·개인정보 세 도메인으로 나뉘어 각각 다른 키로 암호화됩니다. 전체 명령은 [`rebuild/README.md`](rebuild/README.md)에 있습니다.
 
@@ -39,6 +44,7 @@ keyharbor vault export ~/keyharbor-backup.age          # age 형식 암호화 �
 - **CLI는 평문을 출력하지 않습니다.** 셸을 쓰는 에이전트가 값을 꺼내지 못하게 하려는 설계입니다. 비밀 값은 숨김 프롬프트나 `--stdin`으로만 받고, 명령행 인자로는 받지 않습니다.
 - **Mac이나 Keychain 항목을 잃으면 금고도 잃습니다.** 복구 서비스는 없습니다. `vault export`로 만든 백업과 그 비밀번호는 직접 보관하세요.
 - 서명하지 않은 바이너리라서 업데이트 후 macOS가 Keychain 접근을 다시 물을 수 있습니다. "항상 허용"을 누르면 됩니다.
+- `keyharbor run`의 자식 프로세스는 값을 평문으로 갖습니다. 그 프로세스가 값을 밖으로 보내는 것은 막지 못하고, 출력만 가립니다.
 - 데이터는 `~/Library/Application Support/KeyHarbor`에 있습니다(`--data-dir`, `KEYHARBOR_HOME`으로 변경). 항목 이름·사이트 같은 메타데이터는 평문이므로 이름에 비밀을 넣지 마세요.
 
 ## 문서
