@@ -6,6 +6,8 @@
 
 ### Added
 
+- 브라우저 세션(1단계): `create`, `list`, `open`, `stop`, `wait-auth`, `handoff`, `resume`, `recover`, `endpoint`. 세션마다 감독 프로세스가 OS 잠금을 쥐고 Chrome을 `--remote-debugging-pipe`로 실행해 CDP를 소유한다.
+- `keyharbor mcp`: 세션 도구, 브라우저 조작 도구 11종(`browser_navigate`·`snapshot`·`screenshot`·`click`·`fill`·`type`·`press`·`tabs`·`new_tab`·`switch_tab`·`wait`), 값 없는 `vault_list`. `--session` 범위 지정, `--allow-cdp` 선택.
 - 로컬 암호화 금고와 `keyharbor vault` CLI: `init`, `add`, `edit`, `rm`, `list`, `import-env`, `export`·`import`(age 형식), `rotate-root`, `rotate-domain`.
 - 자격 증명·결제·개인정보 세 도메인과 항목 종류 6가지(`login`, `secret`, `env`, `card`, `identity`, `address`).
 - XChaCha20-Poly1305 필드 암호화, 도메인 키 envelope, HKDF 키 분리, 항목 메타데이터 HMAC, macOS Keychain 루트 키.

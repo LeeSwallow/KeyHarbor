@@ -10,8 +10,9 @@ permissions:
 
 jobs:
   test:
-    # The vault product: rebuild/. Ubuntu keeps the non-macOS build honest; the
-    # keychain code is macOS-only and the tests use the file key store.
+    # The product: rebuild/. Ubuntu keeps the non-macOS build honest; the
+    # keychain code is macOS-only and the tests use the file key store. The
+    # browser tests drive the runner's real Chrome, headless.
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +29,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rebuild
+      - name: use the runner's Chrome for the real-browser tests
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+          else
+            chrome="$(which google-chrome)"
+            # Ubuntu 24.04 blocks the unprivileged user namespaces Chrome's sandbox needs.
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          test -x "$chrome"
+          echo "KEYHARBOR_TEST_CHROME=$chrome" >> "$GITHUB_ENV"
+          echo "KEYHARBOR_BROWSER_HEADLESS=1" >> "$GITHUB_ENV"
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --locked

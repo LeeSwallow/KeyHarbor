@@ -34,16 +34,26 @@ flowchart LR
 
 ## 5.2 단계별 범위와 완료 조건
 
-### 1단계 — 브라우저 브로커
+### 1단계 — 브라우저 브로커 ✅ 구현됨 (2026-10-28, 브랜치 `feat/phase1-browser-broker`)
+
+테스트: `keyharbor-sqlite::session_repo`(인계 요청·대체·재개·취소, 동시 요청, `force_stopped` 펜싱), `keyharbor-broker`(`cdp` 가짜 파이프 직렬화·순서 섞인 응답·이벤트·타임아웃, 접근성 트리 렌더링), `keyharbor` CLI `tests/session_cli.rs`(가짜 브라우저: 이중 `open`, 감독자 `kill -9` 뒤 `recovery_required`·복구, 브라우저 자체 종료, 인계, 프로필 symlink, `endpoint`), `tests/browser_chrome.rs`(실제 Chrome: 조작 11종·실패 응답 뒤 `status`, raw CDP), `tests/mcp_stdio.rs`·`tests/mcp_scope.rs`(도구 목록, 인계 대기, 범위 거부, `vault_list`에 값 없음, 실제 Chrome 왕복). 실제 Chrome 테스트는 `KEYHARBOR_TEST_CHROME`이 있을 때만 돈다.
 
 | 범위 | 완료 조건 |
 |---|---|
-| 프로토타입 세션 수명(lease·generation·감독자·잠금·복구·인계)을 `rebuild/`로 이식 | 기존 `tests/session_lifecycle.rs`, `sqlite_contention.rs`, `mcp_stdio.rs`, `mcp_scope.rs`의 시나리오가 재구현에서 통과 |
-| Chrome `--remote-debugging-pipe` 실행, 감독자의 CDP 클라이언트 | 포트 없이 navigate·snapshot 성공 |
-| 감독자 제어 socket | MCP → 감독자 명령 왕복, 감독자 소실 시 명확한 오류 |
-| 브라우저 조작 MCP 도구 11종 ([02 §2.9](02-system-architecture.md#29-mcp-도구-표면)) | 로컬 테스트 페이지에서 각 도구 동작 |
-| raw CDP 선택 기능 유지 | `--allow-cdp` + `cdp: true` 세션만 endpoint 반환 |
-| Keychain 접근 확인창 실험 ([03 §3.4](03-security-whitepaper.md#34-금고-키-보관-macos-keychain)) | 재빌드 후에도 에이전트 경로에서 창이 뜨지 않는 방법 확정 |
+| 프로토타입 세션 수명(lease·generation·감독자·잠금·복구·인계)을 `rebuild/`로 이식 | 기존 `tests/session_lifecycle.rs`, `sqlite_contention.rs`, `mcp_stdio.rs`, `mcp_scope.rs`의 시나리오가 재구현에서 통과 ✅ |
+| Chrome `--remote-debugging-pipe` 실행, 감독자의 CDP 클라이언트 | 포트 없이 navigate·snapshot 성공 ✅ |
+| 감독자 제어 socket | MCP → 감독자 명령 왕복, 감독자 소실 시 명확한 오류 ✅ (`supervisor is not running`) |
+| 브라우저 조작 MCP 도구 11종 ([02 §2.9](02-system-architecture.md#29-mcp-도구-표면)) | 로컬 테스트 페이지에서 각 도구 동작 ✅ |
+| raw CDP 선택 기능 유지 | `--allow-cdp` + `cdp: true` 세션만 endpoint 반환 ✅ |
+| Keychain 접근 확인창 실험 ([03 §3.4](03-security-whitepaper.md#34-금고-키-보관-macos-keychain)) | 재빌드 후에도 에이전트 경로에서 창이 뜨지 않는 방법 확정 — **미완**: 1단계 MCP 도구는 Keychain을 읽지 않는다(`vault_list`는 SQLite 메타데이터만). 실험은 Keychain을 쓰는 3단계 치환과 함께 한다 |
+
+구현하며 정한 것:
+
+- 잠금 파일(`run/<id>.lock`)은 감독자가 끝나도 지우지 않는다. 지우면 기존 잠금을 쥔 프로세스와 새 파일을 잠근 프로세스가 동시에 소유자가 될 수 있다. socket은 지운다.
+- 인계 요청은 요청마다 행을 남긴다(`pending`·`resumed`·`superseded`·`cancelled`). `awaiting_user`에서 다시 `wait-auth`하면 이전 대기 요청은 `superseded`가 되고, 세션이 멈추거나 복구되면 대기 요청은 `cancelled`가 된다. `session_wait_for_resume`은 `resumed`이고 세션이 지금 `running`일 때만 성공한다.
+- `recover`는 generation을 지운다(이전 실행의 모든 조건부 쓰기가 실패한다). `failed`도 같은 명령으로 되돌린다.
+- `browser_navigate`는 http(s)와 `about:blank`만 받는다. `open --url`은 프로토타입 규칙(HTTPS 또는 localhost HTTP, query·fragment 없음)을 유지한다. 명령행 인자는 `ps`에 보이기 때문이다.
+- macOS Chrome은 창을 다 닫아도 프로세스가 남으므로, 감독자는 마지막 탭이 닫히면 브라우저를 닫는다.
 
 ### 2단계 — 로컬 금고 ✅ 구현됨 (2026-10-28, 브랜치 `feat/phase2-local-vault`)
 
