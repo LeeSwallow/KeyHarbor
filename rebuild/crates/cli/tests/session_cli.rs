@@ -2,6 +2,10 @@
 //! pipe (fd 3) and exits when the pipe closes or the test asks it to.
 #![cfg(unix)]
 
+mod common;
+
+use common::FAKE_BROWSER;
+
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
@@ -10,19 +14,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-
-const FAKE_BROWSER: &str = r#"#!/bin/sh
-printf '%s' "$PPID" > "$TEST_DIR/supervisor-pid"
-printf '%s\n' "$@" > "$TEST_DIR/args"
-for arg in "$@"; do case "$arg" in --user-data-dir=*) profile=${arg#--user-data-dir=};; --remote-debugging-port=0) cdp=1;; esac; done
-if [ "$cdp" = 1 ]; then printf '12345\n/devtools/browser/11111111-1111-4111-8111-111111111111\n' > "$profile/DevToolsActivePort"; fi
-cat <&3 >/dev/null &
-reader=$!
-while [ -d "$TEST_DIR" ] && [ ! -f "$TEST_DIR/close" ] && kill -0 "$reader" 2>/dev/null; do sleep 0.05; done
-kill "$reader" 2>/dev/null
-[ -d "$TEST_DIR" ] && touch "$TEST_DIR/ended"
-exit 0
-"#;
 
 struct Env {
     tmp: tempfile::TempDir,

@@ -17,6 +17,20 @@ struct Cli {
 enum Command {
     #[command(flatten)]
     Session(session_cmd::SessionCmd),
+    /// Serve MCP tools over stdio for an AI agent
+    Mcp {
+        /// Expose and allow only this session
+        #[arg(long)]
+        session: Option<String>,
+        /// Allow sessions with a raw CDP endpoint (bypasses KeyHarbor's protections)
+        #[arg(long)]
+        allow_cdp: bool,
+        /// Name of the agent using this server (used by policies in a later phase)
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        browser: Option<PathBuf>,
+    },
     /// Manage the local encrypted vault
     #[command(subcommand)]
     Vault(vault_cmd::VaultCmd),
@@ -38,5 +52,17 @@ fn main() -> Result<()> {
     match args.command {
         Command::Vault(command) => vault_cmd::run(&root, command),
         Command::Session(command) => session_cmd::run(&root, command),
+        Command::Mcp {
+            session,
+            allow_cdp,
+            agent,
+            browser,
+        } => keyharbor_mcp::run(keyharbor_mcp::Options {
+            data: root,
+            session,
+            allow_cdp,
+            agent,
+            browser,
+        }),
     }
 }

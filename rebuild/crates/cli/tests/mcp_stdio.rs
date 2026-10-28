@@ -1,0 +1,310 @@
+//! `keyharbor mcp` over stdio JSON-RPC, with the fake browser (and real Chrome when available).
+#![cfg(unix)]
+
+mod common;
+
+use common::{FAKE_BROWSER, chrome, mcp::Mcp, serve_site, short_tempdir};
+use serde_json::{Value, json};
+use std::{
+    fs,
+    io::Write,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
+
+fn cli(data: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+        .arg("--data-dir")
+        .arg(data)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+fn fake_browser(dir: &Path) -> PathBuf {
+    let browser = dir.join("browser");
+    fs::write(&browser, FAKE_BROWSER).unwrap();
+    fs::set_permissions(&browser, fs::Permissions::from_mode(0o700)).unwrap();
+    browser
+}
+
+fn wait_until(mut done: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !done() {
+        assert!(Instant::now() < deadline, "timed out");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn session_tools_with_fake_browser() {
+    let tmp = short_tempdir();
+    let data = tmp.path().join("data");
+    let browser = fake_browser(tmp.path());
+    let browser_arg = browser.to_str().unwrap();
+    let mut mcp = Mcp::start(
+        &data,
+        tmp.path(),
+        &["--browser", browser_arg, "--agent", "claude"],
+    );
+    let tools = mcp.tools();
+    for name in [
+        "session_list",
+        "session_create",
+        "session_open",
+        "session_stop",
+        "session_wait_auth",
+        "session_wait_for_resume",
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_screenshot",
+        "browser_click",
+        "browser_fill",
+        "browser_type",
+        "browser_press",
+        "browser_tabs",
+        "browser_new_tab",
+        "browser_switch_tab",
+        "browser_wait",
+        "vault_list",
+    ] {
+        assert!(tools.iter().any(|t| t == name), "{name} missing: {tools:?}");
+    }
+    assert!(!tools.iter().any(|t| t == "session_endpoint"));
+    assert!(
+        !tools
+            .iter()
+            .any(|t| t.contains("resume") && t != "session_wait_for_resume")
+    );
+    assert!(
+        !tools
+            .iter()
+            .any(|t| t.contains("recover") || t.contains("reveal") || t.contains("secret"))
+    );
+
+    let created = mcp.ok("session_create", json!({"name": "--help"}));
+    assert_eq!(created["name"], "--help");
+    assert_eq!(created["state"], "stopped");
+    let id = created["id"].as_str().unwrap().to_owned();
+
+    assert!(
+        mcp.err("session_open", json!({"id": id, "cdp": true}))
+            .contains("--allow-cdp")
+    );
+    mcp.err(
+        "session_open",
+        json!({"id": id, "url": "http://example.com"}),
+    );
+    mcp.err("session_open", json!({"id": "not-an-id"}));
+    let opened = mcp.ok(
+        "session_open",
+        json!({"id": id, "url": "https://example.com/login"}),
+    );
+    assert_eq!(opened["state"], "running");
+    wait_until(|| tmp.path().join("args").exists());
+    assert!(
+        fs::read_to_string(tmp.path().join("args"))
+            .unwrap()
+            .lines()
+            .any(|l| l == "https://example.com/login")
+    );
+    mcp.err("session_open", json!({"id": id}));
+    mcp.err("session_endpoint", json!({"id": id}));
+
+    let handoff = mcp.ok(
+        "session_wait_auth",
+        json!({"id": id, "origin": "https://example.com"}),
+    );
+    let request = handoff["request_id"].as_str().unwrap().to_owned();
+    let inspected = cli(&data, &["handoff", &id]);
+    assert!(String::from_utf8_lossy(&inspected.stdout).contains("\thttps://example.com"));
+    mcp.err(
+        "session_wait_for_resume",
+        json!({"id": id, "request_id": request, "timeout_seconds": 0}),
+    );
+    assert!(
+        mcp.err(
+            "session_wait_for_resume",
+            json!({"id": id, "request_id": request, "timeout_seconds": 1}),
+        )
+        .contains("Timed out")
+    );
+    let resume = {
+        let (data, id, request) = (data.clone(), id.clone(), request.clone());
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            cli(&data, &["resume", &id, &request]).status.success()
+        })
+    };
+    mcp.ok(
+        "session_wait_for_resume",
+        json!({"id": id, "request_id": request, "timeout_seconds": 5}),
+    );
+    assert!(resume.join().unwrap());
+    mcp.ok(
+        "session_wait_for_resume",
+        json!({"id": id, "request_id": request, "timeout_seconds": 1}),
+    );
+    let second = mcp.ok("session_wait_auth", json!({"id": id}))["request_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    mcp.err(
+        "session_wait_for_resume",
+        json!({"id": id, "request_id": request, "timeout_seconds": 1}),
+    );
+    let stop = {
+        let (data, id) = (data.clone(), id.clone());
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            cli(&data, &["stop", &id]).status.success()
+        })
+    };
+    mcp.err(
+        "session_wait_for_resume",
+        json!({"id": id, "request_id": second, "timeout_seconds": 5}),
+    );
+    assert!(stop.join().unwrap());
+    let list = mcp.ok("session_list", json!({}));
+    assert_eq!(list[0]["name"], "--help");
+    assert_eq!(list[0]["state"], "stopped");
+    mcp.err("session_wait_auth", json!({"id": "not-a-session"}));
+    assert!(
+        mcp.err("browser_snapshot", json!({"session": id}))
+            .contains("not running")
+    );
+    fs::remove_file(tmp.path().join("ended")).unwrap();
+    let reopened = mcp.ok("session_open", json!({"id": id}));
+    assert_eq!(reopened["state"], "running");
+    assert_eq!(
+        mcp.ok("session_stop", json!({"id": id}))["state"],
+        "stopped"
+    );
+    mcp.finish();
+
+    // With --allow-cdp the endpoint tool exists and works for cdp sessions only.
+    fs::remove_file(tmp.path().join("ended")).unwrap();
+    let mut mcp = Mcp::start(
+        &data,
+        tmp.path(),
+        &["--allow-cdp", "--browser", browser_arg],
+    );
+    assert!(mcp.tools().iter().any(|t| t == "session_endpoint"));
+    mcp.ok("session_open", json!({"id": id}));
+    mcp.err("session_endpoint", json!({"id": id}));
+    mcp.ok("session_stop", json!({"id": id}));
+    fs::remove_file(tmp.path().join("ended")).unwrap();
+    mcp.ok("session_open", json!({"id": id, "cdp": true}));
+    let endpoint = mcp.ok("session_endpoint", json!({"id": id}));
+    assert!(
+        endpoint["endpoint"]
+            .as_str()
+            .unwrap()
+            .starts_with("ws://127.0.0.1:12345/devtools/browser/"),
+        "{endpoint}"
+    );
+    mcp.ok("session_stop", json!({"id": id}));
+    mcp.finish();
+}
+
+#[test]
+fn vault_list_shows_metadata_only() {
+    let tmp = short_tempdir();
+    let data = tmp.path().join("data");
+    let keys = tmp.path().join("keys");
+    let vault = |args: &[&str], stdin: Option<&str>| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+            .arg("--data-dir")
+            .arg(&data)
+            .args(args)
+            .env("KEYHARBOR_TEST_KEYSTORE_DIR", &keys)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        if let Some(stdin) = stdin {
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(stdin.as_bytes())
+                .unwrap();
+        }
+        drop(child.stdin.take());
+        assert!(child.wait().unwrap().success(), "{args:?}");
+    };
+    let mut mcp = Mcp::start(&data, tmp.path(), &[]);
+    assert_eq!(mcp.ok("vault_list", json!({})), json!([]));
+    vault(&["vault", "init"], None);
+    vault(
+        &[
+            "vault",
+            "add",
+            "github",
+            "--kind",
+            "login",
+            "--origin",
+            "https://github.com",
+            "--set",
+            "username=octo-user",
+            "--stdin",
+        ],
+        Some(r#"{"password":"hunter2-SECRET-value"}"#),
+    );
+    let (error, text) = mcp.call("vault_list", json!({}));
+    assert!(!error, "{text}");
+    assert!(!text.contains("hunter2-SECRET-value"));
+    assert!(!text.contains("octo-user"));
+    let items: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(items[0]["name"], "github");
+    assert_eq!(items[0]["kind"], "login");
+    assert_eq!(items[0]["domain"], "credentials");
+    assert_eq!(items[0]["origins"], json!(["https://github.com"]));
+    let fields = items[0]["fields"].as_array().unwrap();
+    assert!(fields.contains(&json!("password")) && fields.contains(&json!("username")));
+    mcp.finish();
+}
+
+#[test]
+fn browser_tools_round_trip_with_chrome() {
+    let Some(chrome) = chrome() else { return };
+    let base = serve_site();
+    let tmp = short_tempdir();
+    let data = tmp.path().join("data");
+    let mut mcp = Mcp::start(&data, tmp.path(), &["--browser", chrome.to_str().unwrap()]);
+    let id = mcp.ok("session_create", json!({"name": "chrome"}))["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    mcp.ok("session_open", json!({"id": id}));
+    let page = mcp.ok(
+        "browser_navigate",
+        json!({"session": id, "url": format!("{base}/")}),
+    );
+    assert_eq!(page["title"], "Login");
+    let snapshot = mcp.ok("browser_snapshot", json!({"session": id}));
+    assert!(
+        snapshot["text"]
+            .as_str()
+            .unwrap()
+            .contains("button \"로그인\"")
+    );
+    mcp.ok(
+        "browser_fill",
+        json!({"session": id, "selector": "#user", "text": "carol"}),
+    );
+    mcp.ok("browser_click", json!({"session": id, "selector": "#go"}));
+    mcp.ok("browser_wait", json!({"session": id, "selector": "#done"}));
+    let snapshot = mcp.ok("browser_snapshot", json!({"session": id}));
+    assert!(snapshot["text"].as_str().unwrap().contains("hello carol"));
+    assert!(mcp.ok("browser_tabs", json!({"session": id})).is_array());
+    mcp.err("browser_click", json!({"session": id, "ref": 987654321}));
+    mcp.err("browser_click", json!({"session": id}));
+    mcp.ok("session_stop", json!({"id": id}));
+    mcp.finish();
+}

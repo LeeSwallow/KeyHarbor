@@ -11,6 +11,7 @@ clap = { version = "4", features = ["derive", "env"] }
 keyharbor-domain = { path = "../domain" }
 keyharbor-broker = { path = "../broker" }
 keyharbor-core = { path = "../core" }
+keyharbor-mcp = { path = "../mcp" }
 keyharbor-sqlite = { path = "../sqlite" }
 keyharbor-vault = { path = "../vault" }
 age.workspace = true
