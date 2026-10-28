@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans. Steps use `- [ ]`.
 
-**Goal:** 동작을 바꾸지 않고 `rebuild/`를 **헥사고날(Ports & Adapters) + Clean Architecture 의존 규칙**으로 재구성하고, 평문을 다루는 모든 로직을 **보안 계층 `keyharbor-guard`(PDP = policy, PEP = substitute·mask)**로 모은다. 브라우저 접근은 **데코레이터 `GuardedBrowser`**를 거쳐야만 인터페이스에 노출되고, 평문 복호화는 guard만 만들 수 있는 **capability `PlaintextAccess`**를 요구한다. [사용자 요구 R-30, R-31]
+**Goal:** 동작을 바꾸지 않고 `rebuild/`를 **헥사고날(Ports & Adapters) + Clean Architecture 의존 규칙**으로 재구성하고, 평문을 다루는 모든 로직을 **보안 계층 `keyharbor-guard`(PDP = policy, PEP = substitute·mask)**로 모은다. 브라우저 접근은 **데코레이터 `GuardedBrowser`**를 거쳐야만 인터페이스에 노출되고, 평문 복호화는 guard만 만들 수 있는 **capability `PlaintextAccess`**를 요구한다. [사용자 요구 R-30, R-31, R-32]
 
 ## 계층과 의존 방향 (위 → 아래만)
 
@@ -39,6 +39,15 @@ domain + ports                   keyharbor-domain (엔티티·값 객체·규칙
 
 core는 `SqliteStore` 같은 구체 타입이 아니라 위 trait에만 의존한다(제네릭 또는 `Box<dyn …>` — 구현자가 테스트 편의와 단순성으로 선택). sqlite는 domain::ports를 구현한다(dependency inversion).
 
+## 영속성 계층 (keyharbor-sqlite = Diesel 어댑터) [R-32]
+
+- `rusqlite`를 rebuild 워크스페이스에서 제거하고 **Diesel 2.3**(`sqlite`, `returning_clauses_for_sqlite_3_35`)과 `diesel_migrations` 2.3, `libsqlite3-sys`(`bundled`, Diesel이 허용하는 <0.39 범위)로 바꾼다. 한 워크스페이스에 libsqlite3-sys는 하나만 링크될 수 있으므로 테스트도 rusqlite를 쓰지 않는다(변조 테스트는 Diesel `sql_query` 또는 repo의 `#[cfg(test)]` 헬퍼).
+- 구조: `migrations/<버전>_<이름>/up.sql`(현재 스키마를 그대로 옮긴 초기 마이그레이션 + 이후 변경), `schema.rs`(diesel `table!`), `models/`(Queryable·Insertable·AsChangeset 영속성 모델 — domain 타입과 분리), `mappers/`(영속성 ↔ domain 변환), `repos/{vault, session, handoff, policy, audit, settings}.rs`(domain::ports 구현), `connection.rs`(열기: 0700 디렉터리 검사, WAL, busy_timeout 5s, foreign_keys, secure_delete, 마이그레이션 실행).
+- 쓰기 트랜잭션은 `conn.immediate_transaction(|c| …)`, CAS는 `diesel::update(…).filter(generation.eq(…))` 영향 행 수로 판정. `vault.version` 증가와 `bump_from(expected)` 의미 유지.
+- 원시 SQL은 `migrations/`에만. `check-layers.sh`가 `crates/sqlite/src/repos/` 밖의 `sql_query(` 사용과, rebuild 전체의 `rusqlite` 의존을 금지한다.
+- DB 스키마(테이블·컬럼·CHECK 제약)는 바꾸지 않는다. 기존 사용자 DB(테이블이 이미 있음)를 열 때 초기 마이그레이션이 `CREATE TABLE IF NOT EXISTS`라 충돌하지 않게 한다.
+- `cargo deny`: Diesel·diesel_migrations 라이선스(MIT OR Apache-2.0) 확인.
+
 ## 보안 계층 (keyharbor-guard)
 
 - `pdp` (policy): `decide(rules, agent, action) -> Decision` — core/src/policy.rs에서 이동.
@@ -64,6 +73,7 @@ core는 `SqliteStore` 같은 구체 타입이 아니라 위 trait에만 의존�
 ## Tasks
 1. `scripts/check-layers.sh`(허용 의존 표, `PlaintextAccess::issue` 호출 위치, `chacha20poly1305|hkdf|hmac` 직접 사용은 vault만) 작성 → 현재 코드에서 실패 확인 → 커밋 `chore: layer rules check`(test-scripts 연결은 Task 6)
 2. domain::ports 도입, sqlite가 포트 구현, core가 포트에만 의존 → 테스트 통과 → 커밋 `refactor: ports in domain, adapters implement them`
+2b. sqlite 어댑터를 Diesel로 교체(migrations·schema·models·mappers·repos·connection) → 테스트 통과(동시 CAS 경합 테스트 포함) → 커밋 `refactor(sqlite): Diesel repositories with embedded migrations`
 3. keyharbor-guard 생성(pdp·pep·audit·run 이동, PlaintextAccess, GuardedBrowser 데코레이터) → 커밋 `refactor: guard security layer with policy decision and enforcement points`
 4. broker 분할(cdp/·browser/·supervisor/), BrowserPort·FrameInspector 구현, control op는 GuardedBrowser 경유 → 커밋 `refactor(broker): CDP adapter, browser operations and supervisor modules`
 5. core·mcp 모듈 분할 → 커밋 `refactor: split use cases and MCP tools by feature`
