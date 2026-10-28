@@ -107,6 +107,11 @@ pub fn resolve_checked(
             }
         }
     }
+    // Text typed while the focus is not on something that takes text (a frame host, a
+    // button, the body) could land anywhere.
+    if to.element.is_some_and(|element| !element.takes_text()) {
+        return Err(deny(first, "focus"));
+    }
     // Every check passed: this is where the guard grants plaintext.
     let access = PlaintextAccess::issue();
     fill_template(template, |r| vault.resolve(&access, r)).map_err(|_| deny(first, "vault"))

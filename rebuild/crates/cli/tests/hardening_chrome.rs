@@ -83,3 +83,66 @@ fn edited_values_stay_hidden_and_passwords_go_only_into_password_inputs() {
     let refs: Vec<&str> = secrets.iter().map(String::as_str).collect();
     h.assert_absent(&refs);
 }
+
+/// The refs of snapshot lines whose role is one of `roles`.
+fn refs_with_role(snapshot: &str, roles: &[&str]) -> Vec<u64> {
+    snapshot
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim_start();
+            let (reference, rest) = line.strip_prefix('[')?.split_once("] ")?;
+            let role = rest.split(' ').next()?;
+            roles.contains(&role).then(|| reference.parse().ok())?
+        })
+        .collect()
+}
+
+#[test]
+fn frames_behind_shadow_roots_and_objects_do_not_count_as_the_page() {
+    let Some(browser) = chrome() else { return };
+    let got = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let log = got.clone();
+    // B: an input that reports every value it receives back to its server.
+    let inner = serve_fn(move |path| {
+        log.lock().unwrap().push(path.to_owned());
+        "<!doctype html><title>Inner</title><input id=x aria-label=Inner style='width:100%;height:80px'>\
+         <script>x.addEventListener('input', () => { new Image().src = '/got?' + encodeURIComponent(x.value); });</script>"
+            .to_owned()
+    });
+    // A: the item's origin, embedding B in an open shadow root and in an <object>.
+    let inner_url = inner.clone();
+    let outer = serve_fn(move |_| {
+        format!(
+            "<!doctype html><title>Outer</title><div id=host></div>\
+             <object id=o data=\"{inner_url}/\" width=300 height=100></object>\
+             <script>host.attachShadow({{mode: 'open'}}).innerHTML = '<iframe src=\"{inner_url}/\" width=300 height=100></iframe>';</script>"
+        )
+    });
+    let mut h = Harness::new();
+    let user = h.synth("user");
+    h.add("site", "login", &[&outer], json!({"username": user}));
+    h.open(&browser);
+    h.ok_call(json!({"op": "navigate", "url": format!("{outer}/")}));
+    h.ok_call(json!({"op": "wait", "ms": 1000}));
+    let snapshot = h.snapshot();
+    let hosts = refs_with_role(&snapshot, &["Iframe", "PluginObject", "embeddedobject"]);
+    assert!(hosts.len() >= 2, "{snapshot}");
+    let mut tried = 0;
+    for reference in hosts {
+        if h.call(json!({"op": "click", "target": {"ref": reference}}))
+            .is_err()
+        {
+            continue;
+        }
+        tried += 1;
+        let error = h.denied(json!({"op": "type", "text": "{{secret:site.username}}"}));
+        assert!(error.starts_with("denied: site ("), "{error}");
+    }
+    assert!(tried >= 2, "{snapshot}");
+    h.ok_call(json!({"op": "wait", "ms": 300}));
+    assert!(
+        !got.lock().unwrap().iter().any(|p| p.starts_with("/got")),
+        "a framed document received the value"
+    );
+    h.assert_absent(&[&user]);
+}

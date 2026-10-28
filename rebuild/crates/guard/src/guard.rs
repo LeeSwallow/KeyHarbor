@@ -12,14 +12,17 @@ use anyhow::{Result, anyhow, bail};
 use keyharbor_core::Vault;
 use keyharbor_domain::{
     SessionId,
-    audit::AuditEvent,
+    audit::{AuditEvent, AuditKind},
     ports::Store,
     vault::{ItemName, Origin},
 };
 use serde_json::Value;
 use std::{
     collections::BTreeSet,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use zeroize::Zeroizing;
 
@@ -45,6 +48,8 @@ pub struct Guard {
     /// Backend node ids of every element that received substituted text in this session.
     /// Snapshots show them as `[redacted]` whatever their value becomes (03 §3.7, C1).
     tainted: Mutex<BTreeSet<u64>>,
+    /// Once set, nothing more is substituted in this session (C2, I1).
+    locked: AtomicBool,
 }
 
 impl Guard {
@@ -55,6 +60,7 @@ impl Guard {
             open_vault,
             vault: Mutex::new(None),
             tainted: Mutex::new(BTreeSet::new()),
+            locked: AtomicBool::new(false),
         }
     }
 
@@ -126,6 +132,20 @@ impl Guard {
         }
     }
 
+    /// Stops all substitution for the rest of the session and records why.
+    pub(crate) fn lock(&self, agent: &str, reason: &str) {
+        if !self.locked.swap(true, Ordering::SeqCst) {
+            self.record(
+                &AuditEvent::new(agent, AuditKind::SubstitutionLocked, reason)
+                    .session(self.session),
+            );
+        }
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.locked.load(Ordering::SeqCst)
+    }
+
     /// The elements snapshots must redact.
     pub(crate) fn tainted(&self) -> BTreeSet<u64> {
         self.tainted.lock().map(|t| t.clone()).unwrap_or_default()
@@ -151,6 +171,9 @@ impl Guard {
         };
         let origin_text = origin.map(Origin::as_str);
         let deny = |item: &ItemName, reason: &str| self.denied(agent, item, origin_text, reason);
+        if self.is_locked() {
+            return Err(deny(&first, "locked"));
+        }
         let rules = self
             .store
             .lock()

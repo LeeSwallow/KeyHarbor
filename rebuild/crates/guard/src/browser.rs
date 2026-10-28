@@ -9,7 +9,7 @@ use crate::{
     Guard,
     pep::substitute::{Destination, Prepared},
 };
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     ports::{
@@ -90,6 +90,9 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         let inserted = self.inner.insert_text(page, &prepared.text).await;
         drop(prepared.text);
         inserted?;
+        // The focus must still be where the text was checked to go; if page code moved it,
+        // the text may have gone elsewhere, so nothing more is substituted in this session.
+        let moved_focus = self.inner.focus(page).await.ok().as_ref() != Some(focus);
         let after = self.inner.frame_origin(page, &focus.frame).await;
         let changed = after != origin;
         let session = self.guard.session();
@@ -110,6 +113,10 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
                 .origin(origin.as_ref().map(Origin::as_str));
                 self.guard.record(&moved);
             }
+        }
+        if moved_focus {
+            self.guard.lock(self.agent, "focus_moved");
+            bail!("substitution locked for this session: the focus moved while typing");
         }
         Ok(if changed {
             json!({"warning": "origin_changed_after_fill"})
@@ -244,6 +251,9 @@ mod tests {
         element: Element,
         /// What the last redacted snapshot was asked to hide.
         hidden: BTreeSet<u64>,
+        /// The focused node; inserting text moves the focus to `focus_after_insert`.
+        focused: u64,
+        focus_after_insert: Option<u64>,
     }
     impl Default for Fake {
         fn default() -> Self {
@@ -256,6 +266,8 @@ mod tests {
                     ..Element::default()
                 },
                 hidden: BTreeSet::new(),
+                focused: 7,
+                focus_after_insert: None,
             }
         }
     }
@@ -311,6 +323,9 @@ mod tests {
         }
         async fn insert_text(&mut self, _: &Page, text: &str) -> Result<()> {
             self.typed.push(text.to_owned());
+            if let Some(node) = self.focus_after_insert {
+                self.focused = node;
+            }
             Ok(())
         }
         async fn redacted_snapshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
@@ -322,7 +337,7 @@ mod tests {
         async fn focus(&mut self, _: &Page) -> Result<Focus> {
             Ok(Focus {
                 frame: "main".into(),
-                node: 7,
+                node: self.focused,
             })
         }
         async fn frame_origin(&mut self, _: &Page, _: &str) -> Option<Origin> {
@@ -527,5 +542,69 @@ mod tests {
         .unwrap();
         block(guard.browser(&mut fake, "codex").snapshot()).unwrap();
         assert_eq!(fake.hidden, BTreeSet::from([7]));
+    }
+
+    #[test]
+    fn text_goes_only_into_elements_that_take_text() {
+        let e = env();
+        init(&e).add(login("github", "KH-SYNTH-pw-81")).unwrap();
+        let (guard, probe) = guard(&e);
+        for local_name in ["div", "iframe", "object", "button", "body"] {
+            let mut fake = Fake {
+                element: Element {
+                    local_name: local_name.into(),
+                    ..Element::default()
+                },
+                ..Fake::default()
+            };
+            let err = block(
+                guard
+                    .browser(&mut fake, "claude")
+                    .type_text("{{secret:github.username}}"),
+            )
+            .unwrap_err();
+            assert_eq!(err.to_string(), "denied: github (focus)", "{local_name}");
+            assert!(fake.typed.is_empty());
+        }
+        assert_eq!(probe.kinds().len(), 5);
+    }
+
+    #[test]
+    fn focus_moving_during_input_locks_substitution_for_the_session() {
+        let e = env();
+        init(&e).add(login("github", "KH-SYNTH-pw-82")).unwrap();
+        let (guard, probe) = guard(&e);
+        let mut fake = Fake {
+            focus_after_insert: Some(8),
+            ..Fake::default()
+        };
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .type_text("{{secret:github.password}}"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("substitution locked"), "{err}");
+        assert!(guard.is_locked());
+        // Every later substitution is refused, for every agent; plain text still works.
+        fake.focus_after_insert = None;
+        fake.focused = 7;
+        let err = block(
+            guard
+                .browser(&mut fake, "codex")
+                .fill(&json!({"ref": 7}), "{{secret:github.username}}"),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "denied: github (locked)");
+        block(guard.browser(&mut fake, "codex").type_text("plain")).unwrap();
+        assert_eq!(fake.typed, vec!["KH-SYNTH-pw-82", "plain"]);
+        assert_eq!(
+            probe.kinds(),
+            vec![
+                (AuditKind::SecretUsed, "ok".into()),
+                (AuditKind::SubstitutionLocked, "focus_moved".into()),
+                (AuditKind::SecretDenied, "locked".into()),
+            ]
+        );
     }
 }

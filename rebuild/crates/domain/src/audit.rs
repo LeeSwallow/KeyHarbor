@@ -12,9 +12,12 @@ pub enum AuditKind {
     PolicyChanged,
     VaultItemChanged,
     EnvInjected,
+    /// The guard stopped all substitution in a session (focus moved during input, repeated
+    /// probing with vault values).
+    SubstitutionLocked,
 }
 impl AuditKind {
-    pub const ALL: [AuditKind; 10] = [
+    pub const ALL: [AuditKind; 11] = [
         Self::SecretUsed,
         Self::SecretDenied,
         Self::OriginChangedAfterFill,
@@ -25,6 +28,7 @@ impl AuditKind {
         Self::PolicyChanged,
         Self::VaultItemChanged,
         Self::EnvInjected,
+        Self::SubstitutionLocked,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -38,6 +42,7 @@ impl AuditKind {
             Self::PolicyChanged => "policy_changed",
             Self::VaultItemChanged => "vault_item_changed",
             Self::EnvInjected => "env_injected",
+            Self::SubstitutionLocked => "substitution_locked",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {

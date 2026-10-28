@@ -12,9 +12,28 @@ use serde_json::{Value, json};
 /// Iframes nested deeper than this are refused for substitution.
 const MAX_FRAME_DEPTH: usize = 16;
 
+/// The focused element of the document, followed through open shadow roots.
+const ACTIVE_ELEMENT: &str = "(() => { let e = document.activeElement; \
+    while (e && e.shadowRoot && e.shadowRoot.activeElement) { e = e.shadowRoot.activeElement; } \
+    return e; })()";
+
+/// Elements that host a document or plugin; typing "into" one types into what it hosts.
+const FRAME_HOSTS: &[&str] = &[
+    "iframe",
+    "frame",
+    "object",
+    "embed",
+    "fencedframe",
+    "portal",
+];
+
 impl CdpBrowser {
-    /// Follows `document.activeElement` down through same-process iframes, evaluating in an
-    /// isolated world in each frame so page scripts cannot redefine what it returns.
+    /// Follows `document.activeElement` down through open shadow roots, and into every
+    /// element that hosts a document — whatever its tag (iframe, frame, object, embed,
+    /// fencedframe) — as the DOM agent reports it (`frameId`). Script runs in an isolated
+    /// world in each frame so page scripts cannot redefine what it returns. A hosted
+    /// document this page session cannot enter (another process), a frame host without a
+    /// document, or an element that holds a shadow root it cannot see into is an error.
     pub(super) async fn focused(&self, session: &str) -> Result<Focus> {
         let tree = self.call("Page.getFrameTree", json!({}), session).await?;
         let mut frame = tree["frameTree"]["frame"]["id"]
@@ -35,7 +54,7 @@ impl CdpBrowser {
             let active = self
                 .call(
                     "Runtime.evaluate",
-                    json!({"expression": "document.activeElement", "contextId": context}),
+                    json!({"expression": ACTIVE_ELEMENT, "contextId": context}),
                     session,
                 )
                 .await?;
@@ -44,7 +63,11 @@ impl CdpBrowser {
                 .context("no element has focus")?
                 .to_owned();
             let described = self
-                .call("DOM.describeNode", json!({"objectId": object}), session)
+                .call(
+                    "DOM.describeNode",
+                    json!({"objectId": object, "depth": 0, "pierce": true}),
+                    session,
+                )
                 .await;
             let _ = self
                 .call(
@@ -56,8 +79,15 @@ impl CdpBrowser {
             let node = described?["node"].take();
             let local = node["localName"].as_str().unwrap_or_default();
             match node["frameId"].as_str() {
-                Some(child) if matches!(local, "iframe" | "frame") && child != frame => {
+                Some(child) if child != frame => {
                     frame = child.to_owned();
+                }
+                _ if FRAME_HOSTS.contains(&local) => bail!("the focused frame cannot be entered"),
+                _ if node["shadowRoots"]
+                    .as_array()
+                    .is_some_and(|roots| roots.iter().any(|r| r["shadowRootType"] == "closed")) =>
+                {
+                    bail!("the focus is inside a closed shadow root")
                 }
                 _ => {
                     return Ok(Focus {
