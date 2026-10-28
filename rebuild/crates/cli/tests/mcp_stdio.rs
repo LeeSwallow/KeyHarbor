@@ -105,7 +105,10 @@ fn session_tools_with_fake_browser() {
         json!({"id": id, "url": "https://example.com/login"}),
     );
     assert_eq!(opened["state"], "running");
-    wait_until(|| tmp.path().join("args").exists());
+    // The fake browser creates the file before it writes it; wait for the last line.
+    wait_until(|| {
+        fs::read_to_string(tmp.path().join("args")).is_ok_and(|args| args.ends_with('\n'))
+    });
     assert!(
         fs::read_to_string(tmp.path().join("args"))
             .unwrap()

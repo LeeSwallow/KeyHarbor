@@ -1,7 +1,6 @@
 //! The MCP server state, result helpers and the tool router.
 
 use anyhow::{Context, Result, anyhow};
-use keyharbor_broker::client;
 use keyharbor_domain::{
     SessionId,
     policy::AgentName,
@@ -11,13 +10,17 @@ use keyharbor_guard::{
     SharedStore, VaultOpener,
     session::{SessionOp, authorize},
 };
+use keyharbor_supervisor::control::{
+    client,
+    wire::{ControlEnvelope, ControlRequest},
+};
 use rmcp::{
     ServerHandler,
     handler::server::router::tool::ToolRouter,
     model::{CallToolResult, ContentBlock},
     tool_handler,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::{
     path::PathBuf,
     sync::{Arc, MutexGuard},
@@ -96,8 +99,8 @@ impl Server {
             .context("task failed")?
     }
 
-    pub(crate) async fn browser(&self, session: &str, mut request: Value) -> CallToolResult {
-        request["agent"] = json!(self.inner.agent());
+    pub(crate) async fn browser(&self, session: &str, request: ControlRequest) -> CallToolResult {
+        let request = ControlEnvelope::from_agent(self.inner.agent(), request);
         let id = match self.session(session) {
             Ok(id) => id,
             Err(error) => return fail(error.to_string()),
@@ -105,7 +108,7 @@ impl Server {
         outcome(
             self.blocking(move |inner| {
                 inner.allow(SessionOp::Browser(id))?;
-                client::call(&inner.data, &id, &request)
+                client::request(&inner.data, &id, &request)
             })
             .await,
         )

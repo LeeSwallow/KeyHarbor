@@ -13,9 +13,9 @@ mod tools;
 pub use server::DEFAULT_AGENT;
 
 use anyhow::{Result, anyhow};
-use keyharbor_broker::DEFAULT_BROWSER;
 use keyharbor_domain::{policy::AgentName, ports::SessionRuntime};
 use keyharbor_guard::{SharedStore, VaultOpener};
+use keyharbor_supervisor::DEFAULT_BROWSER;
 use rmcp::{ServiceExt, transport::stdio};
 use server::{Inner, Server};
 use std::path::PathBuf;

@@ -59,10 +59,16 @@ planted "an-mcp-tool-calling-a-storage-port" mcp/src/tools/vault.rs 'fn x(s: &dy
 	"interfaces call storage ports directly"
 planted "a-placeholder-literal-outside-domain" guard/src/login.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
 	"placeholder syntax outside keyharbor-domain"
-planted "a-requester-check-outside-domain" broker/src/ops.rs 'fn x(a: &str) -> bool { a == ANY }' \
+planted "a-requester-check-outside-domain" supervisor/src/ops.rs 'fn x(a: &str) -> bool { a == ANY }' \
 	"requester-name rule outside keyharbor-domain"
 planted "an-interface-choosing-a-session-action" mcp/src/server.rs 'fn x() { let _ = Action::RawCdp; }' \
 	"interfaces choose session-level policy actions"
+planted "broker-depending-on-the-guard" broker/Cargo.toml 'keyharbor-guard = { path = "../guard" }' \
+	"broker must not depend on keyharbor-guard"
+planted "mcp-depending-on-the-cdp-adapter" mcp/Cargo.toml 'keyharbor-broker = { path = "../broker" }' \
+	"only keyharbor-supervisor wraps the CDP adapter"
+planted "a-control-request-built-by-hand" mcp/src/server.rs 'fn x() -> serde_json::Value { serde_json::json!({"op": "close"}) }' \
+	"control requests built or parsed by hand"
 
 # The design-system rules hold for design/ (ADR-0015).
 sh scripts/check-design.sh >/dev/null 2>&1 && ok "design rules hold" || no "check-design failed"

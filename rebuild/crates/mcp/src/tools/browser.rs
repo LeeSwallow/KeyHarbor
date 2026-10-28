@@ -4,11 +4,11 @@
 use super::session::Session;
 use crate::server::{Server, fail};
 use anyhow::{Result, bail};
+use keyharbor_supervisor::control::wire::{ControlRequest, TargetWire};
 use rmcp::{
     handler::server::wrapper::Parameters, model::CallToolResult, schemars, tool, tool_router,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct Navigate {
@@ -77,10 +77,10 @@ struct Wait {
     selector: Option<String>,
 }
 
-fn target(reference: Option<u64>, selector: Option<String>) -> Result<Value> {
+fn target(reference: Option<u64>, selector: Option<String>) -> Result<TargetWire> {
     match (reference, selector) {
-        (Some(reference), _) => Ok(json!({"ref": reference})),
-        (None, Some(selector)) => Ok(json!({"selector": selector})),
+        (Some(reference), _) => Ok(TargetWire::Ref(reference)),
+        (None, Some(selector)) => Ok(TargetWire::Selector(selector)),
         (None, None) => bail!("give ref or selector"),
     }
 }
@@ -94,7 +94,7 @@ impl Server {
         &self,
         Parameters(Navigate { session, url }): Parameters<Navigate>,
     ) -> CallToolResult {
-        self.browser(&session, json!({"op": "navigate", "url": url}))
+        self.browser(&session, ControlRequest::Navigate { url })
             .await
     }
 
@@ -105,7 +105,7 @@ impl Server {
         &self,
         Parameters(Session { session }): Parameters<Session>,
     ) -> CallToolResult {
-        self.browser(&session, json!({"op": "snapshot"})).await
+        self.browser(&session, ControlRequest::Snapshot).await
     }
 
     #[tool(description = "Save a PNG screenshot of the active tab and return its file path.")]
@@ -113,7 +113,7 @@ impl Server {
         &self,
         Parameters(Session { session }): Parameters<Session>,
     ) -> CallToolResult {
-        self.browser(&session, json!({"op": "screenshot"})).await
+        self.browser(&session, ControlRequest::Screenshot).await
     }
 
     #[tool(description = "Click an element given by ref (from browser_snapshot) or CSS selector.")]
@@ -127,7 +127,7 @@ impl Server {
     ) -> CallToolResult {
         match target(reference, selector) {
             Ok(target) => {
-                self.browser(&session, json!({"op": "click", "target": target}))
+                self.browser(&session, ControlRequest::Click { target })
                     .await
             }
             Err(error) => fail(error.to_string()),
@@ -148,11 +148,8 @@ impl Server {
     ) -> CallToolResult {
         match target(reference, selector) {
             Ok(target) => {
-                self.browser(
-                    &session,
-                    json!({"op": "fill", "target": target, "text": text}),
-                )
-                .await
+                self.browser(&session, ControlRequest::Fill { target, text })
+                    .await
             }
             Err(error) => fail(error.to_string()),
         }
@@ -165,8 +162,7 @@ impl Server {
         &self,
         Parameters(Text { session, text }): Parameters<Text>,
     ) -> CallToolResult {
-        self.browser(&session, json!({"op": "type", "text": text}))
-            .await
+        self.browser(&session, ControlRequest::Type { text }).await
     }
 
     #[tool(
@@ -180,11 +176,8 @@ impl Server {
             submit,
         }): Parameters<Login>,
     ) -> CallToolResult {
-        self.browser(
-            &session,
-            json!({"op": "login", "item": item, "submit": submit.unwrap_or(true)}),
-        )
-        .await
+        self.browser(&session, ControlRequest::Login { item, submit })
+            .await
     }
 
     #[tool(description = "Press a key in the active tab, e.g. Enter or Tab.")]
@@ -192,8 +185,7 @@ impl Server {
         &self,
         Parameters(Key { session, key }): Parameters<Key>,
     ) -> CallToolResult {
-        self.browser(&session, json!({"op": "press", "key": key}))
-            .await
+        self.browser(&session, ControlRequest::Press { key }).await
     }
 
     #[tool(description = "List the browser's tabs with id, url, title and which one is active.")]
@@ -201,7 +193,7 @@ impl Server {
         &self,
         Parameters(Session { session }): Parameters<Session>,
     ) -> CallToolResult {
-        self.browser(&session, json!({"op": "tabs"})).await
+        self.browser(&session, ControlRequest::Tabs).await
     }
 
     #[tool(description = "Open a new tab (optionally at a URL) and make it active.")]
@@ -209,8 +201,7 @@ impl Server {
         &self,
         Parameters(NewTab { session, url }): Parameters<NewTab>,
     ) -> CallToolResult {
-        self.browser(&session, json!({"op": "new_tab", "url": url}))
-            .await
+        self.browser(&session, ControlRequest::NewTab { url }).await
     }
 
     #[tool(description = "Make the tab with the given id (from browser_tabs) active.")]
@@ -218,7 +209,7 @@ impl Server {
         &self,
         Parameters(SwitchTab { session, id }): Parameters<SwitchTab>,
     ) -> CallToolResult {
-        self.browser(&session, json!({"op": "switch_tab", "id": id}))
+        self.browser(&session, ControlRequest::SwitchTab { id })
             .await
     }
 
@@ -233,13 +224,7 @@ impl Server {
             selector,
         }): Parameters<Wait>,
     ) -> CallToolResult {
-        let mut request = json!({"op": "wait"});
-        if let Some(ms) = ms {
-            request["ms"] = json!(ms);
-        }
-        if let Some(selector) = selector {
-            request["selector"] = json!(selector);
-        }
-        self.browser(&session, request).await
+        self.browser(&session, ControlRequest::Wait { ms, selector })
+            .await
     }
 }

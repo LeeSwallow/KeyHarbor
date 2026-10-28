@@ -7,10 +7,10 @@
 //! store (`run`) holds two connections (SQLite opens one per owner, J-48).
 
 use anyhow::Result;
-use keyharbor_broker::{ProcessRuntime, supervisor::Adapters};
 use keyharbor_core::Vault;
 use keyharbor_domain::ports::{SessionRuntime, Store};
 use keyharbor_sqlite::{SqliteStore, SqliteStores};
+use keyharbor_supervisor::{Adapters, ProcessRuntime};
 use keyharbor_vault::keystore::keystore_from_env;
 use std::{
     path::{Path, PathBuf},
@@ -51,7 +51,8 @@ impl App {
         )))
     }
 
-    /// What a supervisor runs with: this data directory's store and the system key store.
+    /// What a supervisor runs with: this data directory's store, the system key store, and
+    /// whether the browser runs headless (`KEYHARBOR_BROWSER_HEADLESS=1`).
     pub fn supervisor_adapters(&self) -> Adapters {
         let data = self.root.clone();
         Adapters {
@@ -59,6 +60,7 @@ impl App {
             open_vault: Box::new(move || {
                 Vault::open(SqliteStore::open(&data)?, keystore_from_env())
             }),
+            headless: std::env::var_os("KEYHARBOR_BROWSER_HEADLESS").is_some_and(|v| v == "1"),
         }
     }
 

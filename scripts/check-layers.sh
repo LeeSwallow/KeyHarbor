@@ -27,6 +27,12 @@
 #    comments, tool descriptions and tests may show it.
 # 10. (I) The rule "a requester is never `*`" lives in keyharbor-domain
 #    (`AgentName`); nobody else compares a requester with `ANY`.
+# 11. (B) keyharbor-broker is the CDP adapter only: it depends on the domain
+#    alone, and only keyharbor-supervisor (which wraps it in the guard)
+#    depends on it.
+# 12. (K) The control-socket protocol has one wire module
+#    (supervisor/src/control/wire.rs): no other production code writes an
+#    `"op"` key by hand.
 #
 # CHECK_LAYERS_ROOT replaces rebuild/crates (scripts/test-scripts.sh runs the
 # rules against copies with planted violations).
@@ -44,9 +50,12 @@ allowed() {
 	core) echo "domain vault crypto" ;;
 	guard) echo "domain core" ;;
 	sqlite) echo "domain" ;;
-	broker) echo "domain guard" ;;
-	mcp) echo "domain core guard broker" ;;
-	cli) echo "domain vault core guard sqlite broker mcp" ;;
+	# (B) the CDP adapter knows only the ports it implements.
+	broker) echo "domain" ;;
+	# The supervisor process composes the CDP adapter with the guard (#11).
+	supervisor) echo "domain core guard broker" ;;
+	mcp) echo "domain core guard supervisor" ;;
+	cli) echo "domain vault core guard sqlite supervisor mcp" ;;
 	# A dev tool (ADR-0015): uses no keyharbor crate, and no crate may depend on it.
 	design-check) echo "" ;;
 	*) echo "?" ;;
@@ -148,7 +157,7 @@ $hits"
 if [ -f broker/src/lib.rs ] && grep -nE '^pub mod (cdp|browser)\b' broker/src/lib.rs >/dev/null; then
 	no "keyharbor-broker exposes its raw CDP adapter (pub mod cdp/browser)"
 fi
-hits="$(grep -rnE 'keyharbor_broker::(cdp|browser|ops)\b|\bCdpBrowser\b' --include='*.rs' mcp cli 2>/dev/null || true)"
+hits="$(grep -rnE 'keyharbor_broker\b|\bCdpBrowser\b' --include='*.rs' mcp cli 2>/dev/null || true)"
 [ -n "$hits" ] && no "interfaces reach the raw browser adapter:
 $hits"
 if [ ! -d guard ] || ! grep -rq 'struct GuardedBrowser' guard/src 2>/dev/null; then
@@ -198,6 +207,22 @@ $hits"
 hits="$(grep -rnE 'reserved for rules that apply to every agent|[!=]= *(policy::)?ANY\b' --include='*.rs' . |
 	grep -vE '^\./(domain/src/|guard/src/pdp/)' | grep -v '/tests/' || true)"
 [ -n "$hits" ] && no "requester-name rule outside keyharbor-domain (use policy::AgentName):
+$hits"
+
+# --- 11. (B) only the supervisor wraps the CDP adapter ------------------------------
+for manifest in */Cargo.toml; do
+	crate="${manifest%/Cargo.toml}"
+	[ "$crate" = supervisor ] && continue
+	if normal_deps "$manifest" | grep -qx 'keyharbor-broker'; then
+		no "$crate depends on keyharbor-broker; only keyharbor-supervisor wraps the CDP adapter in the guard"
+	fi
+done
+
+# --- 12. (K) one wire module for the control protocol -------------------------------
+hits="$(outside_tests '"op"[[:space:]]*[]:)]' | grep -E '^\./(mcp|cli|broker|supervisor)/' |
+	grep -v '^\./supervisor/src/control/wire\.rs:' |
+	grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
+[ -n "$hits" ] && no "control requests built or parsed by hand (use keyharbor_supervisor::control::wire):
 $hits"
 
 [ "$bad" -eq 0 ] && echo "layer rules hold"

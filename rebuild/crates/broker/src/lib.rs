@@ -1,20 +1,13 @@
-//! The browser broker (adapter): the per-session supervisor that owns Chrome and its CDP pipe
-//! (ADR-0004), the control socket, and the `SessionRuntime` the session use cases drive.
+//! The Chrome adapter: starts Chrome with its CDP pipe ([`chrome`], ADR-0004) and implements
+//! `BrowserPort`, `PageInput` and `FrameInspector` over CDP ([`CdpBrowser`]).
 //!
-//! The raw CDP browser (`browser`, `cdp`) is private to this crate: control requests reach it
-//! only through `keyharbor_guard::GuardedBrowser` (`ops`).
+//! It knows only the domain ports. `CdpBrowser` types exactly the text it is given and returns
+//! results unmasked, so only `keyharbor-supervisor` depends on this crate, and it hands every
+//! control request to `keyharbor_guard::GuardedBrowser` wrapped around it (check-layers B).
 
 mod browser;
 mod cdp;
-pub mod control;
-pub(crate) mod ops;
-pub mod paths;
-mod runtime;
-pub mod supervisor;
+pub mod chrome;
 
-pub use runtime::{DEFAULT_BROWSER, ProcessRuntime};
-
-/// Talking to a running supervisor.
-pub mod client {
-    pub use crate::control::call;
-}
+pub use browser::CdpBrowser;
+pub use chrome::DEFAULT_BROWSER;

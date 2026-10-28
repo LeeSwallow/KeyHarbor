@@ -38,3 +38,8 @@ pub fn is_locked(path: &Path) -> bool {
 pub fn is_alive(data: &Path, id: &SessionId) -> bool {
     is_locked(&paths::lock_path(data, id))
 }
+
+/// Takes the lock that lets one scoped MCP server own the session (`mcp --session`).
+pub fn lock_mcp_scope(data: &Path, id: &SessionId) -> Result<File> {
+    acquire_lock(&paths::mcp_lock_path(data, id))
+}

@@ -1,0 +1,21 @@
+[package]
+name = "keyharbor-supervisor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# The per-session supervisor process: composes the Chrome adapter (broker) with the guard,
+# serves the control socket and drives the session state through core (#11).
+[dependencies]
+anyhow.workspace = true
+keyharbor-broker = { path = "../broker" }
+keyharbor-core = { path = "../core" }
+keyharbor-domain = { path = "../domain" }
+keyharbor-guard = { path = "../guard" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

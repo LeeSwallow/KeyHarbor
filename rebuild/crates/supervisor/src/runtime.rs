@@ -1,8 +1,16 @@
 //! `SessionRuntime` over OS processes: the supervisor lock file, the detached `__supervise`
 //! process, its control socket and the `DevToolsActivePort` file of a `--cdp` browser.
 
-use crate::{control, paths, supervisor};
-use anyhow::{Context, Result, bail};
+use crate::{
+    argv::SuperviseArgs,
+    control::{
+        client,
+        wire::{ControlEnvelope, ControlRequest},
+    },
+    lock, paths,
+};
+use anyhow::{Result, bail};
+use keyharbor_broker::chrome::{DEVTOOLS_ACTIVE_PORT, parse_devtools_active_port};
 use keyharbor_domain::{
     Generation, SessionId,
     ports::{
@@ -10,7 +18,6 @@ use keyharbor_domain::{
         runtime::{LaunchOptions, RuntimeLock, StartedSupervisor},
     },
 };
-use serde_json::json;
 use std::{
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -18,10 +25,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// The browser `open` uses when none is given.
-pub const DEFAULT_BROWSER: &str = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-
-/// Session processes under one data directory, started as `exe --data-dir … __supervise …`.
+/// Session processes under one data directory, started as `exe --data-dir … __supervise …`
+/// ([`SuperviseArgs`]).
 pub struct ProcessRuntime {
     data: PathBuf,
     exe: PathBuf,
@@ -51,11 +56,11 @@ impl StartedSupervisor for Supervisor {
 
 impl SessionRuntime for ProcessRuntime {
     fn is_alive(&self, id: SessionId) -> bool {
-        supervisor::is_alive(&self.data, &id)
+        lock::is_alive(&self.data, &id)
     }
 
     fn lock(&self, id: SessionId) -> Result<RuntimeLock> {
-        Ok(Box::new(supervisor::acquire_lock(&paths::lock_path(
+        Ok(Box::new(lock::acquire_lock(&paths::lock_path(
             &self.data, &id,
         ))?))
     }
@@ -66,21 +71,16 @@ impl SessionRuntime for ProcessRuntime {
         generation: Generation,
         options: &LaunchOptions<'_>,
     ) -> Result<Box<dyn StartedSupervisor>> {
+        let args = SuperviseArgs {
+            id,
+            generation,
+            browser: options.browser.to_path_buf(),
+            url: options.url.map(str::to_owned),
+            cdp: options.cdp,
+        };
         let mut command = Command::new(&self.exe);
         command
-            .arg("--data-dir")
-            .arg(&self.data)
-            .arg("__supervise")
-            .arg(id.to_string())
-            .arg(generation.to_string())
-            .arg(options.browser);
-        if let Some(url) = options.url {
-            command.arg("--url").arg(url);
-        }
-        if options.cdp {
-            command.arg("--cdp");
-        }
-        command
+            .args(args.to_argv(&self.data))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -93,7 +93,11 @@ impl SessionRuntime for ProcessRuntime {
     }
 
     fn close(&self, id: SessionId) -> Result<()> {
-        control::call(&self.data, &id, &json!({"op": "close"}))?;
+        client::request(
+            &self.data,
+            &id,
+            &ControlEnvelope::local(ControlRequest::Close),
+        )?;
         Ok(())
     }
 
@@ -102,7 +106,7 @@ impl SessionRuntime for ProcessRuntime {
     }
 
     fn debug_endpoint(&self, id: SessionId) -> Result<String> {
-        let file = paths::profile_dir(&self.data, &id).join("DevToolsActivePort");
+        let file = paths::profile_dir(&self.data, &id).join(DEVTOOLS_ACTIVE_PORT);
         let deadline = Instant::now() + Duration::from_secs(5);
         let text = loop {
             match std::fs::symlink_metadata(&file) {
@@ -114,35 +118,6 @@ impl SessionRuntime for ProcessRuntime {
                 Err(_) => bail!("browser debugging endpoint is not ready"),
             }
         };
-        let mut lines = text.lines();
-        let port: u16 = lines
-            .next()
-            .and_then(|p| p.parse().ok())
-            .filter(|p| *p != 0)
-            .context("invalid debug port")?;
-        let path = lines.next().context("missing browser endpoint")?;
-        let browser = path
-            .strip_prefix("/devtools/browser/")
-            .context("invalid browser endpoint")?;
-        uuid_like(browser)?;
-        if lines.next().is_some() {
-            bail!("invalid browser endpoint");
-        }
-        Ok(format!("ws://127.0.0.1:{port}{path}"))
+        parse_devtools_active_port(&text)
     }
-}
-
-fn uuid_like(value: &str) -> Result<()> {
-    let ok = value.len() == 36
-        && value.char_indices().all(|(i, c)| {
-            if matches!(i, 8 | 13 | 18 | 23) {
-                c == '-'
-            } else {
-                c.is_ascii_hexdigit()
-            }
-        });
-    if !ok {
-        bail!("invalid browser endpoint");
-    }
-    Ok(())
 }

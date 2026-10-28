@@ -4,17 +4,17 @@
 use crate::compose::App;
 use anyhow::{Context, Result, bail};
 use clap::Subcommand;
-use keyharbor_broker::{DEFAULT_BROWSER, supervisor};
 use keyharbor_core::{
     LOCAL_AGENT,
     session::{self as lifecycle, DisplayState, OpenOptions, SessionView},
 };
 use keyharbor_domain::{
-    Generation, SessionId, SessionName, State,
+    SessionId, SessionName, State,
     ports::{SessionRuntime, Store},
     vault::Description,
 };
-use std::path::PathBuf;
+use keyharbor_supervisor::{DEFAULT_BROWSER, SUPERVISE_COMMAND, SuperviseArgs};
+use std::{ffi::OsString, path::PathBuf};
 
 #[derive(Subcommand)]
 pub enum SessionCmd {
@@ -74,15 +74,11 @@ pub enum SessionCmd {
     },
     /// Print the raw CDP endpoint of a session opened with --cdp
     Endpoint { id: String },
-    #[command(name = "__supervise", hide = true)]
+    /// Run a session's supervisor (started by `open`; arguments are `SuperviseArgs`)
+    #[command(name = SUPERVISE_COMMAND, hide = true)]
     Supervise {
-        id: String,
-        generation: String,
-        browser: PathBuf,
-        #[arg(long)]
-        url: Option<String>,
-        #[arg(long)]
-        cdp: bool,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<OsString>,
     },
 }
 
@@ -122,25 +118,9 @@ struct Ports {
 }
 
 pub fn run(app: &App, command: SessionCmd) -> Result<()> {
-    if let SessionCmd::Supervise {
-        id,
-        generation,
-        browser,
-        url,
-        cdp,
-    } = command
-    {
-        let id = session_id(&id)?;
-        let generation = Generation::parse(&generation).context("invalid generation")?;
-        return supervisor::run(
-            app.root(),
-            id,
-            generation,
-            &browser,
-            url.as_deref(),
-            cdp,
-            app.supervisor_adapters(),
-        );
+    if let SessionCmd::Supervise { args } = command {
+        let args = SuperviseArgs::parse(&args)?;
+        return keyharbor_supervisor::run(app.root(), args, app.supervisor_adapters());
     }
     let ports = Ports {
         store: app.store()?,
