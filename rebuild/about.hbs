@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>KeyHarbor third-party licenses</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem}pre{white-space:pre-wrap;background:#f4f6f6;padding:1rem;border-radius:8px}</style></head>
+<body>
+<h1>Third-party licenses</h1>
+<p>The keyharbor binary includes the following crates.</p>
+<ul>{{#each overview}}<li><a href="#{{id}}">{{name}}</a> ({{count}})</li>{{/each}}</ul>
+{{#each licenses}}
+<h2 id="{{id}}">{{name}}</h2>
+<p>Used by: {{#each used_by}}{{crate.name}} {{crate.version}}{{#unless @last}}, {{/unless}}{{/each}}</p>
+<pre>{{text}}</pre>
+{{/each}}
+</body>
+</html>

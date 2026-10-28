@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - name: the tag matches the crate version
+        run: sh scripts/check-version.sh "$GITHUB_REF_NAME"
+      - name: checks, once more on the tagged commit
+        working-directory: rebuild
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --locked
+      - name: the release build has no test-only features
+        working-directory: rebuild
+        run: |
+          if cargo tree -p keyharbor -e features | grep -q insecure-test-keystore; then
+            echo "insecure-test-keystore is enabled in the release build"; exit 1
+          fi
+      - run: cargo install cargo-about --locked --features cli
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

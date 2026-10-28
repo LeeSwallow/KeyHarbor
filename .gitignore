@@ -2,3 +2,5 @@
 
 .superpowers/
 .claude/settings.local.json
+/build/
+/dist/

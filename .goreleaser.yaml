@@ -1,0 +1,64 @@
+version: 2
+
+project_name: keyharbor
+
+before:
+  hooks:
+    - sh scripts/licenses.sh
+
+builds:
+  # The vault CLI lives in the rebuild/ workspace. macOS only: it links
+  # Security.framework for the login keychain, so it builds on a macOS runner.
+  - id: keyharbor
+    builder: rust
+    binary: keyharbor
+    dir: rebuild
+    tool: cargo
+    command: build
+    flags:
+      - --release
+      - --locked
+      - -p=keyharbor
+    targets:
+      - aarch64-apple-darwin
+      - x86_64-apple-darwin
+
+archives:
+  - formats:
+      - tar.gz
+    files:
+      - LICENSE-MIT
+      - LICENSE-APACHE
+      - README.md
+      - CHANGELOG.md
+      - src: build/THIRD_PARTY_LICENSES.html
+        strip_parent: true
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native
+
+release:
+  prerelease: auto
+
+homebrew_casks:
+  - repository:
+      owner: LeeSwallow
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    # Without a token for the tap, the release is made and the cask is not.
+    skip_upload: '{{ if not (index .Env "HOMEBREW_TAP_TOKEN") }}true{{ end }}'
+    homepage: https://leeswallow.github.io/KeyHarbor/
+    description: Local encrypted vault and browser-session foundation for AI agents
+    license: MIT OR Apache-2.0
+    # The binary is not notarized: macOS kills it while it is quarantined.
+    custom_block: |
+      postflight_steps do
+        run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{" }}staged_path{{ "}}" }}/keyharbor"], must_succeed: false
+      end
+
+# Signing and notarization are off on purpose (docs/superpowers/specs/
+# 2026-10-28-collaboration-and-release-design.md). With an Apple Developer ID,
+# add a `notarize:` section here and APPLE_* secrets to release.yml.
