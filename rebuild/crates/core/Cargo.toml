@@ -3,6 +3,7 @@ name = "keyharbor-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
 age.workspace = true

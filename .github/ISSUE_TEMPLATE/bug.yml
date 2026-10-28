@@ -1,0 +1,55 @@
+name: 버그 리포트
+description: 무언가 동작하지 않았다.
+title: "[bug] "
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **비밀번호, 카드번호, API 키, 금고 내용은 절대 붙여 넣지 마세요.** 항목 이름도 민감하다면 바꿔서 적어 주세요.
+  - type: input
+    id: version
+    attributes:
+      label: 버전
+      description: "`keyharbor --version` 출력"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: macOS 버전과 칩
+      description: 예) macOS 26.1, Apple M3
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: 함께 쓴 에이전트
+      options: ["없음 (CLI만)", "Claude Code", "Codex", "기타"]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 무엇을 했나요?
+      description: 실행한 명령. 비밀 값은 `…`로 바꿔 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 무엇을 기대했나요?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제로 무엇이 일어났나요?
+      description: 오류 메시지 전체.
+    validations:
+      required: true
+  - type: dropdown
+    id: fix
+    attributes:
+      label: 직접 고쳐 보고 싶으신가요?
+      options: ["예", "예, 안내가 있으면", "아니요"]

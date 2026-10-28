@@ -1,0 +1,45 @@
+# cargo deny check: licenses, advisories, bans and sources of every dependency.
+# CI runs it on every pull request; a new dependency needs a license listed here.
+
+[graph]
+all-features = false
+
+[advisories]
+version = 2
+# Exceptions, each with the reason it does not reach KeyHarbor. Revisit when age moves on.
+ignore = [
+  # crypto-bigint 0.5 timing variability, via age 0.12 → p256/elliptic-curve 0.13.
+  # age links P-256 for its hybrid recipients; KeyHarbor uses only the scrypt
+  # passphrase recipient (docs/design/07 §7.7), so the affected code never runs.
+  # The fix (crypto-bigint 0.7.6) needs elliptic-curve 0.14, not a patch bump.
+  { id = "RUSTSEC-2026-0387", reason = "p256 path of age is not used; only scrypt recipients" },
+  # basic-toml is unmaintained; it is a build-time dependency of age's i18n
+  # proc-macros (i18n-config) and is not linked into the binary.
+  { id = "RUSTSEC-2026-0374", reason = "build-time proc-macro dependency of age i18n only" },
+]
+
+[licenses]
+version = 2
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Zlib",
+  "MPL-2.0",
+  "CC0-1.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace crates refer to each other by path and are never published.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -1,0 +1,28 @@
+name: 기능 요청
+description: KeyHarbor가 할 수 있으면 좋을 작은 것. 형식·명령·보안 모델을 바꾸는 변경은 제안(proposal)으로.
+title: "[feature] "
+labels: ["enhancement", "needs triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 문제
+      description: 지금 할 수 없는 것과, 언제 그게 필요해지는지. 에이전트와 하던 작업이 있다면 함께.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: 원하는 것
+      description: 동작, 명령, 옵션.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 지금은 어떻게 하고 있나요?
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: 직접 만들어 보실 건가요?
+      options: ["예, 안내가 있으면", "아마도", "아니요"]

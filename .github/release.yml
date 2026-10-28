@@ -1,0 +1,29 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+  categories:
+    - title: New
+      labels:
+        - feature
+    - title: Changed
+      labels:
+        - enhancement
+        - breaking change
+    - title: Fixed
+      labels:
+        - bug
+    - title: Security
+      labels:
+        - security
+    - title: Docs and plugin
+      labels:
+        - docs
+        - plugin
+    - title: Under the hood
+      labels:
+        - chore
+        - dependencies
+    - title: Other
+      labels:
+        - "*"
