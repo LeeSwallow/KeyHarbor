@@ -86,4 +86,17 @@ sh scripts/check-docs.sh && sh scripts/test-scripts.sh && sh scripts/check-layer
 
 ## 분석 결과
 
-(Task 0에서 채운다)
+전문: [2026-10-29-boundary-analysis.md](2026-10-29-boundary-analysis.md) (main @ d7953bc). Critical 0, Important 19, 평문 유출 경로 없음.
+
+| 갈래 | 이슈 | PR 순서 |
+|---|---|---|
+| 표면(MCP·CLI)에 있는 판정·유스케이스, `vault_list`의 MAC 검증 누락, 조립 위치 | #10 (범위 확장) | 1 |
+| 여러 벌인 domain 어휘: placeholder, 요청자 이름, 설정 레지스트리, 상태 enum, TTL | #18 | 2 |
+| supervisor 분리, control socket wire 타입, mcp의 broker 내부 의존 | #11 (범위 확장) | 3 |
+| 안쪽 crate의 I/O: keystore crate, 파일·잠금, 시계, 난수, 브라우저 target 값 타입 | #19 | 4 |
+| 확장 wire 타입 위치, 세션 이름 규칙 공유, 구조 테스트 | #20 | 5 |
+| 루트 재배치 | #12 | 6 |
+
+- 각 PR은 분석 보고서의 check-layers 규칙(A–N) 중 자기 몫을 먼저 넣고 실패를 본 뒤 고친다.
+- 크기 기준을 넘는 파일·함수(`vault_cmd.rs`, `session_cmd::run` 등)는 그 코드를 옮기는 PR에서 같이 나눈다.
+- 유지할 것: `PlaintextAccess`·`GuardedBrowser`, 검사 체인 공유, broker의 CDP 번역, SQLite 컨텍스트, 확장의 검증 한 곳.
