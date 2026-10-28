@@ -1,6 +1,9 @@
 //! Origin binding (03 §3.8, J-12, J-34): where an item's values may go.
 
-use keyharbor_domain::vault::{Domain, Origin};
+use keyharbor_domain::{
+    denial::DenialReason,
+    vault::{Domain, Origin},
+};
 
 /// An origin-bound item may be typed only into a frame whose origin is exactly one of the
 /// item's origins (no subdomain wildcards). Unbound items go anywhere.
@@ -17,18 +20,14 @@ pub fn allows_browser(
     origin_binding: bool,
     origins: &[Origin],
     frame: Option<&Origin>,
-) -> Result<(), &'static str> {
-    if domain == Domain::Developer {
-        if origins.is_empty() {
-            return Err("no-origin");
-        }
-        return allows_frame(true, origins, frame)
-            .then_some(())
-            .ok_or("origin");
+) -> Result<(), DenialReason> {
+    let bound = origin_binding || domain == Domain::Developer;
+    if domain == Domain::Developer && origins.is_empty() {
+        return Err(DenialReason::NoOrigin);
     }
-    allows_frame(origin_binding, origins, frame)
+    allows_frame(bound, origins, frame)
         .then_some(())
-        .ok_or("origin")
+        .ok_or(DenialReason::Origin)
 }
 
 /// `keyharbor run` hands values to a process, which can send them anywhere; an origin-bound
@@ -53,11 +52,11 @@ mod tests {
         let d = Domain::Developer;
         assert_eq!(
             allows_browser(d, false, &[], Some(&github)),
-            Err("no-origin")
+            Err(DenialReason::NoOrigin)
         );
         assert_eq!(
             allows_browser(d, false, &origins, Some(&gist)),
-            Err("origin")
+            Err(DenialReason::Origin)
         );
         assert_eq!(allows_browser(d, false, &origins, Some(&github)), Ok(()));
         assert_eq!(
@@ -66,7 +65,7 @@ mod tests {
         );
         assert_eq!(
             allows_browser(Domain::Payment, true, &origins, Some(&gist)),
-            Err("origin")
+            Err(DenialReason::Origin)
         );
         assert!(!allows_process(true));
     }

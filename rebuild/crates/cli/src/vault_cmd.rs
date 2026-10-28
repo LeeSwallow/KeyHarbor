@@ -1,6 +1,6 @@
 //! `keyharbor vault …`. Never prints secret values; secrets arrive only by hidden prompt or stdin JSON.
 
-use crate::confirm::Terminal;
+use crate::adapters::TtyConfirm;
 use age::secrecy::SecretString;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Subcommand, ValueEnum};
@@ -151,12 +151,7 @@ fn item_name(name: &str) -> Result<ItemName> {
 }
 
 fn field_name(kind: ItemKind, name: &str) -> Result<FieldName> {
-    if kind == ItemKind::Env {
-        FieldName::parse_env(name)
-    } else {
-        FieldName::parse(name)
-    }
-    .map_err(|e| anyhow!(e.to_string()))
+    kind.field_name(name).map_err(|e| anyhow!(e.to_string()))
 }
 
 fn origins(values: &[String]) -> Result<Vec<Origin>> {
@@ -353,7 +348,7 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
                 }),
             };
             // Widening where or how the item may be used needs a person (R-35).
-            weaken::require(&Terminal, &vault.weakenings(&name, &change)?)?;
+            weaken::require(&TtyConfirm, &vault.weakenings(&name, &change)?)?;
             vault.edit(&name, change)?;
             println!("updated\t{}", name.as_str());
         }

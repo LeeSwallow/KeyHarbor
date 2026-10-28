@@ -13,6 +13,7 @@ use keyharbor_core::Vault;
 use keyharbor_domain::{
     SessionId,
     audit::{AuditEvent, AuditKind},
+    denial::DenialReason,
     ports::Store,
     vault::{Domain, ItemName, Origin},
 };
@@ -60,7 +61,8 @@ pub struct Guard {
     clock: fn() -> u64,
 }
 
-/// Refusals a session records per second; the rest become one counter event.
+/// Refusals a session records per second; the rest become one counter event. Fixed: it only
+/// bounds the record's growth, every refusal is still counted.
 pub const MAX_DENIALS_PER_SECOND: u32 = 10;
 
 #[derive(Default)]
@@ -76,7 +78,9 @@ fn unix_seconds() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-/// Requests carrying a vault value a session tolerates before it locks (I1).
+/// Requests carrying a vault value a session tolerates before it locks (I1). Fixed, not a
+/// setting: raising it gives a guessing agent more answers, and an agent cannot be trusted
+/// to set it.
 pub const MAX_PROBES: u32 = 3;
 
 impl Guard {
@@ -189,7 +193,7 @@ impl Guard {
         agent: &str,
         item: &ItemName,
         origin: Option<&str>,
-        reason: &str,
+        reason: DenialReason,
     ) -> anyhow::Error {
         let session = self.session.to_string();
         self.record_denial(
@@ -308,9 +312,10 @@ impl Guard {
             });
         };
         let origin_text = origin.map(Origin::as_str);
-        let deny = |item: &ItemName, reason: &str| self.denied(agent, item, origin_text, reason);
+        let deny =
+            |item: &ItemName, reason: DenialReason| self.denied(agent, item, origin_text, reason);
         if self.is_locked() {
-            return Err(deny(&first, "locked"));
+            return Err(deny(&first, DenialReason::Locked));
         }
         let rules = self
             .store
@@ -333,7 +338,7 @@ impl Guard {
         });
         let resolved = match checked {
             Ok(result) => result?,
-            Err(_) => return Err(deny(&first, "vault")),
+            Err(_) => return Err(deny(&first, DenialReason::Vault)),
         };
         Ok(Prepared {
             text: resolved.text,

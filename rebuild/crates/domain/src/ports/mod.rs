@@ -15,7 +15,7 @@ pub mod vault;
 pub use access::PolicyStore;
 pub use audit::{AUDIT_ENABLED, AuditStore, SettingsStore};
 pub use browser::{BrowserPort, FrameInspector, PageInput};
-pub use confirm::{Answer, Confirmation};
+pub use confirm::{Answer, Confirm};
 pub use keys::KeyStore;
 pub use runtime::SessionRuntime;
 pub use session::{SessionRow, SessionStore};

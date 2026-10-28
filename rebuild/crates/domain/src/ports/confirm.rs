@@ -11,7 +11,7 @@ pub enum Answer {
     Unavailable,
 }
 
-pub trait Confirmation {
+pub trait Confirm {
     /// Asks the person whether to go ahead with `action`, a one-line description without values.
     fn confirm(&self, action: &str) -> Answer;
 }

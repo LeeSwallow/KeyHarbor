@@ -1,7 +1,7 @@
 //! `keyharbor policy …`: rules that limit what each agent may use (02 §2.8).
 //! With no rules everything is allowed; `*` as the agent applies a rule to every agent.
 
-use crate::confirm::Terminal;
+use crate::adapters::TtyConfirm;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Subcommand};
 use keyharbor_core::weaken;
@@ -93,7 +93,7 @@ pub fn run(root: &Path, command: PolicyCmd) -> Result<()> {
                 .find(|r| r.agent == agent && r.resource == resource && r.target == target)
                 .context("rule not found")?;
             // Removing a deny rule widens access (R-35).
-            weaken::require(&Terminal, weaken::policy_remove(&existing).as_slice())?;
+            weaken::require(&TtyConfirm, weaken::policy_remove(&existing).as_slice())?;
             if !store.policy_remove(&agent, resource, &target)? {
                 bail!("rule not found");
             }
@@ -109,7 +109,7 @@ pub fn run(root: &Path, command: PolicyCmd) -> Result<()> {
 
 fn set(store: &SqliteStore, rule: Rule) -> Result<()> {
     // Any allow rule widens access (R-35).
-    weaken::require(&Terminal, weaken::policy_set(&rule).as_slice())?;
+    weaken::require(&TtyConfirm, weaken::policy_set(&rule).as_slice())?;
     store.policy_set(&rule)?;
     changed(
         store,

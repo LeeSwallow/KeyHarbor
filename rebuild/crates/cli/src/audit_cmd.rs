@@ -1,6 +1,6 @@
 //! `keyharbor audit` (the usage record) and `keyharbor settings`.
 
-use crate::confirm::Terminal;
+use crate::adapters::TtyConfirm;
 use anyhow::{Result, anyhow, bail};
 use clap::{Args, Subcommand};
 use keyharbor_core::weaken;
@@ -96,7 +96,7 @@ pub fn settings(root: &Path, command: SettingsCmd) -> Result<()> {
                 bail!("{key} must be {}", values.join(" or "));
             }
             // Turning the usage record off or changing capture needs a person (R-35).
-            weaken::require(&Terminal, weaken::setting(&key, &value).as_slice())?;
+            weaken::require(&TtyConfirm, weaken::setting(&key, &value).as_slice())?;
             store.setting_set(&key, &value)?;
             println!("{key}\t{value}");
         }

@@ -112,6 +112,14 @@ impl ItemKind {
             .find(|f| f.name == field)
             .or(spec.free_fields.then_some(&FREE_FIELD))
     }
+    /// A field name for this kind: free-form kinds take environment variable names.
+    pub fn field_name(self, field: &str) -> Result<FieldName, InvalidValue> {
+        if self.spec().free_fields {
+            FieldName::parse_env(field)
+        } else {
+            FieldName::parse(field)
+        }
+    }
     /// Whether `field` may hold a secret, so it must never arrive on the command line. A name
     /// this kind does not declare counts as secret if any kind declares it secret.
     pub fn is_secret_field(self, field: &str) -> bool {

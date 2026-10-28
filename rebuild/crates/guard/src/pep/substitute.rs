@@ -4,16 +4,14 @@
 //! field, and the field may go into the element (`field-kind`: a password only into a
 //! password input). One refusal stops everything: nothing is resolved and nothing is typed.
 
-use crate::{
-    pdp::{Action, decide},
-    pep::origin,
-};
+use crate::pdp::checks::{self, Target, UseContext};
 use anyhow::{Result, anyhow};
-use keyharbor_core::{ItemStatus, PlaintextAccess, Vault, fill_template};
+use keyharbor_core::{PlaintextAccess, Vault, fill_template};
 use keyharbor_domain::{
+    denial::DenialReason,
     policy::Rule,
     ports::browser::Element,
-    vault::{Domain, InputKind, ItemName, Origin, PlaceholderRef, parse_placeholders},
+    vault::{Domain, ItemName, Origin, PlaceholderRef, parse_placeholders},
 };
 use zeroize::Zeroizing;
 
@@ -58,74 +56,47 @@ pub struct Request<'a> {
     pub items: &'a [ItemName],
 }
 
-/// Checks every item, in order, then resolves the whole template. `deny(item, reason)`
-/// records a refusal and returns the error the agent sees.
+/// Checks every item, in order, through the browser chain (`pdp::checks::BROWSER`), then
+/// resolves the whole template. `deny(item, reason)` records a refusal and returns the
+/// error the agent sees.
 pub fn resolve_checked(
     vault: Option<&Vault>,
     rules: &[Rule],
     request: &Request<'_>,
     to: Destination<'_>,
-    deny: &dyn Fn(&ItemName, &str) -> anyhow::Error,
+    deny: &dyn Fn(&ItemName, DenialReason) -> anyhow::Error,
 ) -> Result<Resolved> {
-    let Request {
-        agent,
-        template,
-        refs,
-        items,
-    } = *request;
-    let frame = to.frame;
-    let first = &items[0];
+    let first = &request.items[0];
     let Some(vault) = vault else {
-        return Err(deny(first, "not_found"));
+        return Err(deny(first, DenialReason::NotFound));
     };
-    let mut domains = Vec::with_capacity(items.len());
-    for item in items {
+    let mut domains = Vec::with_capacity(request.items.len());
+    for item in request.items {
         let info = match vault.item_use(item) {
             Ok(Some(info)) => info,
-            Ok(None) => return Err(deny(item, "not_found")),
-            Err(_) => return Err(deny(item, "tampered")),
+            Ok(None) => return Err(deny(item, DenialReason::NotFound)),
+            Err(_) => return Err(deny(item, DenialReason::Tampered)),
         };
-        if info.status == ItemStatus::Discarded {
-            return Err(deny(item, "discarded"));
-        }
-        let action = Action::UseItem {
-            item: item.clone(),
-            domain: info.domain,
-        };
-        if !decide(rules, agent, &action).allowed() {
-            return Err(deny(item, "policy"));
-        }
-        if let Err(reason) =
-            origin::allows_browser(info.domain, info.origin_binding, &info.origins, frame)
-        {
-            return Err(deny(item, reason));
-        }
-        domains.push(info.domain);
-        let missing = refs
+        let fields: Vec<&str> = request
+            .refs
             .iter()
-            .any(|r| &r.item == item && !info.fields.iter().any(|f| f == r.field.as_str()));
-        if missing {
-            return Err(deny(item, "not_found"));
-        }
-        if let Some(element) = to.element {
-            let password_only = refs.iter().filter(|r| &r.item == item).any(|r| {
-                info.kind
-                    .field(r.field.as_str())
-                    .is_some_and(|spec| spec.input == InputKind::Password)
-            });
-            if password_only && !element.is_password() {
-                return Err(deny(item, "field-kind"));
-            }
-        }
-    }
-    // Text typed while the focus is not on something that takes text (a frame host, a
-    // button, the body) could land anywhere.
-    if to.element.is_some_and(|element| !element.takes_text()) {
-        return Err(deny(first, "focus"));
+            .filter(|r| &r.item == item)
+            .map(|r| r.field.as_str())
+            .collect();
+        let ctx = UseContext {
+            agent: request.agent,
+            item,
+            info: &info,
+            rules,
+            fields: &fields,
+            to: Target::Browser(to),
+        };
+        checks::run(checks::BROWSER, &ctx).map_err(|reason| deny(item, reason))?;
+        domains.push(info.domain);
     }
     // Every check passed: this is where the guard grants plaintext.
     let access = PlaintextAccess::issue();
-    let text =
-        fill_template(template, |r| vault.resolve(&access, r)).map_err(|_| deny(first, "vault"))?;
+    let text = fill_template(request.template, |r| vault.resolve(&access, r))
+        .map_err(|_| deny(first, DenialReason::Vault))?;
     Ok(Resolved { text, domains })
 }

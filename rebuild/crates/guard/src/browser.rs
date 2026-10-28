@@ -12,6 +12,7 @@ use crate::{
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
+    denial::DenialReason,
     ports::{
         BrowserPort, FrameInspector, PageInput,
         browser::{Element, Focus, Page, WaitFor},
@@ -51,7 +52,11 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         let first = &refs.first().context("no placeholder")?.item;
         let focus = match self.inner.focus(page).await {
             Ok(focus) => focus,
-            Err(_) => return Err(self.guard.denied(self.agent, first, None, "frame")),
+            Err(_) => {
+                return Err(self
+                    .guard
+                    .denied(self.agent, first, None, DenialReason::Frame));
+            }
         };
         let origin = self.inner.frame_origin(page, &focus.frame).await;
         if expected.is_some_and(|node| node != focus.node) {
@@ -59,7 +64,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
                 self.agent,
                 first,
                 origin.as_ref().map(Origin::as_str),
-                "focus",
+                DenialReason::Focus,
             ));
         }
         let element = match self.inner.element(page, focus.node).await {
@@ -69,7 +74,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
                     self.agent,
                     first,
                     origin.as_ref().map(Origin::as_str),
-                    "focus",
+                    DenialReason::Focus,
                 ));
             }
         };
@@ -136,7 +141,9 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         }
         let refs = parse_placeholders(template).map_err(|e| anyhow!("{e}"))?;
         let first = &refs.first().context("no placeholder")?.item;
-        Err(self.guard.denied(self.agent, first, None, "navigating"))
+        Err(self
+            .guard
+            .denied(self.agent, first, None, DenialReason::Navigating))
     }
 
     /// Refuses when a navigation started (or finished) in the page since `epoch`, or is still
@@ -157,7 +164,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
             self.agent,
             &prepared.items[0],
             origin.map(Origin::as_str),
-            "navigating",
+            DenialReason::Navigating,
         ))
     }
 
@@ -185,7 +192,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
                 self.agent,
                 first,
                 origin.as_ref().map(Origin::as_str),
-                "focus",
+                DenialReason::Focus,
             ));
         }
         self.still_there(&page, &focus.frame, epoch, &prepared, origin.as_ref())

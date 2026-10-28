@@ -4,6 +4,10 @@
 //! Applicable rules are the agent's own and the `*` rules. The most specific one wins: an
 //! agent rule beats a `*` rule; then an item target beats a domain target, which beats `*`.
 //! At equal specificity deny wins. No applicable rule means allow.
+//!
+//! [`checks`] holds the per-use checks (policy among them) in the order they run.
+
+pub mod checks;
 
 use keyharbor_domain::{
     SessionId,

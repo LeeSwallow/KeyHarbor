@@ -3,6 +3,7 @@
 
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
+    denial::DenialReason,
     ports::AuditStore,
     vault::ItemName,
 };
@@ -18,9 +19,9 @@ pub fn denied(
     session: Option<&str>,
     item: &ItemName,
     origin: Option<&str>,
-    reason: &str,
+    reason: DenialReason,
 ) -> AuditEvent {
-    let mut event = AuditEvent::new(agent, AuditKind::SecretDenied, reason)
+    let mut event = AuditEvent::new(agent, AuditKind::SecretDenied, reason.as_str())
         .item(item.as_str())
         .origin(origin);
     event.session_id = session.map(str::to_owned);
@@ -28,6 +29,6 @@ pub fn denied(
 }
 
 /// The error an agent sees for a refusal: item name and reason, never a value.
-pub fn denial_error(item: &ItemName, reason: &str) -> anyhow::Error {
+pub fn denial_error(item: &ItemName, reason: DenialReason) -> anyhow::Error {
     anyhow::anyhow!("denied: {} ({reason})", item.as_str())
 }

@@ -11,7 +11,8 @@ use std::{
 };
 use tokio::sync::broadcast;
 
-/// How long `settle` waits for navigations to finish.
+/// How long `settle` waits for navigations to finish (fixed: longer only delays the refusal
+/// an agent gets while a page keeps loading; it can retry).
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long after a click or key press a navigation it caused may take to be reported.
 const INPUT_QUIET: Duration = Duration::from_millis(250);
