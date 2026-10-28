@@ -14,7 +14,7 @@ KeyHarbor는 Claude Code·Codex 같은 AI 에이전트가 권한 정책 안에�
 
 ```sh
 git clone https://github.com/LeeSwallow/KeyHarbor
-cd KeyHarbor/rebuild
+cd KeyHarbor
 cargo build --release -p keyharbor
 cp target/release/keyharbor /usr/local/bin/    # 또는 PATH에 있는 아무 곳
 ```
@@ -39,7 +39,7 @@ keyharbor audit --limit 20                             # 누가 어떤 항목을
 
 API 키는 `keyharbor vault import-env openai .env` 뒤 `keyharbor run --env openai -- <명령>`으로 주입합니다. `secret`·`env` 항목은 `run`에 기본으로 쓸 수 있고, 브라우저에는 origin을 등록했을 때 그 사이트에만 들어갑니다. 항목·필드·세션에는 에이전트가 읽는 설명을, 항목에는 만료일(`--expires`, 기본 무기한)을 붙일 수 있습니다. browser-use와 함께 쓰는 방법: [docs/guides/browser-use.md](docs/guides/browser-use.md).
 
-항목 종류는 `login`, `secret`, `env`, `card`, `identity`, `address`이고 자격 증명(`login`)·결제(`card`)·개인정보(`identity`·`address`)·개발자(`secret`·`env`, API 키와 환경 변수) 네 도메인으로 나뉘어 각각 다른 키로 암호화됩니다. 전체 명령은 [`rebuild/README.md`](rebuild/README.md)에 있습니다.
+항목 종류는 `login`, `secret`, `env`, `card`, `identity`, `address`이고 자격 증명(`login`)·결제(`card`)·개인정보(`identity`·`address`)·개발자(`secret`·`env`, API 키와 환경 변수) 네 도메인으로 나뉘어 각각 다른 키로 암호화됩니다. 전체 명령은 [`crates/README.md`](crates/README.md)에 있습니다.
 
 ## 알아 둘 것
 
@@ -56,11 +56,11 @@ API 키는 `keyharbor vault import-env openai .env` 뒤 `keyharbor run --env ope
 |---|---|
 | [로드맵](ROADMAP.md) | 단계별 계획과 현재 상태 |
 | [설계 문서](docs/design/README.md) | 아키텍처, 보안 화이트페이퍼, 암호화 설계, ADR |
-| [디자인 시스템](design/README.md) | 토큰·컴포넌트·패턴 계층, 아이콘, 쇼케이스 |
+| [디자인 시스템](design-system/README.md) | 토큰·컴포넌트·패턴 계층, 아이콘, 쇼케이스 |
 | [브라우저 확장](integrations/browser-extension/README.md) | 평소 Chrome·Firefox의 사이트 로그인을 에이전트 세션으로 넘기기(4단계에서 native host와 연결) |
 | [보안 정책](SECURITY.md) | 약속하는 것과 하지 않는 것, 취약점 신고 |
 | [기여 안내](CONTRIBUTING.md) | 이슈부터 릴리스까지의 흐름 |
-| [프로토타입](docs/prototype.md) | 루트 crate(브라우저 세션 프로토타입) 설명 |
+| [프로토타입](docs/history/prototype.md) | `prototype/`(브라우저 세션 프로토타입) 설명 |
 
 ## 라이선스
 

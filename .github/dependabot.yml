@@ -1,13 +1,13 @@
 version: 2
 updates:
   - package-ecosystem: cargo
-    directory: /rebuild
+    directory: /
     schedule:
       interval: weekly
     commit-message:
       prefix: "chore(deps)"
   - package-ecosystem: cargo
-    directory: /
+    directory: /prototype
     schedule:
       interval: weekly
     commit-message:

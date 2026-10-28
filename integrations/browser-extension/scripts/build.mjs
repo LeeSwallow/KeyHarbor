@@ -10,7 +10,7 @@ import { mergeManifest } from "./manifest.mjs";
 import { TARGETS } from "./targets.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const designDir = resolve(root, "../../design");
+const designDir = resolve(root, "../../design-system");
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 
 async function buildTarget(target, outRoot) {

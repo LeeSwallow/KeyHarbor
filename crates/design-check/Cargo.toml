@@ -1,0 +1,18 @@
+[package]
+name = "keyharbor-design-check"
+description = "Repository checks for the design system in design-system/ (dev tool, never shipped)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# No dependencies: the CSS scanner, colour maths and the tiny static server are a few
+# hundred lines and need nothing beyond std. Nothing in the workspace depends on this crate.
+[dependencies]
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[bin]]
+name = "design-serve"
+path = "src/bin/design-serve.rs"

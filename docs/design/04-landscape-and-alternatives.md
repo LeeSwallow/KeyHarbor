@@ -2,7 +2,7 @@
 
 > 상태: Draft · 2026-10-28 · 양식: Google Design Doc — *Alternatives Considered*
 >
-> 2026-10-28 웹 검색과 각 프로젝트 README·문서로 조사했다. OpenBrowser·OpenKeylet은 소스까지 읽었다([`open-source-research.md`](../open-source-research.md)). 나머지는 **[미검증]** — 실행하거나 코드를 감사하지 않았다.
+> 2026-10-28 웹 검색과 각 프로젝트 README·문서로 조사했다. OpenBrowser·OpenKeylet은 소스까지 읽었다([`open-source-research.md`](../history/open-source-research.md)). 나머지는 **[미검증]** — 실행하거나 코드를 감사하지 않았다.
 
 ## 4.1 지형도
 
@@ -99,7 +99,7 @@ quadrantChart
 | 대안 | 결정 |
 |---|---|
 | 프로토타입 `src/` 위에 계속 | ❌ 단일 crate에 기능이 몰려 있음 |
-| **`rebuild/` 워크스페이스로 이식하며 확장** | ✅ [ADR-0008](adr/0008-build-on-rebuild-workspace.md) — 사용자가 뒤집을 수 있음 |
+| **재구현 워크스페이스(지금 `crates/`)로 이식하며 확장** | ✅ [ADR-0008](adr/0008-build-on-rebuild-workspace.md) — 사용자가 뒤집을 수 있음 |
 
 ## 출처
 

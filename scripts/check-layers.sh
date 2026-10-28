@@ -1,5 +1,5 @@
 #!/bin/sh
-# check-layers.sh: fail when rebuild/ breaks the hexagonal layering of
+# check-layers.sh: fail when crates/ breaks the hexagonal layering of
 # docs/design/02 §2.4 and ADR-0014.
 #
 # 1. Normal dependencies (dev-dependencies excluded) between keyharbor crates
@@ -46,10 +46,10 @@
 # 17. (G) A driver technology stays in its adapter crate: security-framework
 #    in keyharbor-keystore, rmcp in keyharbor-mcp, clap in keyharbor.
 #
-# CHECK_LAYERS_ROOT replaces rebuild/crates (scripts/test-scripts.sh runs the
+# CHECK_LAYERS_ROOT replaces crates/ (scripts/test-scripts.sh runs the
 # rules against copies with planted violations).
 set -u
-cd "${CHECK_LAYERS_ROOT:-$(dirname "$0")/../rebuild/crates}" || exit 1
+cd "${CHECK_LAYERS_ROOT:-$(dirname "$0")/../crates}" || exit 1
 bad=0
 no() { echo "✗ $*"; bad=1; }
 

@@ -5,7 +5,7 @@
 set -u
 cd "$(dirname "$0")/.."
 bad=0
-files="$(ls ./*.md 2>/dev/null; find docs .github rebuild -name '*.md' -not -path '*/target/*' 2>/dev/null)"
+files="$(ls ./*.md 2>/dev/null; find docs .github crates -name '*.md' -not -path '*/target/*' 2>/dev/null)"
 for f in $files; do
 	dir="$(dirname "$f")"
 	# Links inside fenced code blocks and inline code are examples, not links.

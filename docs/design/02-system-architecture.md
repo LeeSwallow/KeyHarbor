@@ -10,7 +10,7 @@
 | 보안 계층 | 평문을 다루는 판단·집행을 **`keyharbor-guard`** 한 crate에 모은다. PDP(정책 판정)와 PEP(치환·마스킹), 브라우저 데코레이터 `GuardedBrowser`, capability `PlaintextAccess` | 평문 경로를 하나로 만들어 검사 지점을 좁힌다 ([ADR-0014](adr/0014-hexagonal-guard-layer.md)) |
 | 영속성 | **Diesel 2.3**(동기 ORM) + Repository/Data Mapper, 바운디드 컨텍스트별 스키마·내장 마이그레이션 | R-32, R-33 ([§2.7.3](#273-영속성-컨텍스트-맵-r-32-r-33)) |
 | 실행 모델 | **서버 없는 CLI + 세션별 감독 프로세스**. 상시 데몬은 필수가 아니다 | 기존 프로토타입에서 검증한 모델 ([ADR-0004](adr/0004-supervisor-owns-cdp.md)) |
-| 저장소 | **SQLite (WAL)** 하나에 메타데이터·암호문·정책·기록을 둔다 | [`architecture-proposal.md`](../architecture-proposal.md)의 DB 비교 |
+| 저장소 | **SQLite (WAL)** 하나에 메타데이터·암호문·정책·기록을 둔다 | [`architecture-proposal.md`](../history/architecture-proposal.md)의 DB 비교 |
 | 브라우저 제어 | 감독 프로세스가 **CDP를 소유**하고, 에이전트에는 도구만 준다 | 마스킹·정책을 강제할 수 있는 유일한 위치 ([ADR-0004](adr/0004-supervisor-owns-cdp.md)) |
 | 비밀 보관 | **앱 소유 로컬 금고** + macOS Keychain의 금고 키 | [ADR-0002](adr/0002-own-local-vault.md), [ADR-0003](adr/0003-keychain-vault-key.md) |
 | 사용자 UI | **Tauri 데스크톱 앱**. localhost 웹 서버를 열지 않는다 | [ADR-0006](adr/0006-tauri-admin-app.md) |

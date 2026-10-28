@@ -37,14 +37,14 @@ out="$(sh scripts/check-version.sh v9.9.9 2>&1)" && no "check-version accepted a
 # The shipped binary has no test-only features (dev-dependencies excluded).
 sh scripts/check-release-features.sh >/dev/null 2>&1 && ok "release build has no test-only features" || no "check-release-features failed"
 
-# The layer rules hold for rebuild/ (ADR-0014).
+# The layer rules hold for crates/ (ADR-0014).
 sh scripts/check-layers.sh >/dev/null 2>&1 && ok "layer rules hold" || no "check-layers failed"
 
-# Each layer rule fails on a planted violation (a copy of rebuild/crates).
+# Each layer rule fails on a planted violation (a copy of crates/).
 # $1 = name, $2 = file to append to (relative to the copy), $3 = line, $4 = expected message.
 planted() {
 	fx="$tmp/layers-$1"
-	cp -R rebuild/crates "$fx"
+	cp -R crates "$fx"
 	printf '%s\n' "$3" >> "$fx/$2"
 	out="$(CHECK_LAYERS_ROOT="$fx" sh scripts/check-layers.sh 2>&1)" && no "check-layers accepted $1" || {
 		printf '%s' "$out" | grep -qF "$4" && ok "check-layers rejects $1" || no "check-layers gave no reason for $1: $out"
@@ -84,7 +84,7 @@ planted "the-uuid-v4-feature" domain/Cargo.toml 'uuid = { workspace = true, feat
 planted "clap-outside-the-cli" mcp/Cargo.toml 'clap = "4"' \
 	"mcp depends on clap; it belongs to one adapter crate only"
 
-# The design-system rules hold for design/ (ADR-0015).
+# The design-system rules hold for design-system/ (ADR-0015).
 sh scripts/check-design.sh >/dev/null 2>&1 && ok "design rules hold" || no "check-design failed"
 
 [ "$fail" -eq 0 ] && echo "all script tests passed"

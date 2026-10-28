@@ -3,7 +3,7 @@
 # enable a test-only feature (insecure-test-keystore, test-support). Dev-dependencies
 # are left out on purpose: tests turn them on, the shipped binary must not.
 set -eu
-cd "$(dirname "$0")/../rebuild"
+cd "$(dirname "$0")/.."
 tree="$(cargo tree -p keyharbor -e normal,build,features)"
 for feature in insecure-test-keystore test-support; do
 	if printf '%s\n' "$tree" | grep -q "feature \"$feature\""; then

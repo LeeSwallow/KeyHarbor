@@ -1,10 +1,10 @@
-// Which files of design/ the popup needs: the entry stylesheet and everything it imports, and
+// Which files of design-system/ the popup needs: the entry stylesheet and everything it imports, and
 // the icons the popup code names with icon("…"). They are copied at build time, never into src/.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-/** keyharbor.css and the files it @imports, relative to design/. */
+/** keyharbor.css and the files it @imports, relative to design-system/. */
 export function stylesheets(designDir) {
   const entry = "keyharbor.css";
   const css = readFileSync(join(designDir, entry), "utf8");

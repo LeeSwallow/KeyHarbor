@@ -1,0 +1,35 @@
+/* Showcase page only: layout of design-system/index.html. Not part of the design system; nothing else imports it.
+ * Semantic tokens only, like a pattern. */
+body { margin: 0; }
+.page { max-width: 1120px; margin: 0 auto; padding: 0 var(--space-4) var(--space-10); }
+.top { position: sticky; top: 0; z-index: var(--z-sticky); background: color-mix(in srgb, var(--c-bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--c-line); }
+.top .in { max-width: 1120px; margin: 0 auto; padding: var(--space-3) var(--space-4); display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: var(--space-2); font: var(--text-heading); margin-right: auto; }
+.brand img { width: 26px; height: 26px; border-radius: 7px; }
+h2 { font: var(--text-title); margin: var(--space-9) 0 var(--space-1); }
+h2 + p { margin: 0 0 var(--space-5); color: var(--c-ink-3); }
+h3.sub { font: var(--text-label); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--c-ink-3); margin: var(--space-6) 0 var(--space-3); }
+.grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.grid.wide { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); align-items: start; }
+.row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.stack { display: grid; gap: var(--space-3); }
+.matrix { display: grid; grid-template-columns: 90px repeat(6, auto); gap: var(--space-3) var(--space-4); align-items: center; justify-content: start; overflow-x: auto; }
+.matrix .h { font: var(--text-label); color: var(--c-ink-3); text-transform: uppercase; letter-spacing: var(--tracking-label); }
+.icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); gap: var(--space-2); }
+.icons figure { margin: 0; display: grid; justify-items: center; gap: var(--gap-tight); padding: var(--space-3) var(--space-1); border-radius: var(--radius-md); color: var(--c-ink-2); }
+.icons figure:hover { background: var(--c-surface-3); color: var(--c-ink); }
+.icons figcaption { font: var(--text-mono-sm); color: var(--c-ink-3); text-align: center; word-break: break-all; }
+.sw { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2); }
+.sw div { border-radius: var(--radius-md); border: 1px solid var(--c-line); overflow: hidden; background: var(--c-surface); }
+.sw i { display: block; height: 44px; }
+.sw span { display: block; padding: var(--gap-tight) var(--space-2); font: var(--text-mono-sm); color: var(--c-ink-2); }
+.scale { display: grid; gap: var(--space-2); }
+.scale > div { display: flex; align-items: baseline; gap: var(--space-4); }
+.scale code { width: 140px; flex: none; font: var(--text-mono-sm); color: var(--c-ink-3); }
+.bar { height: 10px; background: var(--c-accent); border-radius: 2px; }
+.sample { display: grid; gap: var(--gap-tight); justify-items: center; }
+.sample code { font: var(--text-mono-sm); color: var(--c-ink-3); }
+.sample .box { width: 64px; height: 48px; }
+.sample .box.radius { background: var(--c-accent-wash); border: 1px solid var(--c-accent); }
+.sample .box.shadow { background: var(--c-surface); border-radius: var(--radius-md); }
+.pattern-sample { height: 120px; border: 1px solid var(--c-line); border-radius: var(--radius-lg); display: grid; place-items: end start; padding: var(--space-3); }

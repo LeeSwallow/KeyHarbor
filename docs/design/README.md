@@ -5,7 +5,7 @@
 | 문서 상태 | **Draft** — 설계 승인 전 |
 | 최종 갱신 | 2026-10-28 |
 | 대상 독자 | KeyHarbor 기여자, 구현자, 보안 검토자, 학습 목적의 독자 |
-| 대체 문서 | [`../architecture-proposal.md`](../architecture-proposal.md)의 "비밀은 외부 금고가 소유한다" 결정 ([ADR-0002](adr/0002-own-local-vault.md)) |
+| 대체 문서 | [`../architecture-proposal.md`](../history/architecture-proposal.md)의 "비밀은 외부 금고가 소유한다" 결정 ([ADR-0002](adr/0002-own-local-vault.md)) |
 
 KeyHarbor는 개인이 AI 에이전트를 **자신이 정한 권한 정책에 따라, 중단 없이** 쓰도록 브라우저 세션·인증 상태·비밀·권한을 **로컬에서** 관리하는 무료 오픈소스 기반 도구다.
 
@@ -51,7 +51,7 @@ flowchart LR
 
 | 기존 문서 | 상태 |
 |---|---|
-| [`architecture-proposal.md`](../architecture-proposal.md) | 세션·잠금·SQLite 부분은 유효. 금고·암호화 부분은 [03](03-security-whitepaper.md)로 대체 |
-| [`implementation-roadmap.md`](../implementation-roadmap.md) | 1~3단계 증거는 유효. 4단계(외부 금고 연동)는 [05](05-roadmap-and-verification.md)로 대체 |
-| [`open-source-research.md`](../open-source-research.md) | 유효. [04](04-landscape-and-alternatives.md)가 확장 |
-| [`openkeylet-integration.md`](../openkeylet-integration.md) | 참고 자료로 유지 |
+| [`architecture-proposal.md`](../history/architecture-proposal.md) | 세션·잠금·SQLite 부분은 유효. 금고·암호화 부분은 [03](03-security-whitepaper.md)로 대체 |
+| [`implementation-roadmap.md`](../history/implementation-roadmap.md) | 1~3단계 증거는 유효. 4단계(외부 금고 연동)는 [05](05-roadmap-and-verification.md)로 대체 |
+| [`open-source-research.md`](../history/open-source-research.md) | 유효. [04](04-landscape-and-alternatives.md)가 확장 |
+| [`openkeylet-integration.md`](../history/openkeylet-integration.md) | 참고 자료로 유지 |

@@ -4,11 +4,11 @@
 |---|---|
 | 상태 | Accepted |
 | 날짜 | 2026-10-29 |
-| 관련 | [ADR-0014](0014-hexagonal-guard-layer.md)(같은 생각을 Rust 쪽에), [design/README](../../../design/README.md), [브라우저 확장](../../../integrations/browser-extension/README.md) |
+| 관련 | [ADR-0014](0014-hexagonal-guard-layer.md)(같은 생각을 Rust 쪽에), [design-system/README](../../../design-system/README.md), [브라우저 확장](../../../integrations/browser-extension/README.md) |
 
 ## 맥락
 
-`design/`은 `tokens.css`와 `components.css` 두 파일이었다. 색 리터럴이 컴포넌트에도 있었고(토글 손잡이 `#fff`, 신호등 색, 봉인 표면 hover), 라이트·다크 블록 세 개(라이트, 시스템 다크, 명시 다크)가 같다는 보장이 없었으며, 주 버튼(흰 글자, `#05a8a8`)은 대비가 2.93:1이었다. 관리 앱, `site/`, 브라우저 확장이 같은 파일을 쓰게 되면서 사용자는 시각화 모듈도 계층에 맞게 나누고 테스트를 넣어 달라고 했고, 저장소 도구는 Python이 아닌 Rust 테스트나 npm으로 쓰라고 했다.
+디자인 시스템(당시 `design/`, 지금 `design-system/`)은 `tokens.css`와 `components.css` 두 파일이었다. 색 리터럴이 컴포넌트에도 있었고(토글 손잡이 `#fff`, 신호등 색, 봉인 표면 hover), 라이트·다크 블록 세 개(라이트, 시스템 다크, 명시 다크)가 같다는 보장이 없었으며, 주 버튼(흰 글자, `#05a8a8`)은 대비가 2.93:1이었다. 관리 앱, `site/`, 브라우저 확장이 같은 파일을 쓰게 되면서 사용자는 시각화 모듈도 계층에 맞게 나누고 테스트를 넣어 달라고 했고, 저장소 도구는 Python이 아닌 Rust 테스트나 npm으로 쓰라고 했다.
 
 ## 결정
 
@@ -16,7 +16,7 @@
 2. **색 리터럴은 primitives에만.** semantic은 `var(--primitive)`로 용도 이름(`--c-accent-fill`)을 붙이고, 컴포넌트는 semantic만 읽는다. 컴포넌트에는 `0`과 `1px` 말고 px 리터럴도 쓰지 않는다(크기 토큰 `--size-*`).
 3. **훅으로 확장한다.** 컴포넌트는 파일 이름으로 시작하는 사용자 정의 속성(`--button-bg`, `--panel-pad`)을 연다. 패턴은 컴포넌트 CSS를 고치지 않고 훅만 덮어쓴다. 새 토큰은 정의하지 않는다.
 4. **이름 규칙**: 블록 `kh-<이름>`, 요소는 블록 아래 짧은 자식 클래스(`.kh-row .title`), 변형은 수식 클래스(`primary`), 상태는 `is-*`.
-5. **규칙은 Rust 테스트가 강제한다.** dev 전용 crate `rebuild/crates/design-check`(`publish = false`, 의존성 없음, 어떤 crate도 의존하지 않음)가 `cargo test --workspace`에서 돈다. 검사 하나가 파일 하나이고 `trait Rule`을 구현해 `RULES`에 한 줄로 등록한다(Strategy + Registry). 계층이 무엇을 할 수 있는지는 `layers::LAYERS` 표 하나, 대비를 볼 색 쌍은 `CONTRAST_PAIRS` 표 하나다.
+5. **규칙은 Rust 테스트가 강제한다.** dev 전용 crate `crates/design-check`(`publish = false`, 의존성 없음, 어떤 crate도 의존하지 않음)가 `cargo test --workspace`에서 돈다. 검사 하나가 파일 하나이고 `trait Rule`을 구현해 `RULES`에 한 줄로 등록한다(Strategy + Registry). 계층이 무엇을 할 수 있는지는 `layers::LAYERS` 표 하나, 대비를 볼 색 쌍은 `CONTRAST_PAIRS` 표 하나다.
 6. **대비 기준**: WCAG 2.x 상대 휘도. 본문·배지·칩·버튼 글자 4.5:1, 보조 글자 `--c-ink-3` 3:1(라벨·메타·시각, 11px semibold 이상, 행동에 필요한 정보는 ink-3 혼자 두지 않음), `--c-ink-4`(placeholder, 비활성)는 약속하지 않는다.
 7. **쇼케이스는 데이터로 그린다.** `showcase/sections/*.js`의 정의를 `render.js`가 그린다. 새 섹션은 정의 하나와 등록 한 줄.
 

@@ -275,7 +275,7 @@ sequenceDiagram
 
 ### 부록: v1 KAT
 
-`rebuild/crates/vault/tests/kat.rs`에 고정된 값이다. 바뀌면 기존 금고를 읽을 수 없다. HKDF 값은 Python 표준 라이브러리(`hmac`·`hashlib`)로 따로 계산해 일치를 확인했다.
+`crates/vault/tests/kat.rs`에 고정된 값이다. 바뀌면 기존 금고를 읽을 수 없다. HKDF 값은 Python 표준 라이브러리(`hmac`·`hashlib`)로 따로 계산해 일치를 확인했다.
 
 | 입력 | 출력 (hex) |
 |---|---|

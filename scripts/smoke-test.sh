@@ -2,14 +2,14 @@
 # smoke-test.sh [binary]: run a keyharbor binary end to end against the REAL
 # login keychain, in a throwaway data folder, then remove what it created.
 # Run it by hand before tagging a release (it may show a macOS keychain prompt).
-#   sh scripts/smoke-test.sh                      # builds rebuild/target/release/keyharbor
+#   sh scripts/smoke-test.sh                      # builds target/release/keyharbor
 #   sh scripts/smoke-test.sh ./dist/…/keyharbor    # a GoReleaser artifact
 set -u
 cd "$(dirname "$0")/.."
 bin="${1:-}"
 if [ -z "$bin" ]; then
-	(cd rebuild && cargo build --release --locked -p keyharbor -q) || exit 1
-	bin="rebuild/target/release/keyharbor"
+	cargo build --release --locked -p keyharbor -q || exit 1
+	bin="target/release/keyharbor"
 fi
 unset KEYHARBOR_TEST_KEYSTORE_DIR KEYHARBOR_HOME
 tmp="$(mktemp -d)"
