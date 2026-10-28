@@ -310,3 +310,64 @@ fn missing_key_is_reported_not_recreated() {
     assert!(text(&out).contains("vault key not found"), "{}", text(&out));
     assert_eq!(std::fs::read_dir(&c.keys).unwrap().count(), 0);
 }
+
+fn run_home(
+    home: &std::path::Path,
+    extra_env: &[(&str, &std::path::Path)],
+    args: &[&str],
+) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_keyharbor"));
+    cmd.args(args)
+        .env("HOME", home)
+        .env_remove("KEYHARBOR_HOME")
+        .env("KEYHARBOR_TEST_KEYSTORE_DIR", home.join("keys"));
+    for (k, v) in extra_env {
+        cmd.env(k, v);
+    }
+    cmd.output().unwrap()
+}
+
+#[test]
+fn default_data_dir_is_application_support() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = run_home(tmp.path(), &[], &["vault", "init"]);
+    assert!(out.status.success(), "{}", text(&out));
+    let dir = tmp.path().join("Library/Application Support/KeyHarbor");
+    assert!(dir.join("keyharbor.sqlite3").exists());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+    assert!(!tmp.path().join(".keyharbor-rebuild").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn default_dir_with_open_permissions_is_rejected() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("Library/Application Support/KeyHarbor");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = run_home(tmp.path(), &[], &["vault", "init"]);
+    assert!(!out.status.success());
+    assert!(text(&out).contains("private directory"), "{}", text(&out));
+}
+
+#[test]
+fn keyharbor_home_still_overrides() {
+    let tmp = tempfile::tempdir().unwrap();
+    let custom = tmp.path().join("x");
+    let out = run_home(
+        tmp.path(),
+        &[("KEYHARBOR_HOME", &custom)],
+        &["vault", "init"],
+    );
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(custom.join("keyharbor.sqlite3").exists());
+    assert!(!tmp.path().join("Library").exists());
+}

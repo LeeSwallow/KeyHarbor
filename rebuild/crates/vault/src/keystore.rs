@@ -4,7 +4,7 @@ use crate::{VaultError, keys::SecretKey};
 use std::path::PathBuf;
 use zeroize::Zeroizing;
 
-pub const KEYCHAIN_SERVICE: &str = "dev.keyharbor.vault";
+pub const KEYCHAIN_SERVICE: &str = "io.github.leeswallow.keyharbor";
 pub const TEST_KEYSTORE_ENV: &str = "KEYHARBOR_TEST_KEYSTORE_DIR";
 
 /// Creates never overwrite; reads never create. A missing key is `KeyNotFound`.
@@ -88,7 +88,7 @@ impl KeyStore for FileKeyStore {
     }
 }
 
-/// Generic password items in the login keychain, service `dev.keyharbor.vault`.
+/// Generic password items in the login keychain, service `io.github.leeswallow.keyharbor`.
 #[cfg(target_os = "macos")]
 pub struct MacKeychain;
 
@@ -238,5 +238,10 @@ mod tests {
         unsafe { std::env::set_var(TEST_KEYSTORE_ENV, "/tmp/should-not-be-used") };
         assert!(test_keystore_dir().is_none());
         unsafe { std::env::remove_var(TEST_KEYSTORE_ENV) };
+    }
+
+    #[test]
+    fn keychain_service_name_is_final() {
+        assert_eq!(KEYCHAIN_SERVICE, "io.github.leeswallow.keyharbor");
     }
 }

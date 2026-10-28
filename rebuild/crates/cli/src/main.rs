@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use keyharbor_domain::SessionName;
 use keyharbor_sqlite::SqliteStore;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod vault_cmd;
 
@@ -25,12 +25,18 @@ enum Command {
     Vault(vault_cmd::VaultCmd),
 }
 
+/// The macOS per-user application data folder; `--data-dir` and `KEYHARBOR_HOME` override it.
+fn default_data_dir(home: &Path) -> PathBuf {
+    home.join("Library/Application Support/KeyHarbor")
+}
+
 fn main() -> Result<()> {
     let args = Cli::parse();
     let root = match args.data_dir {
         Some(path) => path,
-        None => PathBuf::from(std::env::var_os("HOME").context("HOME is not set; use --data-dir")?)
-            .join(".keyharbor-rebuild"),
+        None => default_data_dir(&PathBuf::from(
+            std::env::var_os("HOME").context("HOME is not set; use --data-dir")?,
+        )),
     };
     match args.command {
         Command::Vault(command) => return vault_cmd::run(&root, command),

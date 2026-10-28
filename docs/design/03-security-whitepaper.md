@@ -87,7 +87,7 @@ flowchart TB
 | 속성 | 값 | 이유 |
 |---|---|---|
 | 항목 종류 | generic password | 32바이트 키를 그대로 저장 |
-| `service` | `dev.keyharbor.vault` | |
+| `service` | `io.github.leeswallow.keyharbor` | |
 | `account` | 데이터 디렉터리별 vault ID | 데이터 디렉터리마다 다른 키 |
 | Keychain 종류 | 파일 기반 **login keychain** | Data Protection Keychain은 entitlement와 유료 Apple Developer 서명이 필요해 "무료·직접 빌드" 원칙과 맞지 않는다. login keychain은 iCloud로 동기화되지 않는다 |
 | 접근성 속성 | 지정하지 않음 | `kSecAttrAccessible*`는 Data Protection Keychain에서만 의미가 있다. S3의 근거는 접근성 속성이 아니라 **login keychain 파일 자체의 암호화**다 |

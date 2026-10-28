@@ -117,7 +117,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  kc["macOS login keychain<br/>service = dev.keyharbor.vault<br/>account = vault_id"]
+  kc["macOS login keychain<br/>service = io.github.leeswallow.keyharbor<br/>account = vault_id"]
   rk["<b>RK</b> 루트 키<br/>32B 무작위 · Keychain에만 존재"]
   kek["<b>KEK</b> = HKDF(RK, info='keyharbor/kek/v1')"]
   mk["<b>MK</b> 메타데이터 MAC 키<br/>= HKDF(RK, info='keyharbor/meta-mac/v1')"]

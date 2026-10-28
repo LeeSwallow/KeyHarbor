@@ -447,7 +447,7 @@ flowchart TD
 
 ```mermaid
 flowchart TB
-  subgraph fs["~/.keyharbor (0700)"]
+  subgraph fs["~/Library/Application Support/KeyHarbor (0700)"]
     db["keyharbor.sqlite3 (+ -wal, -shm)"]
     profiles["profiles/&lt;session-id&gt;/"]
     run["run/&lt;session-id&gt;.lock · .sock"]
@@ -457,13 +457,13 @@ flowchart TB
     b2["KeyHarbor.app (Tauri)"]
     b3["Claude Code 플러그인<br/>.mcp.json + skills/"]
   end
-  kc["login keychain<br/>service = dev.keyharbor.vault"]
+  kc["login keychain<br/>service = io.github.leeswallow.keyharbor"]
   b1 & b2 --> fs
   b1 & b2 --> kc
   b3 -->|"command: keyharbor mcp --agent claude"| b1
 ```
 
-- 데이터 경로는 기존과 같다(`--data-dir`, `KEYHARBOR_HOME`). 재구현은 `~/.keyharbor-rebuild`를 쓰다가, 이식이 끝나면 기본 경로를 정한다.
+- 기본 데이터 경로는 `~/Library/Application Support/KeyHarbor`(macOS 표준, 0700)이고 `--data-dir`·`KEYHARBOR_HOME`으로 바꿀 수 있다. 프로토타입(`~/.keyharbor`)과 겹치지 않는다. [사용자 결정 B3, J-33]
 - CLI·MCP·감독자는 **하나의 바이너리**다. Keychain의 앱별 접근 목록(ACL)에 바이너리 하나만 등록되도록 하기 위해서다. ([03 §3.4](03-security-whitepaper.md#34-금고-키-보관-macos-keychain))
 - 관리 앱은 Keychain에 **직접 접근하지 않는다**. 금고 키가 필요한 작업은 앱 번들에 넣은 같은 `keyharbor` 바이너리를 Tauri sidecar로 호출한다. 그래야 ACL에 등록되는 바이너리가 하나로 유지된다. [설계자 판단]
 
