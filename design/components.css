@@ -4,6 +4,9 @@
 .kh { font: var(--text-body); color: var(--c-ink); background: var(--c-bg); -webkit-font-smoothing: antialiased; word-break: keep-all; }
 .kh :focus-visible { outline: var(--stroke-focus) solid var(--c-focus); outline-offset: 2px; }
 
+/* ---- Canvas: the patterned background. Put panels on it, not text straight on lines ---- */
+.kh-canvas { background-color: var(--c-bg); background-image: var(--pattern); background-size: var(--pattern-size); background-position: -1px -1px; }
+
 /* ---- Icon: an SVG from icons/ drawn in currentColor via mask ---- */
 .kh-i { display: inline-block; width: 16px; height: 16px; flex: none; background: currentColor;
   -webkit-mask: var(--i) center / contain no-repeat; mask: var(--i) center / contain no-repeat; }

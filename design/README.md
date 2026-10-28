@@ -16,7 +16,7 @@ CSS mask는 `file://`에서 아이콘을 불러오지 못하므로 로컬 서버
 ```sh
 cd .   # 저장소 루트
 python3 -m http.server 8765 --bind 127.0.0.1
-open http://127.0.0.1:8765/design/index.html          # ?theme=dark&lang=en&density=compact
+open http://127.0.0.1:8765/design/index.html          # ?theme=dark&lang=en&density=compact&pattern=dots
 ```
 
 ## 원칙
@@ -26,7 +26,8 @@ open http://127.0.0.1:8765/design/index.html          # ?theme=dark&lang=en&dens
 - **비밀 값은 봉인 표면에만**: 평문이 화면에 그려질 수 있는 곳은 `kh-secret`(`--c-sealed`) 하나다. 관리 앱에서만 보이고, 타이머가 끝나면 다시 가린다. CLI와 에이전트에는 이 컴포넌트에 해당하는 것이 없다(docs/design/03 §3.12).
 - **에이전트가 보는 것은 placeholder**: `kh-ph`는 복사해도 안전한 값이라 점선 테두리로 봉인 값과 구분한다.
 - **보안 입력 창은 겉모습이 다르다**: `kh-dialog.secure`는 청록 테두리와 바깥 고리를 두르고 누가 요청했는지 먼저 보여 준다. 다른 창이 흉내 내기 어렵게 하려는 표시이지 보안 경계는 아니다.
-- **테마와 밀도는 속성으로**: `<html data-theme="light|dark" data-density="comfortable|compact">`. `data-theme`이 없으면 시스템 설정을 따른다.
+- **배경은 모눈종이**: 바탕 캔버스(`kh-canvas`)에 패턴을 깐다. 기본은 모눈(8px 잔선 + 40px 굵은 선, `--c-grid`·`--c-grid-major`), 그 밖에 격자(24px)·점(16px)·없음. 판·카드·입력칸은 단색 표면이라 글자가 선 위에 바로 놓이지 않는다. 선은 아주 옅게(라이트 4.5%·8.5%) 두어 정리된 느낌만 주고 내용과 다투지 않게 한다.
+- **테마·밀도·패턴은 속성으로**: `<html data-theme="light|dark" data-density="comfortable|compact" data-pattern="graph|grid|dots|none">`. `data-theme`이 없으면 시스템 설정을 따른다.
 - **컴포넌트가 아니라 토큰을 바꾼다**: 컴포넌트 CSS에 색·크기 리터럴을 새로 넣지 않는다.
 
 ## 아이콘
@@ -52,6 +53,7 @@ open http://127.0.0.1:8765/design/index.html          # ?theme=dark&lang=en&dens
 | `kh-origins` (`is-off`) | 값이 갈 수 있는 사이트 |
 | `kh-toast`, `kh-menu` | 알림, 메뉴 |
 | `kh-row`, `kh-audit` | 항목·세션 행, 사용 기록 행 |
+| `kh-canvas` | 패턴 깔린 바탕 (페이지, 관리 앱 상세 영역) |
 | `kh-panel`, `kh-window`, `kh-titlebar`, `kh-dialog` (`secure`), `kh-empty`, `kh-itemhead` | 틀 |
 
 ## 구조의 출처

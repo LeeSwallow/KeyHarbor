@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko" data-theme="light" data-density="comfortable">
+<html lang="ko" data-theme="light" data-density="comfortable" data-pattern="graph">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="components.css">
 <style>
-  body { margin: 0; background: var(--c-bg); }
+  body { margin: 0; }
   .page { max-width: 1120px; margin: 0 auto; padding: 0 var(--space-4) var(--space-10); }
   .top { position: sticky; top: 0; z-index: var(--z-sticky); background: color-mix(in srgb, var(--c-bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--c-line); }
   .top .in { max-width: 1120px; margin: 0 auto; padding: var(--space-3) var(--space-4); display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
@@ -40,7 +40,7 @@
   .side .nav.is-on { background: var(--c-surface); color: var(--c-ink); font-weight: 600; box-shadow: var(--shadow-1); }
   .side .nav .kh-count { margin-left: auto; }
   .side .group { font: var(--text-label); color: var(--c-ink-4); text-transform: uppercase; letter-spacing: var(--tracking-label); padding: var(--space-3) var(--space-2) var(--space-1); }
-  .list { border-right: 1px solid var(--c-line); padding: var(--space-2); display: grid; align-content: start; gap: 2px; overflow: hidden; }
+  .list { background: var(--c-surface); border-right: 1px solid var(--c-line); padding: var(--space-2); display: grid; align-content: start; gap: 2px; overflow: hidden; }
   .detail { padding: var(--space-5); display: grid; align-content: start; gap: var(--space-4); overflow: hidden; }
   .kv { display: grid; grid-template-columns: 96px 1fr; gap: var(--space-3) var(--space-3); align-items: center; }
   .kv > span { font: var(--text-small); color: var(--c-ink-3); }
@@ -49,11 +49,12 @@
   .scrimbox { padding: var(--space-6); border-radius: var(--radius-lg); background: var(--scrim); display: grid; place-items: center; }
 </style>
 </head>
-<body class="kh">
+<body class="kh kh-canvas">
 <header class="top"><div class="in">
   <div class="brand"><img src="../docs/design/assets/app-icon.svg" alt=""> KeyHarbor <span class="kh-badge neutral">design</span></div>
   <div class="kh-seg" id="theme"><button data-v="light" class="is-on"><span class="kh-i" style="--i:url(icons/house.svg)"></span><t data-en="Light">라이트</t></button><button data-v="dark"><span class="kh-i" style="--i:url(icons/lock.svg)"></span><t data-en="Dark">다크</t></button></div>
   <div class="kh-seg" id="density"><button data-v="comfortable" class="is-on"><t data-en="Comfortable">기본</t></button><button data-v="compact"><t data-en="Compact">촘촘</t></button></div>
+  <div class="kh-seg" id="pattern"><button data-v="graph" class="is-on"><t data-en="Graph">모눈</t></button><button data-v="grid"><t data-en="Grid">격자</t></button><button data-v="dots"><t data-en="Dots">점</t></button><button data-v="none"><t data-en="None">없음</t></button></div>
   <div class="kh-seg" id="lang"><button data-v="ko" class="is-on">한국어</button><button data-v="en">English</button></div>
 </div></header>
 
@@ -88,7 +89,7 @@
       <div class="kh-row"><div class="glyph personal"><span class="kh-i" style="--i:url(icons/map-pin.svg)"></span></div><div class="main"><div class="title">home</div><div class="sub">address</div></div></div>
       <div class="kh-row"><div class="glyph dev"><span class="kh-i" style="--i:url(icons/key-square.svg)"></span></div><div class="main"><div class="title">stripe-test</div><div class="sub">secret</div></div><span class="kh-badge expired" data-en="expired">만료</span></div>
     </div>
-    <section class="detail">
+    <section class="detail kh-canvas">
       <div class="kh-itemhead"><div class="kh-row" style="padding:0;min-height:0"><div class="glyph cred"><span class="kh-i lg" style="--i:url(icons/key-round.svg)"></span></div></div><h3>github</h3>
         <button class="kh-btn secondary sm"><span class="kh-i" style="--i:url(icons/file-pen-line.svg)"></span><t data-en="Edit">편집</t></button>
         <button class="kh-ibtn danger" aria-label="delete"><span class="kh-i" style="--i:url(icons/trash-2.svg)"></span></button></div>
@@ -237,6 +238,8 @@
 <p data-en="Every value above comes from tokens.css. Change the token, not the component.">위의 모든 값은 tokens.css에서 옵니다. 컴포넌트가 아니라 토큰을 바꿉니다.</p>
 <h3 class="sub" data-en="Colour">색</h3>
 <div class="sw" id="colors"></div>
+<h3 class="sub" data-en="Background pattern">배경 패턴</h3>
+<div class="grid" id="patterns"></div>
 <h3 class="sub" data-en="Type">글자</h3>
 <div class="kh-panel scale" id="type"></div>
 <h3 class="sub" data-en="Space · radius · elevation">간격 · 반경 · 그림자</h3>
@@ -276,6 +279,9 @@ function seg(id, apply) {
 }
 seg("theme", v => root.dataset.theme = v);
 seg("density", v => root.dataset.density = v);
+seg("pattern", v => root.dataset.pattern = v);
+document.getElementById("patterns").innerHTML = [["graph","모눈 · 8px + 40px"],["grid","격자 · 24px"],["dots","점 · 16px"],["none","없음"]].map(([v, label]) =>
+  `<div data-pattern="${v}" class="kh-canvas" style="height:120px;border:1px solid var(--c-line);border-radius:var(--radius-lg);display:grid;place-items:end start;padding:var(--space-3)"><span class="kh-chip">${v} — ${label}</span></div>`).join("");
 seg("lang", v => {
   root.lang = v;
   document.querySelectorAll("[data-en]").forEach(el => {
@@ -290,6 +296,7 @@ seg("lang", v => {
 const q = new URLSearchParams(location.search);
 if (q.get("theme")) document.querySelector(`#theme [data-v="${q.get("theme")}"]`)?.click();
 if (q.get("lang")) document.querySelector(`#lang [data-v="${q.get("lang")}"]`)?.click();
+if (q.get("pattern")) document.querySelector(`#pattern [data-v="${q.get("pattern")}"]`)?.click();
 if (q.get("density")) document.querySelector(`#density [data-v="${q.get("density")}"]`)?.click();
 </script>
 </body>
