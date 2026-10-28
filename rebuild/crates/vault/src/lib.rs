@@ -2,6 +2,7 @@
 //! Format and constants follow docs/design/07-cryptography-design.md.
 
 pub mod keys;
+pub mod keystore;
 pub mod meta;
 pub mod record;
 
