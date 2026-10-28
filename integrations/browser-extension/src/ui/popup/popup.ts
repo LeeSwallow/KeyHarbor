@@ -52,7 +52,7 @@ export async function mountPopup(doc: Document, deps: PopupDeps): Promise<void> 
     update({ busy: true });
     const current = state;
     if (current.kind !== "ready") return;
-    const result = await deps.send({ type: "hand_off", tabId: tab.id, session: current.session, ttlSeconds: current.ttlSeconds, includeLocalStorage: current.includeLocalStorage });
+    const result = await deps.handOff({ tabId: tab.id, session: current.session, ttlSeconds: current.ttlSeconds, includeLocalStorage: current.includeLocalStorage });
     if (result.ok) {
       await deps.saveSession(result.value.session);
       update({ busy: false, done: { cookies: result.value.cookies, session: result.value.session } });

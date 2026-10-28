@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeHandOffSite } from "../../src/app/hand-off-site.js";
+import { handOffRequest } from "../../src/domain/handoff.js";
 import { SECRET, cookie, fakePorts } from "../support/fakes.js";
 
-const request = { session: "work", ttlSeconds: 3600, includeLocalStorage: false };
+const request = (() => {
+  const r = handOffRequest("work", 3600, false);
+  if (!r.ok) throw new Error(r.error);
+  return r.value;
+})();
 const consoleSpies: Array<ReturnType<typeof vi.spyOn>> = [];
 
 beforeEach(() => {

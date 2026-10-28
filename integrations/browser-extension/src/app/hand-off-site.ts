@@ -1,11 +1,10 @@
 // Use case: hand the site of one tab to an agent session (R-42). Reads that site's cookies (and,
-// if asked, the page's localStorage), sends exactly one `receive_site` message to the native
-// host, and reports counts. It never logs and its errors are codes: no value leaves through here
-// except inside the one message to the host.
+// if asked, the page's localStorage), hands exactly one `SiteHandoff` to the native host, and
+// reports counts. It never logs and its errors are codes: no value leaves through here except
+// inside the one hand-off to the host.
 
-import { toCookieParams } from "../domain/cookie.js";
-import type { HandOffRequest } from "../domain/handoff.js";
-import { parseHostReply, toReceiveSiteWire } from "../domain/protocol.js";
+import { selectSiteCookies } from "../domain/cookie.js";
+import type { HandOffRequest, SiteHandoff } from "../domain/handoff.js";
 import { type Result, err, ok } from "../domain/result.js";
 import { scopeOf } from "../domain/scope.js";
 import type { Ports } from "../ports/index.js";
@@ -29,8 +28,8 @@ export function makeHandOffSite(ports: Ports): HandOffSite {
 
     const cookies = await ports.cookies.readSiteCookies(scope.value).catch(() => null);
     if (cookies === null) return err("no_permission");
-    const { params } = toCookieParams(cookies, scope.value);
-    if (params.length === 0) return err("no_cookies");
+    const selected = selectSiteCookies(cookies, scope.value).cookies;
+    if (selected.length === 0) return err("no_cookies");
 
     let localStorage: Record<string, string> | undefined;
     if (request.includeLocalStorage) {
@@ -38,13 +37,14 @@ export function makeHandOffSite(ports: Ports): HandOffSite {
       if (!localStorage) return err("storage_unavailable");
     }
 
-    const message = toReceiveSiteWire(scope.value.origin, params, request, localStorage);
-    const raw = await ports.host.send(message).then(
-      (r) => ({ sent: true as const, r }),
+    const handoff: SiteHandoff = { origin: scope.value.origin, cookies: selected, session: request.session, ttlSeconds: request.ttlSeconds };
+    if (localStorage) handoff.localStorage = localStorage;
+    const answer = await ports.host.receiveSite(handoff).then(
+      (reply) => ({ sent: true as const, reply }),
       () => ({ sent: false as const }),
     );
-    if (!raw.sent) return err("host_unavailable");
-    const reply = parseHostReply(raw.r);
+    if (!answer.sent) return err("host_unavailable");
+    const reply = answer.reply;
     if (!reply.ok) return reply;
     if (reply.value.kind === "refused") return err("host_refused");
     return ok({ session: reply.value.session, origin: scope.value.origin, cookies: reply.value.cookies, localStorage: localStorage !== undefined });

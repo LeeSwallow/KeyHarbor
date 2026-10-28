@@ -1,9 +1,10 @@
 // NativeHost over `runtime.sendNativeMessage`. One request, one reply.
 
-import { HOST_NAME } from "../../domain/protocol.js";
 import type { NativeHost } from "../../ports/index.js";
+import { nativeHostOver } from "../wire/native-host.js";
+import { HOST_NAME } from "../wire/protocol.js";
 import type { WebExtApi } from "./api.js";
 
 export function webextNativeHost(api: WebExtApi, hostName: string = HOST_NAME): NativeHost {
-  return { send: (request) => api.runtime.sendNativeMessage(hostName, request) };
+  return nativeHostOver((message) => api.runtime.sendNativeMessage(hostName, message));
 }

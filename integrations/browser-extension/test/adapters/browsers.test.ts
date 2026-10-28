@@ -1,7 +1,7 @@
 // The per-browser composition roots, run against a fake namespace on globalThis.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HOST_NAME } from "../../src/domain/protocol.js";
+import { HOST_NAME } from "../../src/adapters/wire/protocol.js";
 import { fakeBrowser } from "../support/fake-browser.js";
 
 const cookie = { name: "s", value: "v", domain: ".github.com", hostOnly: false, path: "/", secure: true, httpOnly: true, sameSite: "lax", session: true };

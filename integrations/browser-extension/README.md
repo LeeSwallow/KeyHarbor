@@ -29,33 +29,39 @@ flowchart LR
   UI["ui/popup<br/>화면 · 문구"] --> APP
   AD["adapters/chrome · firefox<br/>조립(composition root)"] --> WX["adapters/webext<br/>포트 구현"]
   AD --> APP["app<br/>handOffSite · 명령"]
+  WX --> WIRE["adapters/wire<br/>wire 타입 · 번역 · 검증"]
   WX --> PORTS["ports<br/>CookieSource · StorageSource · NativeHost · TabInfo"]
+  WIRE --> APP
+  WIRE --> PORTS
   APP --> PORTS
-  APP --> DOM["domain<br/>프로토콜 · 사이트 범위 · 쿠키 변환 · 검증"]
+  APP --> DOM["domain<br/>사이트 범위 · 넘길 쿠키 · 세션 이름 · TTL"]
   PORTS --> DOM
-  WX --> DOM
+  WIRE --> DOM
 ```
+
+안쪽(`domain`, `ports`, `app`)은 우리 말(`SiteCookie`, `SiteHandoff`, `SessionName`, `HostReply`)만 쓴다. 바깥 형식(Native Messaging 메시지, CDP `Network.CookieParam`, 팝업 → 백그라운드 메시지)은 `adapters/wire/`에만 있고 이름이 `*Wire`(CDP는 `CdpCookieParam`)로 끝난다. `test/architecture.test.ts`가 이 방향을 검사한다: domain·ports는 브라우저 API(`chrome.`·`browser.`·`globalThis`)와 바깥 계층을 import하지 않고, app은 adapters·ui를 import하지 않으며, wire 타입은 `src/adapters/` 밖에 선언되지 않는다.
 
 | 폴더 | 책임 | 브라우저 API |
 |---|---|---|
-| `src/domain/` | `protocol.ts`(판별 유니온 wire 타입, 만들기·읽기는 여기서만), `scope.ts`(등록 가능 도메인 + 하위 도메인, 허용 스킴), `cookie.ts`(WebExtension 쿠키 → CDP `Network.CookieParam`), `handoff.ts`(세션 이름·TTL 검사), `result.ts`(오류는 코드뿐) | 없음 |
-| `src/ports/` | 유스케이스가 쓰는 인터페이스 넷 | 없음 |
-| `src/app/` | `makeHandOffSite(ports)` 유스케이스, 팝업 → 백그라운드 명령과 그 검증 한 곳 | 없음 |
+| `src/domain/` | `scope.ts`(등록 가능 도메인 + 하위 도메인, 허용 스킴), `cookie.ts`(`SiteCookie`와 넘길 쿠키 고르기: 범위·파티션·first-party), `session-name.ts`(Rust `SessionName::parse`와 같은 규칙), `handoff.ts`(TTL 검사, `SiteHandoff`, `HostReply`), `result.ts`(오류는 코드뿐) | 없음 |
+| `src/ports/` | 유스케이스가 쓰는 인터페이스 넷. `NativeHost.receiveSite(SiteHandoff)`는 우리 말로 주고받는다 | 없음 |
+| `src/app/` | `makeHandOffSite(ports)` 유스케이스, 검사를 마친 `Command`와 팝업이 묻는 `HandOffAsk` | 없음 |
+| `src/adapters/wire/` | `protocol.ts`(Native Messaging v1 판별 유니온, 만들기·읽기는 여기서만), `cdp-cookie.ts`(`SiteCookie` → CDP `Network.CookieParam`), `native-host.ts`(전송 위의 `NativeHost`: 번역만), `command.ts`(팝업 → 백그라운드 메시지와 그 검증 한 곳) | 없음 |
 | `src/adapters/webext/` | 두 브라우저에 공통인 포트 구현. 손으로 쓴 API 부분 타입 `WebExtApi` | 있음 |
 | `src/adapters/chrome/`, `firefox/` | 브라우저마다 다른 쿠키 조회와 진입점(백그라운드, 팝업) | 있음 |
 | `src/ui/popup/` | 디자인 시스템 클래스로만 그리는 팝업. 상태 → HTML은 순수 함수 | 진입점이 준 deps만 |
 | `manifest/` | `base.json` + 브라우저 오버레이, 빌드가 병합 | — |
 | `native-host/` | native messaging host 매니페스트 틀 | — |
 | `scripts/` | 빌드(esbuild), 매니페스트 병합, 디자인 자산 고르기, 빌드 대상 표 | — |
-| `test/` | `src/`·`scripts/`와 같은 모양. `support/`에 가짜 포트와 가짜 브라우저 | — |
+| `test/` | `src/`·`scripts/`와 같은 모양. `support/`에 가짜 포트와 가짜 브라우저, `architecture.test.ts`에 계층 규칙 | — |
 
 ### 확장 지점
 
 | 더할 것 | 하는 일 |
 |---|---|
 | 브라우저 (예: Edge) | `src/adapters/edge/`(쿠키 조회 + 진입점 둘), `manifest/edge.json`, `scripts/targets.mjs`에 한 줄 |
-| 프로토콜 요청 | `domain/protocol.ts`의 `HostRequestWire` 유니온에 한 형태 + 만드는 함수 |
-| 팝업 명령 | `app/commands.ts`의 `Command` 유니온과 `parseCommand` |
+| 프로토콜 요청 | `adapters/wire/protocol.ts`의 `HostRequestWire` 유니온에 한 형태 + 만드는 함수, `NativeHost` 포트에 메서드 하나 |
+| 팝업 명령 | `app/commands.ts`의 `Command` 유니온, `adapters/wire/command.ts`의 `parseCommand` |
 
 유스케이스는 포트를 인자로 받고(DI 라이브러리 없음), 전역은 각 진입점이 `chrome`/`browser`를 한 번 읽는 것뿐이다.
 
@@ -72,7 +78,7 @@ host 이름은 `dev.keyharbor.host`. 요청 하나에 응답 하나.
 
 응답: `{"v":1,"type":"received","session":"work","cookies":3}` 또는 `{"v":1,"type":"error","code":"no_session"}`. 응답에 쿠키 값은 없다.
 
-쿠키 변환 규칙(`domain/cookie.ts`):
+쿠키 변환 규칙(`adapters/wire/cdp-cookie.ts`, 어느 쿠키를 넘길지는 `domain/cookie.ts`):
 
 | WebExtension | CDP `CookieParam` | 이유 |
 |---|---|---|
