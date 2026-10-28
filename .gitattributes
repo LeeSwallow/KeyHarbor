@@ -1,0 +1,3 @@
+# Every text file is checked out with LF line ends, on every system: the KAT
+# vectors, scripts and workflows are compared byte for byte.
+* text=auto eol=lf
