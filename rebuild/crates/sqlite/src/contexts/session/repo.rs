@@ -63,7 +63,11 @@ fn load_rows(conn: &mut SqliteConnection, id: Option<&str>) -> Result<Vec<Sessio
 }
 
 impl SessionStore for SqliteStore {
-    fn create(&self, name: SessionName) -> Result<Session> {
+    fn create_described(
+        &self,
+        name: SessionName,
+        description: Option<&Description>,
+    ) -> Result<Session> {
         let id = SessionId::new();
         self.read(|conn| {
             diesel::insert_into(sessions::table)
@@ -71,6 +75,7 @@ impl SessionStore for SqliteStore {
                     id: &id.to_string(),
                     name: name.as_str(),
                     state: State::Stopped.as_str(),
+                    description: description.map(Description::as_str),
                 })
                 .execute(conn)?;
             Ok(())

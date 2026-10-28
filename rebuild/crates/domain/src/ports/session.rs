@@ -23,7 +23,15 @@ pub struct SessionRow {
 }
 
 pub trait SessionStore {
-    fn create(&self, name: SessionName) -> Result<Session>;
+    /// A stopped session with its description, in one write. Fails on a duplicate name.
+    fn create_described(
+        &self,
+        name: SessionName,
+        description: Option<&Description>,
+    ) -> Result<Session>;
+    fn create(&self, name: SessionName) -> Result<Session> {
+        self.create_described(name, None)
+    }
     /// Sets or clears the session's description. False if there is no such session.
     fn set_description(&self, id: SessionId, description: Option<&Description>) -> Result<bool>;
     /// Every session, ordered by name.

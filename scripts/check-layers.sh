@@ -16,8 +16,17 @@
 #    reach browser operations only through the guarded control path.
 # 6. A persistence context does not reach into another context's models,
 #    schema or mappers.
+# 7. (A) Interfaces call use cases only: the CLI's command modules and the MCP
+#    server neither open the store nor call storage ports; the composition
+#    root (cli/src/main.rs, cli/src/compose.rs) builds the adapters.
+# 8. (J) Which session operation needs which policy action is the guard's
+#    table (`keyharbor_guard::session`); interfaces never name a session-level
+#    `Action`.
+#
+# CHECK_LAYERS_ROOT replaces rebuild/crates (scripts/test-scripts.sh runs the
+# rules against copies with planted violations).
 set -u
-cd "$(dirname "$0")/../rebuild/crates" || exit 1
+cd "${CHECK_LAYERS_ROOT:-$(dirname "$0")/../rebuild/crates}" || exit 1
 bad=0
 no() { echo "✗ $*"; bad=1; }
 
@@ -31,8 +40,8 @@ allowed() {
 	guard) echo "domain core" ;;
 	sqlite) echo "domain" ;;
 	broker) echo "domain guard" ;;
-	mcp) echo "domain core guard broker sqlite vault" ;;
-	cli) echo "domain crypto vault core guard sqlite broker mcp" ;;
+	mcp) echo "domain core guard broker" ;;
+	cli) echo "domain vault core guard sqlite broker mcp" ;;
 	# A dev tool (ADR-0015): uses no keyharbor crate, and no crate may depend on it.
 	design-check) echo "" ;;
 	*) echo "?" ;;
@@ -153,6 +162,24 @@ $hits"
 else
 	no "keyharbor-sqlite has no src/contexts/ (persistence contexts)"
 fi
+
+# --- 7. (A) interfaces call use cases, the composition root builds adapters --------
+surfaces="$(ls cli/src/*_cmd.rs cli/src/*_cmd/*.rs 2>/dev/null; find mcp/src -name '*.rs' 2>/dev/null)"
+if [ -n "$surfaces" ]; then
+	# shellcheck disable=SC2086 # one path per word
+	hits="$(grep -nE 'SqliteStores?\b|keystore_from_env|ProcessRuntime::new' $surfaces || true)"
+	[ -n "$hits" ] && no "interfaces build adapters outside the composition root (cli/src/main.rs, cli/src/compose.rs):
+$hits"
+	# shellcheck disable=SC2086
+	hits="$(grep -nE '\.(item_list|item_get|set_description|policy_rules|policy_set|policy_remove|list_audit|setting_get|setting_set|handoff_status|request_handoff|reserve|transition|force_stopped)\(|\bstore\(?\)?\.(list|create|get|delete|record)\(' $surfaces || true)"
+	[ -n "$hits" ] && no "interfaces call storage ports directly (add a use case to core or guard):
+$hits"
+fi
+
+# --- 8. (J) the session policy table lives in the guard -----------------------------
+hits="$(grep -rnE 'Action::(OpenSession|CreateSession|RawCdp)' --include='*.rs' mcp cli 2>/dev/null || true)"
+[ -n "$hits" ] && no "interfaces choose session-level policy actions (use keyharbor_guard::session):
+$hits"
 
 [ "$bad" -eq 0 ] && echo "layer rules hold"
 exit "$bad"

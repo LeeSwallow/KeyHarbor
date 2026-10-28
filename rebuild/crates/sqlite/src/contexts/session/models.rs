@@ -9,6 +9,7 @@ pub struct NewSession<'a> {
     pub id: &'a str,
     pub name: &'a str,
     pub state: &'a str,
+    pub description: Option<&'a str>,
 }
 
 /// A session joined with the generation of its current run.

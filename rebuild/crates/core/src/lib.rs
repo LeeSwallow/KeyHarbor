@@ -6,9 +6,12 @@
 //! policy and origin checks.
 
 mod access;
+pub mod audit;
 mod dotenv;
+pub mod policy;
 mod rotate;
 pub mod session;
+pub mod settings;
 #[cfg(test)]
 mod test_support;
 mod transfer;
@@ -20,9 +23,9 @@ pub use dotenv::parse_dotenv;
 pub use keyharbor_crypto::export::Passphrase;
 pub use transfer::ImportReport;
 pub use vault::{
-    DEFAULT_ITEM_TTL, ExpiryChoice, ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary,
-    ItemUse, MAX_FIELD_BYTES, MaskValues, NO_TTL, NewItem, Vault, VaultBackend,
-    effective_descriptions, fill_template,
+    CatalogEntry, DEFAULT_ITEM_TTL, ExpiryChoice, ItemChange, ItemDetails, ItemSource, ItemStatus,
+    ItemSummary, ItemUse, MAX_FIELD_BYTES, MaskValues, NO_TTL, NewItem, Vault, VaultBackend,
+    catalog, effective_descriptions, fill_template,
 };
 
 /// The agent name recorded for changes made by the local user through the CLI.

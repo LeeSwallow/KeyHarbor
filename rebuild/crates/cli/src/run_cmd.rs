@@ -4,18 +4,16 @@
 //! origin-bound); a refusal is recorded and the command is not started. The child's stdout and
 //! stderr pass through a masker built from the whole vault, line by line.
 
+use crate::compose::App;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
-use keyharbor_core::Vault;
 use keyharbor_domain::policy::{ANY, parse_agent};
 use keyharbor_guard::{pep::mask::Masker, run as guard_run};
-use keyharbor_sqlite::SqliteStore;
-use keyharbor_vault::keystore::keystore_from_env;
 use std::{
     ffi::OsString,
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
 };
 use zeroize::Zeroizing;
 
@@ -57,32 +55,12 @@ fn pump(input: impl Read, mut output: impl Write, masker: &Masker) {
     }
 }
 
-/// Runs the command and returns the exit code to pass on (128 + signal if it was killed).
-pub fn run(root: &Path, args: RunArgs) -> Result<i32> {
-    if args.agent == ANY {
-        bail!("agent name * is reserved for rules that apply to every agent");
-    }
-    let agent = parse_agent(&args.agent).map_err(|e| anyhow!("{e}"))?;
-    if args.items.is_empty() && args.files.is_empty() {
-        bail!("give at least one --env ITEM or --env-file PATH");
-    }
-    let store = SqliteStore::open(root)?;
-    let vault = Vault::open(SqliteStore::open(root)?, keystore_from_env())?;
-    // The guard checks every item before resolving any, and builds the output masker.
-    let mut injection = guard_run::prepare(
-        &store,
-        &vault,
-        &guard_run::Request {
-            agent: &agent,
-            items: &args.items,
-            files: &args.files,
-        },
-    )?;
-    let vars = std::mem::take(&mut injection.vars);
-
-    let mut command = Command::new(&args.command[0]);
+/// Starts the child with `vars` and no core dumps, its output piped back to us. The
+/// `Command` holding the values is dropped before this returns.
+fn spawn(argv: &[OsString], vars: &[(String, Zeroizing<String>)]) -> Result<Child> {
+    let mut command = Command::new(&argv[0]);
     command
-        .args(&args.command[1..])
+        .args(&argv[1..])
         .envs(vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
@@ -101,12 +79,35 @@ pub fn run(root: &Path, args: RunArgs) -> Result<i32> {
             Ok(())
         });
     }
-    let mut child = command
+    command
         .spawn()
-        .with_context(|| format!("could not start {}", Path::new(&args.command[0]).display()))?;
-    drop(command);
+        .with_context(|| format!("could not start {}", Path::new(&argv[0]).display()))
+}
+
+/// Runs the command and returns the exit code to pass on (128 + signal if it was killed).
+pub fn run(app: &App, args: RunArgs) -> Result<i32> {
+    if args.agent == ANY {
+        bail!("agent name * is reserved for rules that apply to every agent");
+    }
+    let agent = parse_agent(&args.agent).map_err(|e| anyhow!("{e}"))?;
+    if args.items.is_empty() && args.files.is_empty() {
+        bail!("give at least one --env ITEM or --env-file PATH");
+    }
+    let (store, vault) = (app.store()?, app.vault()?);
+    // The guard checks every item before resolving any, and builds the output masker.
+    let mut injection = guard_run::prepare(
+        &*store,
+        &vault,
+        &guard_run::Request {
+            agent: &agent,
+            items: &args.items,
+            files: &args.files,
+        },
+    )?;
+    let vars = std::mem::take(&mut injection.vars);
+    let mut child = spawn(&args.command, &vars)?;
     drop(vars);
-    injection.record_injected(&store);
+    injection.record_injected(&*store);
     let (out, err) = (
         child.stdout.take().context("child stdout")?,
         child.stderr.take().context("child stderr")?,

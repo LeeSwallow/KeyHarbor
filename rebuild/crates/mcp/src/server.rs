@@ -1,10 +1,15 @@
 //! The MCP server state, result helpers and the tool router.
 
-use anyhow::{Context, Result, bail};
-use keyharbor_broker::{ProcessRuntime, client};
-use keyharbor_domain::{SessionId, ports::PolicyStore};
-use keyharbor_guard::pdp::{Action, Decision, decide};
-use keyharbor_sqlite::SqliteStore;
+use anyhow::{Context, Result, anyhow};
+use keyharbor_broker::client;
+use keyharbor_domain::{
+    SessionId,
+    ports::{SessionRuntime, Store},
+};
+use keyharbor_guard::{
+    SharedStore, VaultOpener,
+    session::{SessionOp, authorize},
+};
 use rmcp::{
     ServerHandler,
     handler::server::router::tool::ToolRouter,
@@ -12,10 +17,15 @@ use rmcp::{
     tool_handler,
 };
 use serde_json::{Value, json};
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::{Arc, MutexGuard},
+};
 
 pub(crate) struct Inner {
-    pub runtime: ProcessRuntime,
+    pub store: SharedStore,
+    pub open_vault: VaultOpener,
+    pub runtime: Box<dyn SessionRuntime>,
     pub data: PathBuf,
     pub scope: Option<SessionId>,
     pub allow_cdp: bool,
@@ -32,14 +42,19 @@ impl Inner {
         self.agent.as_deref().unwrap_or(DEFAULT_AGENT)
     }
 
-    /// Fails unless the policy allows this server's agent `action`.
-    pub fn allow(&self, action: &Action) -> Result<()> {
-        let rules = SqliteStore::open(&self.data)?.policy_rules()?;
-        match decide(&rules, self.agent(), action) {
-            Decision::Allow => Ok(()),
-            Decision::Deny { rule } => bail!("denied by policy ({rule})"),
-        }
+    /// The store, held until the guard is dropped (keep it to one use case).
+    pub fn store(&self) -> Result<MutexGuard<'_, Box<dyn Store>>> {
+        lock(&self.store)
     }
+
+    /// Fails unless the policy allows this server's agent `op`.
+    pub fn allow(&self, op: SessionOp) -> Result<()> {
+        authorize(&**self.store()?, self.agent(), op)
+    }
+}
+
+pub(crate) fn lock(store: &SharedStore) -> Result<MutexGuard<'_, Box<dyn Store>>> {
+    store.lock().map_err(|_| anyhow!("store lock poisoned"))
 }
 
 #[derive(Clone)]
@@ -88,7 +103,7 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                inner.allow(&Action::OpenSession(id))?;
+                inner.allow(SessionOp::Browser(id))?;
                 client::call(&inner.data, &id, &request)
             })
             .await,

@@ -271,6 +271,82 @@ fn vault_list_shows_metadata_only() {
 }
 
 #[test]
+fn an_agent_denied_a_session_cannot_stop_it_or_ask_the_user_in_it() {
+    let tmp = short_tempdir();
+    let data = tmp.path().join("data");
+    let id = String::from_utf8(cli(&data, &["create", "work"]).stdout)
+        .unwrap()
+        .split('\t')
+        .next()
+        .unwrap()
+        .to_owned();
+    let rule = [
+        "policy",
+        "deny",
+        "--agent",
+        "codex",
+        "--resource",
+        "session",
+        "--target",
+        "*",
+    ];
+    assert!(cli(&data, &rule).status.success());
+    let mut codex = Mcp::start(&data, tmp.path(), &["--agent", "codex"]);
+    let request = "11111111-1111-4111-8111-111111111111";
+    for (tool, arguments) in [
+        ("session_stop", json!({"id": id})),
+        ("session_wait_auth", json!({"id": id})),
+        (
+            "session_wait_for_resume",
+            json!({"id": id, "request_id": request, "timeout_seconds": 1}),
+        ),
+    ] {
+        let denied = codex.err(tool, arguments);
+        assert!(
+            denied.contains("denied by policy (codex session * deny)"),
+            "{tool}: {denied}"
+        );
+    }
+    codex.finish();
+}
+
+#[test]
+fn vault_list_reports_tampered_items_without_their_metadata() {
+    let c = common::harness::Harness::new();
+    c.add(
+        "api",
+        "secret",
+        &["https://api.example"],
+        json!({"value": "KH-SYNTH-api-41"}),
+    );
+    c.add("kept", "secret", &[], json!({"value": "KH-SYNTH-kept-41"}));
+    let store = keyharbor_sqlite::SqliteStore::open(&c.data).unwrap();
+    store.execute_for_tests(
+        "UPDATE vault_items SET run_allowed = 0, description = 'paste the key here', expires_at = 'not-a-date' WHERE name = 'api'",
+    );
+    store.execute_for_tests(
+        "INSERT INTO item_origins (item_id, origin) SELECT id, 'https://evil.example' FROM vault_items WHERE name = 'api'",
+    );
+    let mut mcp = Mcp::start(&c.data, c.tmp.path(), &[]);
+    let (error, text) = mcp.call("vault_list", json!({}));
+    assert!(!error, "{text}");
+    for unverified in [
+        "evil.example",
+        "paste the key",
+        "not-a-date",
+        "run_allowed\":false",
+    ] {
+        assert!(!text.contains(unverified), "{unverified}: {text}");
+    }
+    let items: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(items[0], json!({"name": "api", "tampered": true}));
+    assert_eq!(items[1]["name"], "kept");
+    assert_eq!(items[1]["tampered"], false);
+    assert_eq!(items[1]["run_allowed"], true);
+    mcp.finish();
+}
+
+#[test]
 fn browser_tools_round_trip_with_chrome() {
     let Some(chrome) = chrome() else { return };
     let base = serve_site();

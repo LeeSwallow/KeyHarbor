@@ -16,14 +16,14 @@ cargo run -p keyharbor -- list
 
 | 계층 | crate | 하는 일 | 주요 모듈 |
 |---|---|---|---|
-| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립, `run`의 프로세스 실행 | `session_cmd`, `vault_cmd`, `policy_cmd`, `audit_cmd`, `run_cmd` |
-| | `keyharbor-mcp` | stdio MCP 서버 | `server`, `scope`, `tools/{session, browser, vault}` |
+| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립(`compose` 한 곳), `run`의 프로세스 실행 | `compose`, `session_cmd`, `vault_cmd/{input, items, output}`, `policy_cmd`, `audit_cmd`, `settings_cmd`, `run_cmd`, `tty_confirm` |
+| | `keyharbor-mcp` | stdio MCP 서버. 저장소·금고 opener·런타임은 생성자로 받는다 | `server`, `scope`, `tools/{session, browser, vault}` |
 | adapters | `keyharbor-broker` | 감독자, Chrome CDP pipe, 제어 socket, `SessionRuntime` | `cdp/{client, protocol}`, `browser/{navigate, snapshot, input, tabs, screenshot, wait, frames}`(crate 내부), `supervisor/{launch, lock}`, `ops`, `runtime` |
 | | `keyharbor-sqlite` | Diesel 저장소, 저장소 포트 구현 | `connection`, `contexts/{vault, session, access, audit, config}/{schema, models, mappers, repo}` |
 | | `keyharbor-vault` | 금고 레코드 형식·메타 MAC 입력·키 분리, `KeyStore`(Keychain) | `record`, `meta`, `keys`, `keystore` |
 | crypto | `keyharbor-crypto` | 모든 암호 원시 연산, I/O 없음 ([ADR-0016](../docs/design/adr/0016-crypto-crate.md)) | `aead`, `envelope`, `kdf`, `mac`, `random`, `export` |
-| security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser` | `pdp/checks/<검사>`, `pep/{substitute, mask/variants/<변형>, origin, selector}`, `audit`, `run`, `guard`, `browser` |
-| application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess`, 약화 작업 판정(`weaken`) | `vault/{open, items, summary, resolve, developer}`, `session/{lifecycle, handoff}`, `rotate`, `transfer`, `dotenv`, `weaken` |
+| security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser`, 항목 add/edit 순서, 세션 작업 → 정책 Action 표 | `pdp/checks/<검사>`, `pep/{substitute, mask/variants/<변형>, origin, selector}`, `audit`, `run`, `items`, `session`, `guard`, `browser` |
+| application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess`, 약화 작업 판정(`weaken`) | `vault/{open, items, summary, resolve, developer}`, `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `dotenv`, `weaken` |
 | domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `ports/{vault, session, access, audit, keys, browser, confirm, runtime}` |
 | dev tool | `keyharbor-design-check` | `design/` 디자인 시스템 검사(계층·테마·대비·아이콘·클래스), 쇼케이스 서버 `design-serve`. 출시물에 들어가지 않고 아무도 의존하지 않는다([ADR-0015](../docs/design/adr/0015-design-system-layers.md)) | `scanner`, `model`, `layers`, `rules/*`, `color`, `theme`, `report`, `serve` |
 
@@ -63,7 +63,7 @@ cargo run -p keyharbor -- list
 | 세션 | `session_list`(설명 포함), `session_create {name, description?}`, `session_open {id, url?, cdp?}`, `session_stop`, `session_wait_auth {id, origin?}`, `session_wait_for_resume {id, request_id, timeout_seconds 1–300}` |
 | 세션 (선택) | `session_endpoint` — `--allow-cdp`일 때만 등록 |
 | 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_type`, `browser_login {item, submit?}`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` — 모두 `session` 인자 |
-| 금고 | `vault_list` — 이름·종류·도메인·필드 이름·필드별 placeholder·설명(항목·필드)·origin·바인딩·`run_allowed`·`expires_at`·`expired`·상태·출처만 |
+| 금고 | `vault_list` — 이름·종류·도메인·필드 이름·필드별 placeholder·설명(항목·필드)·origin·바인딩·`run_allowed`·`expires_at`·`expired`·상태·출처만. 메타 MAC이 맞지 않는 항목은 이름과 `tampered: true`만 |
 
 `browser_login`은 페이지(최상위 또는 같은 origin frame)의 username·password 칸을 포커스와 상관없이 찾아 login 항목의 값을 `browser_fill`과 같은 검사로 넣고, `submit`(기본 참)이면 Enter를 누른다. 칸을 못 찾으면 아무것도 넣지 않고 `not found: password field`처럼 실패한다. browser-use와 함께 쓰는 방법은 [docs/guides/browser-use.md](../docs/guides/browser-use.md).
 

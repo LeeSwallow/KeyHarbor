@@ -1494,7 +1494,6 @@ dependencies = [
  "keyharbor-core",
  "keyharbor-domain",
  "keyharbor-guard",
- "keyharbor-sqlite",
  "rmcp",
  "serde",
  "serde_json",

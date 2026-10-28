@@ -7,6 +7,8 @@
 //! - [`audit`] — what the guard records (never a value).
 //! - [`run`] — the checks, substitution and masker of `keyharbor run`.
 //! - [`describe`] — descriptions must not hold vault values.
+//! - [`items`] — adding and changing items in the safe order (values, then weakening).
+//! - [`session`] — which policy actions each session operation needs.
 //! - [`GuardedBrowser`] — a `BrowserPort` decorator: input goes through `substitute`, every
 //!   result and error through `mask`. The supervisor hands control requests only to it.
 //!
@@ -17,10 +19,12 @@ pub mod audit;
 mod browser;
 pub mod describe;
 mod guard;
+pub mod items;
 mod login;
 pub mod pdp;
 pub mod pep;
 pub mod run;
+pub mod session;
 #[cfg(test)]
 mod test_support;
 

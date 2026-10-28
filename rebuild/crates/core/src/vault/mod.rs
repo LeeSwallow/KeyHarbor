@@ -10,7 +10,7 @@ mod resolve;
 mod summary;
 
 pub use resolve::fill_template;
-pub use summary::{ItemUse, effective_descriptions};
+pub use summary::{CatalogEntry, ItemUse, catalog, effective_descriptions};
 
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{

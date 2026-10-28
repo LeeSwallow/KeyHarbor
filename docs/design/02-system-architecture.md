@@ -101,7 +101,7 @@ flowchart TB
     dom["keyharbor-domain<br/>엔티티 · 값 객체 · KINDS 레지스트리<br/>ports: VaultStore · SessionStore · PolicyStore<br/>AuditStore · SettingsStore · KeyStore<br/>BrowserPort · PageInput · FrameInspector<br/>SessionRuntime · StoreFactory"]
   end
   cli --> mcp & broker & sqlite & vault & guard & core
-  mcp --> broker & sqlite & vault & guard & core
+  mcp --> broker & guard & core
   broker --> guard
   guard --> core
   core --> vault
@@ -112,14 +112,29 @@ flowchart TB
 |---|---|---|---|
 | `keyharbor-domain` | domain + ports | 없음 | `SessionId`·`State`·`Generation`, `vault`(`ItemKind`, `KINDS`, `Origin`, placeholder), `policy`(`Rule`), `audit`, `secret`(`SecretKey`, `VaultError`), `ports`(trait) |
 | `keyharbor-vault` | adapter | domain | 레코드 seal/open, 키 분리, 메타 MAC(I/O 없음), `KeyStore` 구현(`MacKeychain`, 테스트용 `FileKeyStore`) |
-| `keyharbor-core` | application | domain, vault(레코드 함수만) | `Vault` 유스케이스(`vault/{open, items, summary, resolve}`), `session/{lifecycle, handoff}`, `rotate`, `transfer`, `PlaintextAccess` |
-| `keyharbor-guard` | security | domain, core | `pdp::decide`, `pep::substitute`, `pep::mask::Masker`, `pep::origin`, `audit`, `run`, `Guard`, `GuardedBrowser` |
+| `keyharbor-core` | application | domain, vault(레코드 함수만) | `Vault` 유스케이스(`vault/{open, items, summary, resolve}`, 에이전트용 `catalog`), `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `PlaintextAccess` |
+| `keyharbor-guard` | security | domain, core | `pdp::decide`, `pep::substitute`, `pep::mask::Masker`, `pep::origin`, `audit`, `run`, `items`(항목 add/edit 순서), `session`(세션 작업 → 정책 Action 표), `Guard`, `GuardedBrowser` |
 | `keyharbor-sqlite` | adapter | domain | `SqliteStore`(저장소 포트 전부), `SqliteStores`(`StoreFactory`), 컨텍스트 레지스트리 |
 | `keyharbor-broker` | adapter | domain, guard | `CdpBrowser`(crate 내부), `supervisor`, `control`, `ProcessRuntime`(`SessionRuntime`) |
-| `keyharbor-mcp` | interface | domain, core, guard, broker, sqlite, vault | `server`, `scope`, `tools/{session, browser, vault}` |
-| `keyharbor` (CLI) | interface | 전부 | clap 명령, 감독자 조립(`__supervise`) |
+| `keyharbor-mcp` | interface | domain, core, guard, broker | `server`, `scope`, `tools/{session, browser, vault}`. 저장소·금고 opener·런타임은 생성자로 받는다(`Deps`) |
+| `keyharbor` (CLI) | interface | crypto를 뺀 전부 | `compose`(composition root), clap 명령, 감독자 조립(`__supervise`) |
 
-`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 vault만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음.
+`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 crypto만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음, 표면(CLI `*_cmd`·MCP)은 저장소를 열거나 저장소 포트를 부르지 않음(규칙 A), 세션 수준 `Action`은 guard의 표만 고름(규칙 J). `scripts/test-scripts.sh`가 규칙마다 위반을 심은 사본(`CHECK_LAYERS_ROOT`)으로 검사가 실패하는지 확인한다.
+
+### 2.4.0 표면과 composition root
+
+CLI와 MCP는 같은 유스케이스를 부르는 두 얼굴이다. 바이너리마다 조립하는 곳은 하나다: `cli/src/compose.rs`의 `App`이 SQLite 저장소, 키 저장소(`keystore_from_env`), 감독자 런타임(`ProcessRuntime`), 감독자 어댑터, MCP 서버의 `Deps`를 만든다. 명령 모듈은 포트를 받아 core·guard를 부르고, 인자 파싱과 출력 모양만 갖는다. MCP 서버는 저장소 하나(`SharedStore`, 호출마다 잠금)를 생성자로 받고 요청마다 저장소를 열지 않는다. [J-71, J-72]
+
+| 무엇 | 유스케이스 |
+|---|---|
+| 세션 만들기(설명까지 한 번에 쓰기)·설명 바꾸기·목록 | `core::session::{create, describe, list}` |
+| 사람의 재개 기다리기(한 번 보기, 폴링, 1–300초 한도) | `core::session::{resume_check, wait_for_resume, ResumeWait}` |
+| 정책 목록·설정·제거(약화 확인, `policy_changed` 기록) | `core::policy::{list, set, remove}` |
+| 사용 기록 읽기 | `core::audit::list` |
+| 설정 읽기·쓰기(목록, 기본값, 검증, 약화 확인) | `core::settings::{get, set}` |
+| 항목 add/edit(설명 값 검사 → 약화 확인 → 저장) | `guard::items::{add, edit}` |
+| 세션 작업마다 필요한 정책 Action | `guard::session::{SessionOp, authorize}` |
+| 에이전트가 보는 항목 목록(메타 MAC 검증, 변조 항목은 이름만) | `core::catalog`, `Vault::catalog` |
 
 ### 2.4.1 PDP / PEP와 평문 경로
 
@@ -152,7 +167,7 @@ broker는 core에 의존할 수 없으므로, 세션 열기·멈추기·인계·
 
 ```mermaid
 flowchart LR
-  cli["CLI · MCP"] -->|"SqliteStore + ProcessRuntime"| uc["core::session<br/>open · stop · wait_auth · resume · recover · endpoint"]
+  cli["CLI · MCP"] -->|"compose가 만든 Store + SessionRuntime"| uc["core::session<br/>open · stop · wait_auth · resume · recover · endpoint"]
   uc -->|"SessionStore · AuditStore"| st["sqlite"]
   uc -->|"SessionRuntime"| rt["broker::ProcessRuntime<br/>lock · start(__supervise) · close · endpoint"]
   rt --> sup["감독자 프로세스<br/>supervisor::run(Adapters)"]
@@ -530,6 +545,7 @@ flowchart TD
 
 - **기본값은 모두 허용**이다(P2, P3). 사용자가 규칙을 추가하면 그때부터 제한된다. [설계자 판단]
 - origin 바인딩은 정책과 별개로 **항목 속성**이다. 기본값은 켜짐이고, 항목마다 끌 수 있다. [설계자 판단]
+- 세션 수준 검사는 guard `session::SessionOp` 표 하나가 정한다. 세션 하나에 대한 작업(`session_open`, 모든 `browser_*`, `session_stop`, `session_wait_auth`, `session_wait_for_resume`)은 `session` 규칙을, `session_create`는 `create_session`을, `cdp: true`로 열기와 `session_endpoint`는 `session`과 `raw_cdp`를 본다. `session_list`는 이름·상태·설명만 보이므로 검사하지 않는다. CLI는 사람(`cli`)이 쓰므로 세션 정책을 보지 않는다. [J-71]
 - `--agent` 이름은 MCP 등록 인자로 정한다. 같은 OS 사용자는 이름을 사칭할 수 있으므로, 이것은 **오작동 방지와 기록용 경계이지 보안 경계가 아니다**.
 
 ## 2.9 MCP 도구 표면
@@ -539,7 +555,7 @@ flowchart TD
 | 세션 | `session_list`, `session_create`, `session_open`, `session_stop`, `session_wait_auth`, `session_wait_for_resume` | 기존 유지 |
 | 세션 (선택) | `session_endpoint` | raw CDP가 켜진 경우에만. 마스킹 우회 경고 |
 | 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_type`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` | 신규. `fill`·`type`은 placeholder 지원 |
-| 금고 | `vault_list` | 이름·종류·필드 이름·origin·draft 여부·출처만. **값 조회 도구 없음** |
+| 금고 | `vault_list` | 이름·종류·필드 이름·origin·draft 여부·출처만. 메타 MAC이 맞지 않는 항목은 `{"name", "tampered": true}`만 보인다. **값 조회 도구 없음** |
 | 금고 등록 | `vault_generate`, `vault_request`, `vault_wait`, `vault_put` | [08](08-registration-flows.md). 반환값에 값 없음 |
 | CLI 전용 | `keyharbor run --env …` | MCP 도구가 아니라 에이전트가 셸로 실행 ([§2.5.5](#255-env-변수-주입-실행-keyharbor-run)) |
 | 상태 | `site_state_get`, `site_state_set` | 신규 |

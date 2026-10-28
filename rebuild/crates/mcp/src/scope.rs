@@ -1,19 +1,17 @@
 //! Session scope: a server started with `--session ID` sees and uses only that session, and
 //! only one such server runs per session (`run/mcp-<id>.lock`).
 
-use crate::server::Server;
+use crate::server::{Server, lock};
 use anyhow::{Context, Result, bail};
 use keyharbor_broker::{paths, supervisor};
-use keyharbor_domain::{SessionId, ports::SessionStore};
-use keyharbor_sqlite::SqliteStore;
+use keyharbor_domain::SessionId;
+use keyharbor_guard::SharedStore;
 use std::{fs::File, path::Path};
 
 /// Checks the session exists and takes its scoped-server lock.
-pub(crate) fn claim(data: &Path, id: &str) -> Result<(SessionId, File)> {
+pub(crate) fn claim(store: &SharedStore, data: &Path, id: &str) -> Result<(SessionId, File)> {
     let id = SessionId::parse(id).context("invalid session id")?;
-    SqliteStore::open(data)?
-        .get(id)?
-        .context("session not found")?;
+    keyharbor_core::session::session(&**lock(store)?, id)?;
     let lock = supervisor::acquire_lock(&paths::mcp_lock_path(data, &id))
         .context("another scoped MCP server already owns this session")?;
     Ok((id, lock))

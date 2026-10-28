@@ -1,12 +1,15 @@
-//! Session use cases shared by the CLI and the MCP server: opening and stopping a session's
-//! supervisor ([`lifecycle`]) and handing the browser to the user ([`handoff`]). They run on
-//! the store ports and the `SessionRuntime` port; processes and sockets are the broker's.
+//! Session use cases shared by the CLI and the MCP server: creating and listing sessions
+//! ([`manage`]), opening and stopping a session's supervisor ([`lifecycle`]) and handing the
+//! browser to the user ([`handoff`]). They run on the store ports and the `SessionRuntime`
+//! port; processes and sockets are the broker's.
 
 mod handoff;
 mod lifecycle;
+mod manage;
 
-pub use handoff::{pending_handoff, resume, wait_auth};
+pub use handoff::{ResumeWait, pending_handoff, resume, resume_check, wait_auth, wait_for_resume};
 pub use lifecycle::{OpenOptions, endpoint, open, recover, stop};
+pub use manage::{SessionView, create, describe, list};
 
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{

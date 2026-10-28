@@ -1,21 +1,16 @@
 //! Session tools: list, create, open, stop, hand to the user and wait, raw CDP endpoint.
 
-use crate::server::{Server, fail, ok, outcome};
-use keyharbor_broker::ProcessRuntime;
-use keyharbor_core::session::{self as lifecycle, OpenOptions};
-use keyharbor_domain::{
-    RequestId, SessionName, State,
-    ports::{SessionRow, SessionRuntime, SessionStore},
-    vault::Description,
+use crate::server::{Server, fail, outcome};
+use keyharbor_core::session::{
+    self as lifecycle, OpenOptions, ResumeWait, SessionView, resume_check, wait_for_resume,
 };
-use keyharbor_guard::pdp::Action;
-use keyharbor_sqlite::SqliteStore;
+use keyharbor_domain::{RequestId, SessionName, vault::Description};
+use keyharbor_guard::session::SessionOp;
 use rmcp::{
     handler::server::wrapper::Parameters, model::CallToolResult, schemars, tool, tool_router,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::time::Duration;
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct Name {
@@ -57,11 +52,12 @@ pub(crate) struct Session {
     pub session: String,
 }
 
-fn row_json(runtime: &ProcessRuntime, row: &SessionRow) -> Value {
+fn view_json(view: &SessionView) -> Value {
+    let row = &view.row;
     json!({
         "id": row.id.to_string(),
         "name": row.name.as_str(),
-        "state": lifecycle::display_state(runtime, row),
+        "state": view.state,
         "cdp": row.cdp,
         "description": row.description.as_ref().map(|d| d.as_str()),
     })
@@ -75,11 +71,12 @@ impl Server {
     async fn session_list(&self) -> CallToolResult {
         outcome(
             self.blocking(|inner| {
-                let rows = SqliteStore::open(&inner.data)?.list()?;
+                let views = lifecycle::list(&**inner.store()?, &*inner.runtime)?;
                 Ok(Value::Array(
-                    rows.iter()
-                        .filter(|row| inner.scope.is_none_or(|scope| scope == row.id))
-                        .map(|row| row_json(&inner.runtime, row))
+                    views
+                        .iter()
+                        .filter(|view| inner.scope.is_none_or(|scope| scope == view.row.id))
+                        .map(view_json)
                         .collect(),
                 ))
             })
@@ -97,16 +94,14 @@ impl Server {
         }
         outcome(
             self.blocking(move |inner| {
-                inner.allow(&Action::CreateSession)?;
+                inner.allow(SessionOp::Create)?;
                 let name = SessionName::parse(&name)?;
                 let description = description
                     .as_deref()
                     .map(Description::parse)
                     .transpose()
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
-                let store = SqliteStore::open(&inner.data)?;
-                let session = store.create(name)?;
-                store.set_description(session.id, description.as_ref())?;
+                let session = lifecycle::create(&**inner.store()?, name, description.as_ref())?;
                 Ok(json!({"id": session.id.to_string(), "name": session.name.as_str(), "state": session.state.as_str()}))
             })
             .await,
@@ -131,22 +126,14 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                inner.allow(&Action::OpenSession(id))?;
-                if cdp {
-                    inner.allow(&Action::RawCdp)?;
-                }
+                inner.allow(SessionOp::Open { id, cdp })?;
                 let options = OpenOptions {
                     url: url.as_deref(),
                     cdp,
                     browser: &inner.browser,
                     agent: inner.agent(),
                 };
-                lifecycle::open(
-                    &SqliteStore::open(&inner.data)?,
-                    &inner.runtime,
-                    id,
-                    &options,
-                )?;
+                lifecycle::open(&**inner.store()?, &*inner.runtime, id, &options)?;
                 Ok(json!({"id": id.to_string(), "state": "running"}))
             })
             .await,
@@ -163,12 +150,8 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                let state = lifecycle::stop(
-                    &SqliteStore::open(&inner.data)?,
-                    &inner.runtime,
-                    id,
-                    inner.agent(),
-                )?;
+                inner.allow(SessionOp::Stop(id))?;
+                let state = lifecycle::stop(&**inner.store()?, &*inner.runtime, id, inner.agent())?;
                 Ok(json!({"id": id.to_string(), "state": state.as_str()}))
             })
             .await,
@@ -188,7 +171,8 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                let request = lifecycle::wait_auth(&SqliteStore::open(&inner.data)?, &inner.runtime, id, origin.as_deref(), inner.agent())?;
+                inner.allow(SessionOp::WaitAuth(id))?;
+                let request = lifecycle::wait_auth(&**inner.store()?, &*inner.runtime, id, origin.as_deref(), inner.agent())?;
                 Ok(json!({"id": id.to_string(), "state": "awaiting_user", "request_id": request.to_string()}))
             })
             .await,
@@ -213,59 +197,20 @@ impl Server {
         let Ok(request) = RequestId::parse(&request_id) else {
             return fail("invalid request_id");
         };
-        let timeout = timeout_seconds.unwrap_or(120);
-        if !(1..=300).contains(&timeout) {
-            return fail("timeout_seconds must be between 1 and 300");
-        }
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout);
-        loop {
-            let snapshot = self
-                .blocking(move |inner| {
-                    let store = SqliteStore::open(&inner.data)?;
-                    let status = store.handoff_status(id, request)?;
-                    let row = store.get(id)?;
-                    Ok((status, row, inner.runtime.is_alive(id)))
-                })
-                .await;
-            let (status, row, alive) = match snapshot {
-                Ok(snapshot) => snapshot,
-                Err(error) => return fail(format!("{error:#}")),
-            };
-            use keyharbor_domain::HandoffStatus::*;
-            match status {
-                None => return fail("authentication request not found"),
-                Some(Superseded) => return fail("request was replaced by a newer one"),
-                Some(Cancelled) => {
-                    return fail("request was cancelled because the session stopped");
-                }
-                Some(Resumed) => {
-                    let state = row.map(|r| r.state);
-                    return if state == Some(State::Running) {
-                        ok(
-                            json!({"id": id.to_string(), "state": "running", "note": "the user resumed; sign-in success is not verified"}),
-                        )
-                    } else {
-                        fail(format!(
-                            "request was resumed but the session is now {}",
-                            state.map_or("gone", State::as_str)
-                        ))
-                    };
-                }
-                Some(Pending) if !alive => {
-                    return fail("session supervisor is not running; the user must run recover");
-                }
-                Some(Pending) => (),
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return fail(
-                    "Timed out waiting for resume; the session may still be awaiting the user",
-                );
-            }
-            tokio::time::sleep_until(
-                (tokio::time::Instant::now() + Duration::from_millis(250)).min(deadline),
-            )
-            .await;
-        }
+        let wait = match ResumeWait::seconds(timeout_seconds) {
+            Ok(wait) => wait,
+            Err(error) => return fail(error.to_string()),
+        };
+        outcome(
+            self.blocking(move |inner| {
+                inner.allow(SessionOp::WaitForResume(id))?;
+                // The store is held for one look at a time, not for the whole wait.
+                let check = || resume_check(&**inner.store()?, &*inner.runtime, id, request);
+                wait_for_resume(wait, check, std::thread::sleep)?;
+                Ok(json!({"id": id.to_string(), "state": "running", "note": "the user resumed; sign-in success is not verified"}))
+            })
+            .await,
+        )
     }
 
     #[tool(
@@ -283,9 +228,8 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                inner.allow(&Action::OpenSession(id))?;
-                inner.allow(&Action::RawCdp)?;
-                Ok(json!({"endpoint": lifecycle::endpoint(&SqliteStore::open(&inner.data)?, &inner.runtime, id)?, "warning": "full browser control; KeyHarbor protections do not apply"}))
+                inner.allow(SessionOp::Endpoint(id))?;
+                Ok(json!({"endpoint": lifecycle::endpoint(&**inner.store()?, &*inner.runtime, id)?, "warning": "full browser control; KeyHarbor protections do not apply"}))
             })
             .await,
         )
