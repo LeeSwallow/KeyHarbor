@@ -40,5 +40,8 @@ sh scripts/check-release-features.sh >/dev/null 2>&1 && ok "release build has no
 # The layer rules hold for rebuild/ (ADR-0014).
 sh scripts/check-layers.sh >/dev/null 2>&1 && ok "layer rules hold" || no "check-layers failed"
 
+# The design-system rules hold for design/ (ADR-0015).
+sh scripts/check-design.sh >/dev/null 2>&1 && ok "design rules hold" || no "check-design failed"
+
 [ "$fail" -eq 0 ] && echo "all script tests passed"
 exit "$fail"

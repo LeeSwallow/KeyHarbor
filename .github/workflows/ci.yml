@@ -68,8 +68,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # check-design.sh runs the design-check crate (ADR-0015).
+      - uses: dtolnay/rust-toolchain@stable
       - run: sh scripts/check-docs.sh
       - run: sh scripts/check-layers.sh
+      - run: sh scripts/check-design.sh
       - run: sh scripts/test-scripts.sh
 
   commits:

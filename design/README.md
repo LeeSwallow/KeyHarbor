@@ -94,3 +94,7 @@ cd rebuild && cargo run -q -p keyharbor-design-check --bin design-serve   # http
 ## 구조의 출처
 
 쇼케이스 배치(헤더의 테마·밀도·언어 전환 → 조합 예시 → 아이콘 → 컴포넌트 → 토큰)는 stickypane 디자인 시스템의 구성을 따랐다. 계층(primitive → semantic → component)은 Design Tokens Community Group의 토큰 단계 구분을 따랐다. 색, 모양, 컴포넌트 이름은 KeyHarbor가 따로 정했다.
+
+## 검사
+
+`cargo test --workspace`(또는 `sh scripts/check-design.sh`)가 `rebuild/crates/design-check`로 위 계층 규칙, 테마 짝, WCAG 대비, 아이콘, 클래스를 검사한다. 규칙 표는 [ADR-0015](../docs/design/adr/0015-design-system-layers.md)에 있다. 규칙을 더하려면 `src/rules/<규칙>.rs`에 `Rule`을 구현하고 `rules::RULES`에 한 줄, `tests/rules.rs`에 테스트 하나를 더한다. 대비를 볼 색 쌍은 `rules/contrast.rs`의 `CONTRAST_PAIRS` 표에 한 줄씩 있다. `KEYHARBOR_TEST_CHROME`을 주면 쇼케이스를 headless Chrome으로 라이트·다크 렌더링해 본다.
