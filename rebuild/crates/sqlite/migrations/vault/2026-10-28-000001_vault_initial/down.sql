@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS item_origins;
+DROP TABLE IF EXISTS vault_fields;
+DROP TABLE IF EXISTS vault_items;
+DROP TABLE IF EXISTS domain_keys;
+DROP TABLE IF EXISTS vault;

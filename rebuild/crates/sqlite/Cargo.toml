@@ -7,9 +7,10 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
+diesel.workspace = true
+diesel_migrations.workspace = true
 keyharbor-domain = { path = "../domain" }
-rusqlite.workspace = true
-uuid.workspace = true
+libsqlite3-sys.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

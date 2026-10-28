@@ -1,57 +1,57 @@
-mod audit_repo;
-mod policy_repo;
-mod session_repo;
-#[cfg(feature = "test-support")]
-mod testing;
-mod vault_repo;
-pub use audit_repo::AUDIT_ENABLED;
+//! The SQLite adapter: implements the storage ports of `keyharbor_domain::ports` with Diesel.
+//!
+//! The schema is split into bounded contexts (`contexts/`), each owning its tables, models,
+//! mappers, repository and migrations; `contexts::CONTEXTS` lists them in the order their
+//! migrations run when a store is opened. Raw SQL lives only in `migrations/` (and the few
+//! statements Diesel's DSL cannot express, inside a context's `repo.rs`).
 
-use anyhow::{Result, bail};
-use rusqlite::Connection;
+mod connection;
+mod contexts;
+
+use anyhow::Result;
+use diesel::SqliteConnection;
 use std::{
-    fs,
+    cell::RefCell,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
+pub use keyharbor_domain::ports::AUDIT_ENABLED;
+
+/// One connection to `<root>/keyharbor.sqlite3`. Not shared between threads; open one per thread.
 pub struct SqliteStore {
-    conn: Connection,
+    conn: RefCell<SqliteConnection>,
     root: PathBuf,
 }
 
 impl SqliteStore {
+    /// Opens (creating if needed) the database in the private data directory `root` and runs
+    /// every context's pending migrations.
     pub fn open(root: &Path) -> Result<Self> {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-            fs::DirBuilder::new()
-                .recursive(true)
-                .mode(0o700)
-                .create(root)?;
-            let metadata = fs::symlink_metadata(root)?;
-            if !metadata.is_dir() || metadata.permissions().mode() & 0o077 != 0 {
-                bail!("data directory must be a private directory");
-            }
-        }
-        #[cfg(not(unix))]
-        fs::create_dir_all(root)?;
-        let conn = Connection::open(root.join("keyharbor.sqlite3"))?;
-        conn.busy_timeout(Duration::from_secs(5))?;
-        conn.pragma_update(None, "journal_mode", "WAL")?;
-        conn.pragma_update(None, "foreign_keys", "ON")?;
-        conn.pragma_update(None, "secure_delete", "ON")?;
-        session_repo::migrate(&conn)?;
-        vault_repo::migrate(&conn)?;
-        policy_repo::migrate(&conn)?;
-        audit_repo::migrate(&conn)?;
+        let conn = connection::open(root)?;
         Ok(Self {
-            conn,
+            conn: RefCell::new(conn),
             root: root.to_path_buf(),
         })
     }
     /// The data directory this store was opened from.
     pub fn root(&self) -> &Path {
         &self.root
+    }
+    /// Runs `work` on the connection (one statement or a read).
+    pub(crate) fn read<T>(
+        &self,
+        work: impl FnOnce(&mut SqliteConnection) -> Result<T>,
+    ) -> Result<T> {
+        work(&mut self.conn.borrow_mut())
+    }
+    /// Runs `work` in a `BEGIN IMMEDIATE` transaction: the write lock is taken up front, so
+    /// concurrent writers wait (busy timeout) instead of failing on lock upgrade. An error
+    /// rolls everything back.
+    pub(crate) fn write<T>(
+        &self,
+        work: impl FnOnce(&mut SqliteConnection) -> Result<T>,
+    ) -> Result<T> {
+        self.conn.borrow_mut().immediate_transaction(work)
     }
 }
 
@@ -119,5 +119,46 @@ mod tests {
                 .transition(id, generation, State::Starting, State::Running)
                 .unwrap()
         );
+    }
+
+    /// A database from a build before migrations (and before `generations.cdp`) opens
+    /// unchanged: the initial migrations find their tables and the session context adds the
+    /// missing column.
+    #[test]
+    fn databases_from_before_migrations_open() {
+        use diesel::{Connection, connection::SimpleConnection};
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("data");
+        std::fs::create_dir(&root).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let id = keyharbor_domain::SessionId::new();
+        let mut old =
+            SqliteConnection::establish(root.join("keyharbor.sqlite3").to_str().unwrap()).unwrap();
+        old.batch_execute(&format!(
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, state TEXT NOT NULL CHECK(state IN ('stopped','starting','running','awaiting_user','stopping','failed')));
+            CREATE TABLE generations (session_id TEXT PRIMARY KEY, generation TEXT NOT NULL);
+            CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            INSERT INTO sessions VALUES ('{id}', 'old', 'stopped');
+            INSERT INTO settings VALUES ('audit_enabled', 'false');"
+        ))
+        .unwrap();
+        drop(old);
+        let store = SqliteStore::open(&root).unwrap();
+        let rows = store.list().unwrap();
+        assert_eq!((rows[0].id, rows[0].cdp), (id, false));
+        let generation = store.reserve(id, true).unwrap().unwrap();
+        assert_eq!(store.get(id).unwrap().unwrap().generation, Some(generation));
+        assert!(store.cdp_enabled(id).unwrap());
+        use keyharbor_domain::ports::SettingsStore;
+        assert_eq!(
+            store.setting_get(AUDIT_ENABLED).unwrap().as_deref(),
+            Some("false")
+        );
+        drop(store);
+        SqliteStore::open(&root).unwrap();
     }
 }

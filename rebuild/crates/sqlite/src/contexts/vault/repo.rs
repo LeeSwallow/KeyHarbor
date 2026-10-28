@@ -1,237 +1,232 @@
-//! Vault tables. Only ciphertext, wrapped keys and non-secret metadata are stored here.
+//! `VaultStore` for the vault context. Every write runs in one immediate transaction and
+//! bumps `vault.version`; key rotations commit only from the version they read
+//! (compare-and-swap), and item writes only under the key generation they sealed with.
 
+use super::{
+    mappers::{
+        domain_key_model, domain_key_row, field_model, field_row, item_model, item_row, vault_row,
+    },
+    models::{DomainKeyModel, FieldModel, ItemModel, NewOrigin, NewVault, VaultModel},
+    schema::{domain_keys, item_origins, vault, vault_fields, vault_items},
+};
 use crate::SqliteStore;
 use anyhow::{Context, Result, bail};
+use diesel::prelude::*;
 use keyharbor_domain::ports::vault::{
     DomainKeyRow, FieldRow, ItemRow, KeyGuard, VaultRow, VaultStore,
 };
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
-pub(crate) fn migrate(conn: &Connection) -> Result<()> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS vault (id BLOB PRIMARY KEY CHECK(length(id)=16), kek_id BLOB NOT NULL CHECK(length(kek_id)=16), version INTEGER NOT NULL DEFAULT 0, singleton INTEGER NOT NULL DEFAULT 1 UNIQUE CHECK(singleton=1));
-        CREATE TABLE IF NOT EXISTS domain_keys (domain INTEGER PRIMARY KEY CHECK(domain IN (1,2,3)), dk_id BLOB NOT NULL CHECK(length(dk_id)=16), wrapped BLOB NOT NULL);
-        CREATE TABLE IF NOT EXISTS vault_items (id BLOB PRIMARY KEY CHECK(length(id)=16), name TEXT NOT NULL UNIQUE, domain INTEGER NOT NULL CHECK(domain IN (1,2,3)), kind TEXT NOT NULL, origin_binding INTEGER NOT NULL, status TEXT NOT NULL CHECK(status IN ('draft','active','discarded')), source TEXT NOT NULL, meta_mac BLOB NOT NULL, updated_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS vault_fields (item_id BLOB NOT NULL REFERENCES vault_items(id) ON DELETE CASCADE, field TEXT NOT NULL, sealed BLOB NOT NULL, PRIMARY KEY(item_id, field));
-        CREATE TABLE IF NOT EXISTS item_origins (item_id BLOB NOT NULL REFERENCES vault_items(id) ON DELETE CASCADE, origin TEXT NOT NULL, PRIMARY KEY(item_id, origin));",
-    )?;
-    Ok(())
-}
-
-fn id16(bytes: Vec<u8>) -> rusqlite::Result<[u8; 16]> {
-    bytes.try_into().map_err(|_| {
-        rusqlite::Error::InvalidColumnType(0, "id".into(), rusqlite::types::Type::Blob)
-    })
-}
-
-fn check_guard(tx: &Transaction, guard: &KeyGuard) -> Result<()> {
-    let current: i64 = tx.query_row(
-        "SELECT count(*) FROM vault v, domain_keys d WHERE v.kek_id=?1 AND d.domain=?2 AND d.dk_id=?3",
-        params![guard.kek_id, guard.domain, guard.dk_id],
-        |row| row.get(0),
-    )?;
-    if current != 1 {
+fn check_guard(conn: &mut SqliteConnection, guard: &KeyGuard) -> Result<()> {
+    let kek: i64 = vault::table
+        .filter(vault::kek_id.eq(&guard.kek_id[..]))
+        .count()
+        .get_result(conn)?;
+    let dk: i64 = domain_keys::table
+        .filter(domain_keys::domain.eq(i32::from(guard.domain)))
+        .filter(domain_keys::dk_id.eq(&guard.dk_id[..]))
+        .count()
+        .get_result(conn)?;
+    if kek * dk != 1 {
         bail!("vault changed (keys were rotated); reopen it and retry");
     }
     Ok(())
 }
 
-fn bump_from(tx: &Transaction, expected_version: i64) -> Result<()> {
-    if tx.execute(
-        "UPDATE vault SET version = version + 1 WHERE version = ?1",
-        [expected_version],
-    )? != 1
-    {
+/// Bumps the version only if it is still `expected_version`.
+fn bump_from(conn: &mut SqliteConnection, expected_version: i64) -> Result<()> {
+    let changed = diesel::update(vault::table.filter(vault::version.eq(expected_version)))
+        .set(vault::version.eq(vault::version + 1))
+        .execute(conn)?;
+    if changed != 1 {
         bail!("vault changed during rotation; nothing was changed");
     }
     Ok(())
 }
 
-fn bump(tx: &Transaction) -> Result<()> {
-    if tx.execute("UPDATE vault SET version = version + 1", [])? != 1 {
+fn bump(conn: &mut SqliteConnection) -> Result<()> {
+    let changed = diesel::update(vault::table)
+        .set(vault::version.eq(vault::version + 1))
+        .execute(conn)?;
+    if changed != 1 {
         bail!("vault not initialized");
     }
     Ok(())
 }
 
-fn write_children(tx: &Transaction, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
+fn write_children(conn: &mut SqliteConnection, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
     for field in fields {
-        tx.execute(
-            "INSERT INTO vault_fields (item_id, field, sealed) VALUES (?1, ?2, ?3)",
-            params![item.id, field.field, field.sealed],
-        )?;
+        diesel::insert_into(vault_fields::table)
+            .values(field_model(&item.id, field))
+            .execute(conn)?;
     }
     for origin in &item.origins {
-        tx.execute(
-            "INSERT OR IGNORE INTO item_origins (item_id, origin) VALUES (?1, ?2)",
-            params![item.id, origin],
-        )?;
+        diesel::insert_or_ignore_into(item_origins::table)
+            .values(NewOrigin {
+                item_id: &item.id,
+                origin,
+            })
+            .execute(conn)?;
     }
     Ok(())
 }
 
-impl SqliteStore {
-    fn write_tx(&self) -> Result<Transaction<'_>> {
-        Ok(Transaction::new_unchecked(
-            &self.conn,
-            TransactionBehavior::Immediate,
-        )?)
-    }
+fn origins_of(conn: &mut SqliteConnection, id: &[u8]) -> Result<Vec<String>> {
+    Ok(item_origins::table
+        .filter(item_origins::item_id.eq(id))
+        .select(item_origins::origin)
+        .order(item_origins::origin)
+        .load(conn)?)
+}
 
-    fn origins_of(&self, id: &[u8; 16]) -> Result<Vec<String>> {
-        let mut query = self
-            .conn
-            .prepare("SELECT origin FROM item_origins WHERE item_id=?1 ORDER BY origin")?;
-        let rows = query.query_map([id], |row| row.get(0))?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
-    }
+fn with_origins(conn: &mut SqliteConnection, models: Vec<ItemModel>) -> Result<Vec<ItemRow>> {
+    models
+        .into_iter()
+        .map(|model| {
+            let origins = origins_of(conn, &model.id)?;
+            item_row(model, origins)
+        })
+        .collect()
+}
 
-    fn items_where(&self, filter: &str, args: &[&dyn rusqlite::ToSql]) -> Result<Vec<ItemRow>> {
-        let mut query = self.conn.prepare(&format!(
-            "SELECT id, name, domain, kind, origin_binding, status, source, meta_mac, updated_at FROM vault_items {filter} ORDER BY name"
-        ))?;
-        let rows = query.query_map(args, |row| {
-            Ok(ItemRow {
-                id: id16(row.get(0)?)?,
-                name: row.get(1)?,
-                domain: row.get(2)?,
-                kind: row.get(3)?,
-                origin_binding: row.get(4)?,
-                status: row.get(5)?,
-                source: row.get(6)?,
-                meta_mac: row.get(7)?,
-                updated_at: row.get(8)?,
-                origins: Vec::new(),
-            })
-        })?;
-        let mut items = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-        for item in &mut items {
-            item.origins = self.origins_of(&item.id)?;
-        }
-        Ok(items)
+fn replace_domain_key(conn: &mut SqliteConnection, dk: &DomainKeyRow) -> Result<()> {
+    let changed = diesel::update(domain_keys::table.find(i32::from(dk.domain)))
+        .set((
+            domain_keys::dk_id.eq(&dk.dk_id[..]),
+            domain_keys::wrapped.eq(&dk.wrapped),
+        ))
+        .execute(conn)?;
+    if changed != 1 {
+        bail!("unknown domain {}", dk.domain);
     }
+    Ok(())
 }
 
 impl VaultStore for SqliteStore {
     fn root(&self) -> &std::path::Path {
-        &self.root
+        SqliteStore::root(self)
     }
 
     fn vault_get(&self) -> Result<Option<VaultRow>> {
-        Ok(self
-            .conn
-            .query_row("SELECT id, kek_id, version FROM vault", [], |row| {
-                Ok(VaultRow {
-                    vault_id: id16(row.get(0)?)?,
-                    kek_id: id16(row.get(1)?)?,
-                    version: row.get(2)?,
-                })
-            })
-            .optional()?)
+        self.read(|conn| {
+            vault::table
+                .select(VaultModel::as_select())
+                .first(conn)
+                .optional()?
+                .map(vault_row)
+                .transpose()
+        })
     }
 
-    fn vault_create(&self, vault: &VaultRow, dks: &[DomainKeyRow]) -> Result<()> {
-        let tx = self.write_tx()?;
-        tx.execute(
-            "INSERT INTO vault (id, kek_id, version) VALUES (?1, ?2, ?3)",
-            params![vault.vault_id, vault.kek_id, vault.version],
-        )
-        .context("vault already initialized")?;
-        for dk in dks {
-            tx.execute(
-                "INSERT INTO domain_keys (domain, dk_id, wrapped) VALUES (?1, ?2, ?3)",
-                params![dk.domain, dk.dk_id, dk.wrapped],
-            )?;
-        }
-        tx.commit()?;
-        Ok(())
+    fn vault_create(&self, row: &VaultRow, dks: &[DomainKeyRow]) -> Result<()> {
+        self.write(|conn| {
+            diesel::insert_into(vault::table)
+                .values(NewVault {
+                    id: &row.vault_id,
+                    kek_id: &row.kek_id,
+                    version: row.version,
+                })
+                .execute(conn)
+                .context("vault already initialized")?;
+            for dk in dks {
+                diesel::insert_into(domain_keys::table)
+                    .values(domain_key_model(dk))
+                    .execute(conn)?;
+            }
+            Ok(())
+        })
     }
 
     fn domain_keys(&self) -> Result<Vec<DomainKeyRow>> {
-        let mut query = self
-            .conn
-            .prepare("SELECT domain, dk_id, wrapped FROM domain_keys ORDER BY domain")?;
-        let rows = query.query_map([], |row| {
-            Ok(DomainKeyRow {
-                domain: row.get(0)?,
-                dk_id: id16(row.get(1)?)?,
-                wrapped: row.get(2)?,
-            })
-        })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        self.read(|conn| {
+            domain_keys::table
+                .select(DomainKeyModel::as_select())
+                .order(domain_keys::domain)
+                .load(conn)?
+                .into_iter()
+                .map(domain_key_row)
+                .collect()
+        })
     }
 
     fn item_insert(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
-        let tx = self.write_tx()?;
-        check_guard(&tx, guard)?;
-        let inserted = tx.execute(
-            "INSERT INTO vault_items (id, name, domain, kind, origin_binding, status, source, meta_mac, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(name) DO NOTHING",
-            params![item.id, item.name, item.domain, item.kind, item.origin_binding, item.status, item.source, item.meta_mac, item.updated_at],
-        )?;
-        if inserted == 0 {
-            bail!("item already exists");
-        }
-        write_children(&tx, item, fields)?;
-        bump(&tx)?;
-        tx.commit()?;
-        Ok(())
+        self.write(|conn| {
+            check_guard(conn, guard)?;
+            let inserted = diesel::insert_into(vault_items::table)
+                .values(item_model(item))
+                .on_conflict(vault_items::name)
+                .do_nothing()
+                .execute(conn)?;
+            if inserted == 0 {
+                bail!("item already exists");
+            }
+            write_children(conn, item, fields)?;
+            bump(conn)
+        })
     }
 
     fn item_update(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
-        let tx = self.write_tx()?;
-        check_guard(&tx, guard)?;
-        let updated = tx.execute(
-            "UPDATE vault_items SET name=?2, domain=?3, kind=?4, origin_binding=?5, status=?6, source=?7, meta_mac=?8, updated_at=?9 WHERE id=?1",
-            params![item.id, item.name, item.domain, item.kind, item.origin_binding, item.status, item.source, item.meta_mac, item.updated_at],
-        )?;
-        if updated == 0 {
-            bail!("item not found");
-        }
-        tx.execute("DELETE FROM vault_fields WHERE item_id=?1", [item.id])?;
-        tx.execute("DELETE FROM item_origins WHERE item_id=?1", [item.id])?;
-        write_children(&tx, item, fields)?;
-        bump(&tx)?;
-        tx.commit()?;
-        Ok(())
+        self.write(|conn| {
+            check_guard(conn, guard)?;
+            let updated = diesel::update(vault_items::table.find(&item.id[..]))
+                .set(item_model(item))
+                .execute(conn)?;
+            if updated == 0 {
+                bail!("item not found");
+            }
+            diesel::delete(vault_fields::table.filter(vault_fields::item_id.eq(&item.id[..])))
+                .execute(conn)?;
+            diesel::delete(item_origins::table.filter(item_origins::item_id.eq(&item.id[..])))
+                .execute(conn)?;
+            write_children(conn, item, fields)?;
+            bump(conn)
+        })
     }
 
     fn item_delete(&self, name: &str) -> Result<bool> {
-        let tx = self.write_tx()?;
-        let deleted = tx.execute("DELETE FROM vault_items WHERE name=?1", [name])? == 1;
-        if deleted {
-            bump(&tx)?;
-        }
-        tx.commit()?;
-        Ok(deleted)
+        self.write(|conn| {
+            let deleted = diesel::delete(vault_items::table.filter(vault_items::name.eq(name)))
+                .execute(conn)?
+                == 1;
+            if deleted {
+                bump(conn)?;
+            }
+            Ok(deleted)
+        })
     }
 
     fn item_get(&self, name: &str) -> Result<Option<(ItemRow, Vec<FieldRow>)>> {
-        let Some(item) = self
-            .items_where("WHERE name=?1", &[&name])?
-            .into_iter()
-            .next()
-        else {
-            return Ok(None);
-        };
-        let mut query = self
-            .conn
-            .prepare("SELECT field, sealed FROM vault_fields WHERE item_id=?1 ORDER BY field")?;
-        let fields = query
-            .query_map([item.id], |row| {
-                Ok(FieldRow {
-                    field: row.get(0)?,
-                    sealed: row.get(1)?,
-                })
-            })?
-            .collect::<rusqlite::Result<_>>()?;
-        Ok(Some((item, fields)))
+        self.read(|conn| {
+            let Some(model) = vault_items::table
+                .filter(vault_items::name.eq(name))
+                .select(ItemModel::as_select())
+                .first(conn)
+                .optional()?
+            else {
+                return Ok(None);
+            };
+            let fields = vault_fields::table
+                .filter(vault_fields::item_id.eq(&model.id))
+                .select(FieldModel::as_select())
+                .order(vault_fields::field)
+                .load(conn)?
+                .into_iter()
+                .map(field_row)
+                .collect();
+            let origins = origins_of(conn, &model.id)?;
+            Ok(Some((item_row(model, origins)?, fields)))
+        })
     }
 
     fn item_list(&self) -> Result<Vec<ItemRow>> {
-        self.items_where("", &[])
+        self.read(|conn| {
+            let models = vault_items::table
+                .select(ItemModel::as_select())
+                .order(vault_items::name)
+                .load(conn)?;
+            with_origins(conn, models)
+        })
     }
 
-    /// Re-wraps all domain keys under a new KEK and replaces every item's metadata MAC atomically.
     fn rekey_domain_keys(
         &self,
         expected_version: i64,
@@ -239,73 +234,88 @@ impl VaultStore for SqliteStore {
         dks: &[DomainKeyRow],
         metas: &[([u8; 16], Vec<u8>)],
     ) -> Result<()> {
-        let tx = self.write_tx()?;
-        bump_from(&tx, expected_version)?;
-        tx.execute("UPDATE vault SET kek_id=?1", [new_kek_id])?;
-        for dk in dks {
-            if tx.execute(
-                "UPDATE domain_keys SET dk_id=?2, wrapped=?3 WHERE domain=?1",
-                params![dk.domain, dk.dk_id, dk.wrapped],
-            )? != 1
-            {
-                bail!("unknown domain {}", dk.domain);
+        self.write(|conn| {
+            bump_from(conn, expected_version)?;
+            diesel::update(vault::table)
+                .set(vault::kek_id.eq(&new_kek_id[..]))
+                .execute(conn)?;
+            for dk in dks {
+                replace_domain_key(conn, dk)?;
             }
-        }
-        for (id, mac) in metas {
-            tx.execute(
-                "UPDATE vault_items SET meta_mac=?2 WHERE id=?1",
-                params![id, mac],
-            )?;
-        }
-        tx.commit()?;
-        Ok(())
+            for (id, mac) in metas {
+                diesel::update(vault_items::table.find(&id[..]))
+                    .set(vault_items::meta_mac.eq(mac))
+                    .execute(conn)?;
+            }
+            Ok(())
+        })
     }
 
-    /// Replaces one domain key and the given re-encrypted fields atomically.
     fn replace_domain(
         &self,
         expected_version: i64,
         dk: &DomainKeyRow,
         fields: &[([u8; 16], FieldRow)],
     ) -> Result<()> {
-        let tx = self.write_tx()?;
-        bump_from(&tx, expected_version)?;
-        if tx.execute(
-            "UPDATE domain_keys SET dk_id=?2, wrapped=?3 WHERE domain=?1",
-            params![dk.domain, dk.dk_id, dk.wrapped],
-        )? != 1
-        {
-            bail!("unknown domain {}", dk.domain);
-        }
-        for (item, field) in fields {
-            if tx.execute(
-                "UPDATE vault_fields SET sealed=?3 WHERE item_id=?1 AND field=?2",
-                params![item, field.field, field.sealed],
-            )? != 1
-            {
-                bail!("field not found during domain rotation");
+        self.write(|conn| {
+            bump_from(conn, expected_version)?;
+            replace_domain_key(conn, dk)?;
+            for (item, field) in fields {
+                let changed = diesel::update(vault_fields::table.find((&item[..], &field.field)))
+                    .set(vault_fields::sealed.eq(&field.sealed))
+                    .execute(conn)?;
+                if changed != 1 {
+                    bail!("field not found during domain rotation");
+                }
             }
-        }
-        tx.commit()?;
-        Ok(())
+            Ok(())
+        })
     }
 
     fn vault_version(&self) -> Result<i64> {
-        Ok(self
-            .conn
-            .query_row("SELECT version FROM vault", [], |row| row.get(0))?)
+        self.read(|conn| Ok(vault::table.select(vault::version).first(conn)?))
     }
 }
 
 #[cfg(test)]
+#[derive(QueryableByName)]
+struct Count {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    n: i64,
+}
+
+#[cfg(test)]
 impl SqliteStore {
-    #[cfg(test)]
     fn count_rows(&self, table: &str) -> Result<i64> {
-        Ok(self
-            .conn
-            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
-                row.get(0)
-            })?)
+        self.read(|conn| {
+            Ok(
+                diesel::sql_query(format!("SELECT count(*) AS n FROM {table}"))
+                    .get_result::<Count>(conn)?
+                    .n,
+            )
+        })
+    }
+}
+
+/// Raw SQL for other crates' tests (`test-support` feature): tampering with stored rows.
+#[cfg(feature = "test-support")]
+impl SqliteStore {
+    /// Runs one statement and panics on error.
+    pub fn execute_for_tests(&self, sql: &str) -> usize {
+        self.read(|conn| Ok(diesel::sql_query(sql).execute(conn)?))
+            .expect("test SQL")
+    }
+    /// The sealed field records of `item`, ordered by field name.
+    pub fn sealed_fields_for_tests(&self, item: &str) -> Vec<Vec<u8>> {
+        self.read(|conn| {
+            Ok(vault_fields::table
+                .inner_join(vault_items::table)
+                .filter(vault_items::name.eq(item))
+                .order(vault_fields::field)
+                .select(vault_fields::sealed)
+                .load(conn)?)
+        })
+        .expect("test SQL")
     }
 }
 
