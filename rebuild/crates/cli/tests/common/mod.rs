@@ -247,6 +247,29 @@ pub fn serve_fn(page: impl Fn(&str) -> String + Send + Sync + 'static) -> String
     base
 }
 
+/// Arguments for `script(1)` running `argv` quietly with no transcript file. BSD script
+/// (macOS) takes the command as trailing arguments; util-linux script (CI) takes one shell
+/// string with `-c` and needs `-e` to pass the command's exit status on.
+fn script_args(argv: &[String]) -> Vec<String> {
+    if cfg!(target_os = "linux") {
+        let quoted: Vec<String> = argv
+            .iter()
+            .map(|a| format!("'{}'", a.replace('\'', r"'\''")))
+            .collect();
+        vec![
+            "-q".into(),
+            "-e".into(),
+            "-c".into(),
+            quoted.join(" "),
+            "/dev/null".into(),
+        ]
+    } else {
+        let mut out = vec!["-q".to_owned(), "/dev/null".to_owned()];
+        out.extend(argv.iter().cloned());
+        out
+    }
+}
+
 /// What `keyharbor` printed on a pseudo-terminal and whether it succeeded.
 pub struct Terminal {
     pub success: bool,
@@ -269,15 +292,14 @@ pub fn on_terminal(
         sync::{Arc, Mutex},
         time::{Duration, Instant},
     };
+    let mut argv = vec![
+        env!("CARGO_BIN_EXE_keyharbor").to_owned(),
+        "--data-dir".to_owned(),
+        data.to_str().expect("UTF-8 test path").to_owned(),
+    ];
+    argv.extend(args.iter().map(|a| (*a).to_owned()));
     let mut child = Command::new("script")
-        .args([
-            "-q",
-            "/dev/null",
-            env!("CARGO_BIN_EXE_keyharbor"),
-            "--data-dir",
-        ])
-        .arg(data)
-        .args(args)
+        .args(script_args(&argv))
         .env("KEYHARBOR_TEST_KEYSTORE_DIR", keys)
         .env("KEYHARBOR_BROWSER_HEADLESS", "1")
         .stdin(Stdio::piped())
