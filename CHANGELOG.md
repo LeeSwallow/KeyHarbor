@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-28
+
 ### Added
 
 - 로컬 암호화 금고와 `keyharbor vault` CLI: `init`, `add`, `edit`, `rm`, `list`, `import-env`, `export`·`import`(age 형식), `rotate-root`, `rotate-domain`.
@@ -14,3 +16,6 @@
 ### Security
 
 - CLI는 평문 비밀을 출력하지 않으며, 비밀 값을 명령행 인자로 받지 않는다.
+
+[Unreleased]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/LeeSwallow/KeyHarbor/releases/tag/v0.1.0

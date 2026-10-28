@@ -58,6 +58,11 @@ section { margin: 36px 0; }
   background: var(--term-bg); color: var(--term-ink); border-radius: var(--radius);
 }
 .muted { color: var(--muted); font-size: .92rem; }
+.button {
+  display: inline-block; padding: 10px 18px; border-radius: 10px;
+  background: var(--accent); color: #fff; font-weight: 650; text-decoration: none;
+}
+.button:hover { filter: brightness(1.08); }
 
 .demos { display: grid; grid-template-columns: 1fr; gap: 18px; }
 .term { margin: 0; background: var(--term-bg); border-radius: var(--radius); overflow: hidden; }

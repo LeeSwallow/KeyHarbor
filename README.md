@@ -10,11 +10,15 @@ KeyHarbor는 Claude Code·Codex 같은 AI 에이전트가 권한 정책 안에�
 
 ## 설치
 
+[Releases](https://github.com/LeeSwallow/KeyHarbor/releases/latest)에서 `keyharbor_<버전>_darwin_<arm64|amd64>.tar.gz`를 받아 압축을 풀고 `PATH`에 둡니다. Apple 서명이 없는 바이너리라서 처음 한 번 격리 표시를 풀어야 합니다.
+
 ```sh
-brew install --cask leeswallow/tap/keyharbor
+tar xzf keyharbor_0.1.0_darwin_arm64.tar.gz
+xattr -d com.apple.quarantine keyharbor
+mv keyharbor /usr/local/bin/
 ```
 
-또는 [Releases](https://github.com/LeeSwallow/KeyHarbor/releases/latest)에서 `keyharbor_<버전>_darwin_<arm64|amd64>.tar.gz`를 받습니다. Apple 서명이 없는 바이너리라서 직접 받으면 `xattr -d com.apple.quarantine keyharbor`가 필요할 수 있습니다(Homebrew는 자동으로 처리합니다).
+Homebrew(`brew install --cask leeswallow/tap/keyharbor`)는 다음 릴리스부터 제공합니다.
 
 ## 빠른 시작
 

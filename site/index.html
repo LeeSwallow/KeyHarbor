@@ -19,8 +19,11 @@
   <main>
     <section class="install" aria-labelledby="install-title">
       <h2 id="install-title">설치 <span class="badge">v0.1.0 · macOS</span></h2>
-      <pre class="cmd"><code>brew install --cask leeswallow/tap/keyharbor</code></pre>
-      <p class="muted">또는 <a href="https://github.com/LeeSwallow/KeyHarbor/releases/latest">GitHub Releases</a>에서 Apple Silicon·Intel용 압축 파일을 받으세요. Apple 서명이 없는 바이너리라서 Homebrew가 설치할 때 격리 표시를 풀어 줍니다.</p>
+      <p><a class="button" href="https://github.com/LeeSwallow/KeyHarbor/releases/latest">GitHub Releases에서 받기</a></p>
+      <pre class="cmd"><code>tar xzf keyharbor_0.1.0_darwin_arm64.tar.gz
+xattr -d com.apple.quarantine keyharbor   # 서명 없는 바이너리라 처음 한 번
+mv keyharbor /usr/local/bin/</code></pre>
+      <p class="muted">Apple Silicon은 <code>arm64</code>, Intel Mac은 <code>amd64</code> 파일을 받으세요. Homebrew 설치는 다음 릴리스부터 제공합니다.</p>
     </section>
 
     <section class="demos" aria-label="사용 예시">
