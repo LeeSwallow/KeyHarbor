@@ -1,0 +1,146 @@
+/* KeyHarbor design tokens.
+ * One source for the admin app (rebuild/crates/app/ui) and the download page (site/).
+ * Themes: [data-theme="light"|"dark"], or the system setting when absent.
+ * Density: [data-density="comfortable"|"compact"].
+ * Rules: one accent (harbor teal); domain colours mark what kind of secret a thing is;
+ * status colours mark what state it is in. Never use colour alone — pair with an icon or a word.
+ */
+
+:root {
+  /* ---- Type ---- */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, "D2Coding", monospace;
+  --text-display: 600 26px/32px var(--font-ui);
+  --text-title: 600 20px/26px var(--font-ui);
+  --text-heading: 600 15px/20px var(--font-ui);
+  --text-body: 400 13px/20px var(--font-ui);
+  --text-body-strong: 600 13px/20px var(--font-ui);
+  --text-small: 400 12px/16px var(--font-ui);
+  --text-label: 600 11px/14px var(--font-ui);
+  --text-mono: 400 12px/18px var(--font-mono);
+  --text-mono-sm: 400 11px/16px var(--font-mono);
+  --tracking-label: .04em;
+
+  /* ---- Space (4px grid) ---- */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px;
+  --space-6: 24px; --space-7: 32px; --space-8: 40px; --space-9: 48px; --space-10: 64px;
+
+  /* ---- Radius · stroke ---- */
+  --radius-xs: 4px;   /* chips, kbd */
+  --radius-sm: 6px;   /* inputs, buttons */
+  --radius-md: 10px;  /* cards, rows */
+  --radius-lg: 14px;  /* panels, dialogs */
+  --radius-window: 12px;
+  --radius-pill: 999px;
+  --stroke-hairline: 1px;
+  --stroke-focus: 2px;
+
+  /* ---- Motion ---- */
+  --dur-short: 120ms; --dur-base: 180ms; --dur-long: 260ms;
+  --ease-out: cubic-bezier(.2, .7, .2, 1);
+  --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+
+  /* ---- Layers ---- */
+  --z-base: 0; --z-sticky: 10; --z-menu: 100; --z-toast: 200; --z-scrim: 300; --z-dialog: 400; --z-secure: 500;
+
+  /* ---- Density ---- */
+  --control-h: 30px; --control-h-sm: 24px; --control-h-lg: 36px;
+  --row-h: 44px; --pad-panel: var(--space-5);
+
+  /* ---- Colour: light (default) ---- */
+  --c-accent: #05a8a8;          /* harbor teal: the one accent */
+  --c-accent-strong: #047a7a;
+  --c-accent-text: #ffffff;
+  --c-accent-wash: #e3f6f5;
+  --c-focus: #05a8a8;
+
+  --c-bg: #f6f8f8;              /* window background */
+  --c-surface: #ffffff;         /* panels, cards */
+  --c-surface-2: #f0f4f4;       /* sunk: list, inputs */
+  --c-surface-3: #e6eded;       /* hover */
+  --c-line: #dbe4e4;
+  --c-line-strong: #c3d1d1;
+  --c-ink: #10282a;
+  --c-ink-2: #3c5557;
+  --c-ink-3: #6b8384;
+  --c-ink-4: #9aaeaf;           /* placeholder, disabled */
+
+  /* domains — what kind of secret */
+  --c-dom-session: #0e7490;   --c-dom-session-wash: #e2f3f7;
+  --c-dom-cred: #b45309;      --c-dom-cred-wash: #fbf0e1;
+  --c-dom-pay: #7c3aed;       --c-dom-pay-wash: #f0eafd;
+  --c-dom-personal: #047857;  --c-dom-personal-wash: #e1f4ec;
+
+  /* status — what state it is in */
+  --c-ok: #15803d;      --c-ok-wash: #e5f5ea;
+  --c-warn: #b45309;    --c-warn-wash: #fcf1e0;
+  --c-danger: #b91c1c;  --c-danger-wash: #fce9e9;  --c-danger-text: #ffffff;
+  --c-info: #1d4ed8;    --c-info-wash: #e7edfc;
+
+  /* the sealed value: secrets render on this, never on plain surface */
+  --c-sealed: #0b2f30;
+  --c-sealed-ink: #bfeeec;
+
+  /* ---- Elevation ---- */
+  --shadow-0: none;
+  --shadow-1: 0 1px 0 rgba(16, 40, 42, .04), 0 1px 2px rgba(16, 40, 42, .06);
+  --shadow-2: 0 4px 12px rgba(16, 40, 42, .08), 0 1px 3px rgba(16, 40, 42, .06);
+  --shadow-3: 0 16px 40px rgba(16, 40, 42, .16), 0 2px 8px rgba(16, 40, 42, .08);
+  --scrim: rgba(8, 24, 26, .38);
+}
+
+[data-density="compact"] {
+  --control-h: 26px; --control-h-sm: 22px; --control-h-lg: 32px;
+  --row-h: 36px; --pad-panel: var(--space-4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+
+/* Dark: the same token names; written twice (system and explicit) on purpose. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-accent: #2cc7c3; --c-accent-strong: #6fe0dc; --c-accent-text: #032222; --c-accent-wash: #0d3332; --c-focus: #4fd6d2;
+    --c-bg: #0a1718; --c-surface: #0f2122; --c-surface-2: #0b1b1c; --c-surface-3: #16302f;
+    --c-line: #1d3637; --c-line-strong: #2a4a4b;
+    --c-ink: #e3f2f2; --c-ink-2: #b4cbcb; --c-ink-3: #7f9c9c; --c-ink-4: #567070;
+    --c-dom-session: #38bdf8; --c-dom-session-wash: #0c2a35;
+    --c-dom-cred: #f5c451; --c-dom-cred-wash: #2f2510;
+    --c-dom-pay: #a78bfa; --c-dom-pay-wash: #241b3d;
+    --c-dom-personal: #34d399; --c-dom-personal-wash: #0f2c22;
+    --c-ok: #4ade80; --c-ok-wash: #11301d;
+    --c-warn: #fbbf24; --c-warn-wash: #33270b;
+    --c-danger: #f87171; --c-danger-wash: #3a1414; --c-danger-text: #2a0707;
+    --c-info: #93b4fd; --c-info-wash: #15213f;
+    --c-sealed: #041314; --c-sealed-ink: #8fe3df;
+    --shadow-1: 0 1px 0 rgba(0,0,0,.3);
+    --shadow-2: 0 6px 16px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3);
+    --shadow-3: 0 20px 48px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
+    --scrim: rgba(0, 0, 0, .55);
+  }
+}
+:root[data-theme="dark"] {
+  --c-accent: #2cc7c3; --c-accent-strong: #6fe0dc; --c-accent-text: #032222; --c-accent-wash: #0d3332; --c-focus: #4fd6d2;
+  --c-bg: #0a1718; --c-surface: #0f2122; --c-surface-2: #0b1b1c; --c-surface-3: #16302f;
+  --c-line: #1d3637; --c-line-strong: #2a4a4b;
+  --c-ink: #e3f2f2; --c-ink-2: #b4cbcb; --c-ink-3: #7f9c9c; --c-ink-4: #567070;
+  --c-dom-session: #38bdf8; --c-dom-session-wash: #0c2a35;
+  --c-dom-cred: #f5c451; --c-dom-cred-wash: #2f2510;
+  --c-dom-pay: #a78bfa; --c-dom-pay-wash: #241b3d;
+  --c-dom-personal: #34d399; --c-dom-personal-wash: #0f2c22;
+  --c-ok: #4ade80; --c-ok-wash: #11301d;
+  --c-warn: #fbbf24; --c-warn-wash: #33270b;
+  --c-danger: #f87171; --c-danger-wash: #3a1414; --c-danger-text: #2a0707;
+  --c-info: #93b4fd; --c-info-wash: #15213f;
+  --c-sealed: #041314; --c-sealed-ink: #8fe3df;
+  --shadow-1: 0 1px 0 rgba(0,0,0,.3);
+  --shadow-2: 0 6px 16px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3);
+  --shadow-3: 0 20px 48px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
+  --scrim: rgba(0, 0, 0, .55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-short: 0ms; --dur-base: 0ms; --dur-long: 0ms; }
+}
