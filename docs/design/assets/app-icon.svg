@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="KeyHarbor 앱 아이콘 시안">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1E3A5F"/>
+      <stop offset="1" stop-color="#0B1B2E"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2F80ED"/>
+      <stop offset="1" stop-color="#1B5FB8"/>
+    </linearGradient>
+    <clipPath id="sq"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+  </defs>
+  <!-- macOS squircle 바탕 (824px 내부 그리드, 100px 여백) -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <!-- 항구 방파제를 이루는 열쇠: 고리 = 등대 불빛, 몸통 = 방파제 -->
+  <circle cx="512" cy="380" r="150" fill="none" stroke="#F5C451" stroke-width="56"/>
+  <circle cx="512" cy="380" r="46" fill="#F5C451"/>
+  <rect x="484" y="520" width="56" height="230" rx="10" fill="#F5C451"/>
+  <rect x="540" y="640" width="70" height="40" rx="8" fill="#F5C451"/>
+  <rect x="540" y="700" width="46" height="40" rx="8" fill="#F5C451"/>
+  <!-- 물결: 항구 -->
+  <g clip-path="url(#sq)">
+    <path d="M100 770 q69 -46 138 0 t138 0 t138 0 t138 0 t138 0 t138 0 V924 H100z" fill="url(#sea)"/>
+    <path d="M100 818 q69 -38 138 0 t138 0 t138 0 t138 0 t138 0 t138 0" fill="none" stroke="#8EC5FF" stroke-width="10" stroke-linecap="round" opacity=".7"/>
+  </g>
+</svg>

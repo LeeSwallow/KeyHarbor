@@ -1,0 +1,478 @@
+# 02. 시스템 아키텍처
+
+> 상태: Draft · 2026-10-28 · 양식: [C4 Model](https://c4model.com/) (Context → Container → Component) + [arc42](https://arc42.org/) (Building Block View, Runtime View, Deployment View, Crosscutting Concepts)
+
+## 2.1 아키텍처 스타일 요약
+
+| 관점 | 선택 | 근거 |
+|---|---|---|
+| 전체 구조 | **헥사고날(Ports & Adapters)**. 도메인은 I/O에 의존하지 않는다 | 기존 `rebuild/ARCHITECTURE.md`의 의존 방향을 그대로 따른다 |
+| 실행 모델 | **서버 없는 CLI + 세션별 감독 프로세스**. 상시 데몬은 필수가 아니다 | 기존 프로토타입에서 검증한 모델 ([ADR-0004](adr/0004-supervisor-owns-cdp.md)) |
+| 저장소 | **SQLite (WAL)** 하나에 메타데이터·암호문·정책·기록을 둔다 | [`architecture-proposal.md`](../architecture-proposal.md)의 DB 비교 |
+| 브라우저 제어 | 감독 프로세스가 **CDP를 소유**하고, 에이전트에는 도구만 준다 | 마스킹·정책을 강제할 수 있는 유일한 위치 ([ADR-0004](adr/0004-supervisor-owns-cdp.md)) |
+| 비밀 보관 | **앱 소유 로컬 금고** + macOS Keychain의 금고 키 | [ADR-0002](adr/0002-own-local-vault.md), [ADR-0003](adr/0003-keychain-vault-key.md) |
+| 사용자 UI | **Tauri 데스크톱 앱**. localhost 웹 서버를 열지 않는다 | [ADR-0006](adr/0006-tauri-admin-app.md) |
+
+## 2.2 C4 Level 1 — 시스템 컨텍스트
+
+```mermaid
+flowchart TB
+  user(["👤 사용자<br/>금고·정책·세션을 관리"])
+  agent(["🤖 AI 에이전트<br/>Codex · Claude Code"])
+  kh["<b>KeyHarbor</b><br/>로컬 세션·금고·정책 기반"]
+  chrome["Chrome<br/>(KeyHarbor 전용 프로필)"]
+  sites[("웹 사이트")]
+  keychain["macOS Keychain"]
+
+  user -->|"관리 앱 · CLI"| kh
+  agent -->|"MCP (stdio)"| kh
+  kh -->|"프로세스 실행 · CDP"| chrome
+  kh -->|"금고 키 조회"| keychain
+  chrome -->|"HTTPS"| sites
+  user -.->|"인계 시 직접 조작"| chrome
+```
+
+외부 네트워크로 나가는 것은 **Chrome의 사이트 접속뿐**이다. KeyHarbor 자체는 네트워크 listener를 열지 않고, 외부 서비스도 호출하지 않는다. (P1)
+
+## 2.3 C4 Level 2 — 컨테이너
+
+```mermaid
+flowchart LR
+  subgraph host["사용자 Mac (단일 OS 사용자)"]
+    direction LR
+    cli["<b>keyharbor CLI</b><br/>Rust 바이너리"]
+    mcp["<b>keyharbor mcp</b><br/>stdio MCP 서버<br/>--agent 이름"]
+    app["<b>관리 앱</b><br/>Tauri"]
+    sup["<b>감독 프로세스</b><br/>세션당 1개<br/>CDP 소유 · 치환 · 마스킹"]
+    db[("<b>SQLite</b><br/>keyharbor.sqlite3<br/>WAL")]
+    prof[/"<b>브라우저 프로필</b><br/>profiles/&lt;session-id&gt;"/]
+    kc["Keychain<br/>금고 키"]
+    ch["Chrome"]
+    ipc{{"Unix socket<br/>감독자 제어 채널<br/>0600"}}
+  end
+  agent(["에이전트"]) -->|stdio| mcp
+  user(["사용자"]) --> cli & app
+  cli & mcp & app --> db
+  cli & mcp & app -->|"브라우저 명령"| ipc --> sup
+  sup -->|"CDP (pipe)"| ch
+  ch --- prof
+  sup & cli & app -->|"금고 키"| kc
+  sup --> db
+```
+
+| 컨테이너 | 책임 | 수명 |
+|---|---|---|
+| `keyharbor` CLI | 사용자 명령, 세션 생성·열기, 금고·정책 편집, 인계 재개 | 명령 1회 |
+| `keyharbor mcp` | 에이전트에 MCP 도구 제공. 정책은 여기서 1차, 감독자에서 최종 적용 | 에이전트 연결 동안 |
+| 감독 프로세스 | 브라우저 실행·감시, **CDP 소유**, placeholder 치환, 응답 마스킹, 상태 기록 | 브라우저 실행 동안 |
+| 관리 앱 | 금고·세션·정책·기록 UI, 인증 trait | 사용자가 여는 동안 |
+| SQLite | 세션, 인계, 금고 항목(암호문), 정책, 로그인 상태, 사용 기록 | 영구 |
+| 브라우저 프로필 | 쿠키·저장소 등 Chrome 데이터 | 영구 |
+
+**감독자 제어 채널** — CDP 소유를 감독자로 옮기면서, MCP 서버가 브라우저 명령을 감독자에게 전달할 통로가 필요해진다. 세션별 Unix domain socket(`run/<session-id>.sock`, 권한 0600, 데이터 디렉터리 안)을 쓴다. 이 채널은 같은 OS 사용자 프로세스를 막지 못하며, 보안 경계가 아니라 **프로세스 간 통로**다. [설계자 판단]
+
+**CDP 연결 방식** — 감독자는 Chrome을 `--remote-debugging-pipe`로 실행해 포트를 열지 않는다. 사용자가 raw CDP를 켠 세션만 기존처럼 `--remote-debugging-port`를 쓴다. ([ADR-0004](adr/0004-supervisor-owns-cdp.md))
+
+## 2.4 C4 Level 3 — 컴포넌트 (crate 구조)
+
+```mermaid
+flowchart TB
+  subgraph interfaces["interfaces"]
+    c_cli["kh-cli"]
+    c_mcp["kh-mcp"]
+    c_app["kh-app (Tauri)"]
+  end
+  subgraph application["application"]
+    c_core["kh-core<br/>유스케이스: open · fill · reveal · policy · handoff"]
+  end
+  subgraph domain["domain (I/O 없음)"]
+    c_dom["kh-domain<br/>Session · State · Generation<br/>VaultItem · Placeholder · Policy<br/>SiteState · AuditEvent"]
+  end
+  subgraph adapters["adapters"]
+    c_sql["kh-sqlite"]
+    c_vault["kh-vault<br/>AEAD · 포맷 · Keychain"]
+    c_broker["kh-broker<br/>감독자 · CDP · 치환 · 마스킹"]
+  end
+  c_cli & c_mcp & c_app --> c_core
+  c_core --> c_dom
+  c_sql & c_vault & c_broker --> c_dom
+  c_core --> c_sql & c_vault & c_broker
+```
+
+| crate | 상태 | 핵심 타입·책임 |
+|---|---|---|
+| `kh-domain` | 기존 `rebuild/crates/domain` 확장 | 모듈 = 도메인([§2.7.1](#271-도메인-분할-r-24-r-25)): `session`(`SessionId`, `State::permits`, `Generation`, `SiteState`), `credentials`(`Login`, `Secret`, `EnvSet`), `payment`(`Card`), `personal`(`Identity`, `Address`), 공통 `vault`(`VaultItem`, `Domain`, `Placeholder::parse`, `Origin`), `policy`(`Policy::decide`), `audit`(`AuditEvent`) |
+| `kh-sqlite` | 기존 `rebuild/crates/sqlite` 확장 | 조건부 갱신(generation CAS), 마이그레이션, 백업 |
+| `kh-vault` | 신규 | `VaultKey`(zeroize), `seal/open`, 암호문 레코드 v1, Keychain 어댑터, 내보내기(Argon2id) |
+| `kh-broker` | 신규 (프로토타입 `src/lib.rs`·`main.rs`의 감독 로직 이식) | 프로세스 감독, CDP pipe 클라이언트, 제어 socket 서버, 치환기, 마스커 |
+| `kh-core` | 신규 | 인터페이스가 공유하는 유스케이스. 정책 판정과 기록을 한곳에서 |
+| `kh-cli` | 기존 `rebuild/crates/cli` 확장 | clap 명령 |
+| `kh-mcp` | 신규 (프로토타입 `src/mcp.rs` 이식) | rmcp 도구 정의 |
+| `kh-app` | 신규 | Tauri 명령 ↔ `kh-core` |
+
+crate 이름과 경계는 구현자가 조정할 수 있다. 지켜야 할 것은 **의존 방향**(adapters → domain ← application ← interfaces)과 **평문 비밀이 `kh-broker`와 `kh-vault` 밖으로 나가지 않는다**는 점이다. 예외는 관리 앱의 평문 보기 경로(`kh-core::reveal`)이며, 이 경로는 MCP에서 호출할 수 없다.
+
+## 2.5 런타임 뷰
+
+### 2.5.1 세션 열기
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Ag as 에이전트
+  participant M as kh-mcp
+  participant DB as SQLite
+  participant S as 감독자
+  participant C as Chrome
+  Ag->>M: session_open(id, url?)
+  M->>M: Policy::decide(agent, OpenSession(id))
+  M->>DB: reserve: stopped → starting (새 generation)
+  M->>S: spawn 감독자(id, generation)
+  S->>S: OS 파일 잠금 획득
+  S->>C: chrome --user-data-dir=profiles/id --remote-debugging-pipe
+  S->>DB: starting → running (generation 조건)
+  S->>S: 제어 socket 열기
+  M-->>Ag: {state: running}
+  Note over S,C: 브라우저가 닫히면 S가 running → stopped 기록 후 잠금 해제
+```
+
+### 2.5.2 placeholder 치환 입력
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Ag as 에이전트
+  participant M as kh-mcp
+  participant S as 감독자
+  participant V as kh-vault
+  participant C as Chrome
+  participant DB as SQLite
+  Ag->>M: browser_fill(target, "{{secret:github.password}}")
+  M->>M: Placeholder::parse → [(github, password)]
+  M->>M: Policy::decide(agent, UseItem(github)) 1차
+  M->>S: fill(target, template)
+  S->>C: DOM.resolveNode / DOM.describeNode → frameId
+  S->>C: Page.getFrameTree → frame URL
+  S->>S: Origin(frame URL) ∈ item.origins ? (바인딩 켜짐 시)
+  alt 거부
+    S->>DB: audit(secret_denied, reason)
+    S-->>M: denied(reason) — 값 없음
+  else 허용
+    S->>V: open(github.password)
+    V-->>S: Zeroizing<String>
+    S->>C: DOM.focus → Input.insertText(평문)
+    S->>S: 평문 zeroize
+    S->>C: 입력 후 frame origin 재확인
+    S->>DB: audit(secret_used, item, origin)
+    S-->>M: ok
+  end
+  M-->>Ag: 결과 (값 없음)
+```
+
+### 2.5.3 응답 마스킹
+
+```mermaid
+flowchart LR
+  raw["CDP 결과<br/>(AX tree · 텍스트 · 오류)"] --> f1["① 입력값 제거<br/>input[type=password]의 value"]
+  f1 --> f2["② 비밀 값 다중 패턴 검색<br/>Aho-Corasick<br/>(원문 + percent-encoding)"]
+  f2 --> f3["③ 일치 구간 → {{secret:item.field}}"]
+  f3 --> f4["④ 크기 제한 · 직렬화"]
+  f4 --> out["MCP 응답"]
+  vault[("감독자 메모리의<br/>비밀 값 집합")] -.-> f2
+```
+
+알고리즘 세부와 한계는 [03 §3.7](03-security-whitepaper.md#37-마스킹-알고리즘)에 있다.
+
+### 2.5.4 사람에게 넘기기
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Ag as 에이전트
+  participant M as kh-mcp
+  participant DB as SQLite
+  actor U as 사용자
+  participant UI as 관리 앱 / CLI
+  Ag->>M: session_wait_auth(id, origin?)
+  M->>DB: running → awaiting_user, request_id 발급
+  M-->>Ag: request_id
+  Ag->>M: session_wait_for_resume(id, request_id, timeout)
+  UI->>DB: 대기 중인 요청 조회
+  U->>U: 브라우저 창에서 직접 로그인 · CAPTCHA 처리
+  U->>UI: 재개 (request_id)
+  UI->>DB: awaiting_user → running (request_id · generation 조건)
+  M-->>Ag: resumed
+```
+
+### 2.5.5 `.env` 변수 주입 실행 (`keyharbor run`)
+
+에이전트가 셸 명령을 실행할 때 `.env` 값이 필요하면, 평문 `.env` 파일 대신 금고의 `env` 항목을 자식 프로세스에만 주입한다. 1Password CLI의 `op run` 방식과 같다. [R-24, [ADR-0010](adr/0010-env-run-injection.md)]
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Ag as 에이전트 (셸)
+  participant R as keyharbor run
+  participant V as kh-vault
+  participant P as 자식 프로세스
+  Ag->>R: keyharbor run --agent codex --env myapp-dev -- npm test
+  R->>R: Policy::decide(codex, UseItem(myapp-dev))
+  R->>V: open(myapp-dev.*)
+  R->>P: spawn(npm test, env = 기존 env + 복호화한 변수)
+  R->>R: 마스커 구성 (주입한 값 + 금고 전체)
+  P-->>R: stdout / stderr
+  R-->>Ag: 마스킹된 stdout / stderr
+  R->>R: 종료 코드 전달 · 평문 zeroize · audit(secret_used, kind=env)
+```
+
+- `.env` 형식 가져오기(`keyharbor vault import-env <name> <path>`)를 제공한다. 가져온 뒤 원본 파일을 지울지는 사용자가 정한다.
+- 템플릿 모드: `.env.keyharbor` 파일에 `DATABASE_URL={{secret:myapp-dev.DATABASE_URL}}`처럼 placeholder를 적어 두면 `keyharbor run --env-file .env.keyharbor -- ...`가 치환한다. 이 파일은 비밀이 없으므로 저장소에 커밋해도 된다.
+- **한계**: 자식 프로세스는 평문을 갖는다. 그 프로세스가 값을 파일에 쓰거나 네트워크로 보내는 것은 막지 못한다. 마스킹은 **출력 경로만** 보호한다. ([03 §3.9](03-security-whitepaper.md#39-위협-모델-stride) T13)
+
+## 2.6 상태 기계
+
+기존 `kh-domain::State::permits`의 전이를 그대로 유지한다. `recovery_required`는 **저장하는 상태가 아니라** 프로토타입처럼 조회 시점에 계산하는 표시값이다. DB 상태가 `starting`·`running`·`awaiting_user`·`stopping`인데 감독자 잠금을 잡은 프로세스가 없으면 `recovery_required`로 보여 준다. 복구(`recover --confirm-browser-closed`)는 generation 조건으로 DB 상태를 `stopped`로 되돌린다.
+
+```mermaid
+stateDiagram-v2
+  [*] --> stopped
+  stopped --> starting: reserve (새 generation)
+  starting --> running: 브라우저 시작 확인
+  starting --> failed: 시작 실패
+  running --> awaiting_user: wait_auth
+  running --> stopping: stop 요청
+  running --> stopped: 창 직접 닫음
+  running --> failed: 감독자 오류
+  awaiting_user --> running: resume(request_id)
+  awaiting_user --> stopping: stop 요청
+  awaiting_user --> stopped: 창 직접 닫음
+  awaiting_user --> failed: 감독자 오류
+  stopping --> stopped: 브라우저 종료 확인
+  stopping --> failed: 종료 실패
+  note right of running
+    표시값 recovery_required =
+    활성 상태 + 감독자 잠금 없음
+    (저장하지 않음)
+  end note
+```
+
+기존 프로토타입처럼 `failed`·`recovery_required`에서 `stopped`로 돌아가는 것은 `recover` 명령이 generation 조건으로 수행하는 **관리 작업**이다. 그래서 일반 전이표(`permits`)에는 넣지 않는다.
+
+### 2.6.1 세션 동시 접근
+
+- 세션 독점(lease)과 기존 `--session` 범위 지정 MCP 서버, "범위 지정 서버는 세션당 하나" 규칙을 유지한다.
+- 범위를 지정하지 않은 MCP 서버가 여럿이면, 같은 세션의 감독자 socket에 동시에 명령할 수 있다. 감독자는 명령을 **한 줄로 세워 차례로 실행**한다. 브라우저 상태가 섞이는 건 에이전트들이 같은 세션을 고른 결과이며, 정책으로 세션을 나눠 막을 수 있다. [설계자 판단]
+
+## 2.7 데이터 모델
+
+```mermaid
+erDiagram
+  SESSION ||--o{ HANDOFF : has
+  SESSION ||--o{ SITE_STATE : has
+  VAULT_ITEM ||--o{ VAULT_FIELD : has
+  VAULT_ITEM ||--o{ ITEM_ORIGIN : "bound to"
+  VAULT_ITEM |o--o{ SITE_STATE : "linked"
+  POLICY ||--o{ POLICY_RULE : has
+  SESSION {
+    text id PK
+    text name UK
+    text state
+    text generation
+    int  cdp_enabled
+  }
+  HANDOFF {
+    text request_id PK
+    text session_id FK
+    text generation
+    text origin "선택, 요청자 제공"
+    text status
+  }
+  VAULT_ITEM {
+    text id PK
+    text name UK "평문 · placeholder 키"
+    text domain "credentials | payment | personal"
+    text kind "login | secret | env | card | identity | address"
+    int  origin_binding "1=켜짐"
+    text status "draft | active | discarded"
+    text source "generated | captured | requested | agent | user | import"
+    blob meta_mac "07 §7.6.3"
+    text created_at
+    text updated_at
+  }
+  VAULT_FIELD {
+    text item_id FK
+    text field "종류별 스키마의 필드 이름 또는 env 변수 이름"
+    blob sealed "암호문 레코드 v1"
+  }
+  ITEM_ORIGIN {
+    text item_id FK
+    text origin "scheme://host:port"
+  }
+  SITE_STATE {
+    text session_id FK
+    text origin
+    text state "logged_in | expired | unknown"
+    text item_id FK
+    text checked_at
+    text recorded_by "에이전트 이름"
+  }
+  POLICY {
+    text agent PK "에이전트 이름 또는 *"
+  }
+  POLICY_RULE {
+    text agent FK
+    text resource "session | item | domain | create_session | raw_cdp"
+    text target "id · 도메인 이름 또는 *"
+    text effect "allow | deny"
+  }
+  AUDIT_EVENT {
+    int  seq PK
+    text at
+    text agent
+    text session_id
+    text kind
+    text item_name
+    text origin
+    text result
+  }
+  SETTING {
+    text key PK
+    text value
+  }
+```
+
+### 2.7.1 도메인 분할 (R-24, R-25)
+
+관리 대상을 **네 개의 도메인**(bounded context)으로 나눈다. 세션은 금고 밖에 있고, 금고는 세 도메인으로 나뉜다. 분류는 Chrome 자동완성 설정의 *비밀번호 관리자 / 결제 수단 / 주소 및 기타*와, 사용자가 제안한 "기본 정보(세션·아이디·비밀번호) / 결제 정보 / 개인정보" 구분을 따른다. [사용자 결정 R-25, 세부는 설계자 판단]
+
+```mermaid
+flowchart TB
+  subgraph SES["① 세션 도메인 Session<br/>(금고 밖 · 비밀 아님)"]
+    s1["브라우저 세션 · lease · generation"]
+    s2["인계 요청"]
+    s3["사이트별 로그인 상태"]
+  end
+  subgraph VAULT["금고"]
+    subgraph CRED["② 자격 증명 도메인 Credentials<br/>'서비스에 나임을 증명하는 것'"]
+      c1["login: 아이디 · 비밀번호 · totp_seed"]
+      c2["secret: API 키 · 토큰"]
+      c3["env: .env 변수 묶음"]
+    end
+    subgraph PAY["③ 결제 도메인 Payment<br/>'돈이 나가는 것'"]
+      p1["card: 번호 · 유효기간 · CVC · 명의자"]
+    end
+    subgraph PER["④ 개인정보 도메인 Personal<br/>'나에 대한 사실'"]
+      r1["identity: 이름 · 이메일 · 전화 · 생년월일"]
+      r2["address: 배송 · 청구 주소"]
+    end
+  end
+  POL["정책 · 사용 기록<br/>(도메인을 가로지르는 지원 도메인)"]
+  s3 -.->|"연결된 login 항목"| c1
+  p1 -.->|"청구 주소 참조"| r2
+  POL --- SES & CRED & PAY & PER
+```
+
+**왜 나누는가**
+
+| 관점 | 자격 증명 | 결제 | 개인정보 |
+|---|---|---|---|
+| 유출 시 피해 | 계정 탈취 | **금전 손실** | 신원 도용 · 프라이버시 |
+| 쓰는 곳 | 특정 서비스 한두 곳 | 상점 + 결제사 iframe | 여러 사이트의 가입·주문 폼 |
+| origin 바인딩 기본 | 켜짐 (`env`는 해당 없음) | 켜짐 (상점 + 결제사 origin) | 꺼짐 |
+| 마스킹 특이점 | — | 번호 공백·하이픈 변형 | 짧은 값(우편번호 등) 오탐 주의 |
+| 도메인 키 | `DK_cred` | `DK_pay` | `DK_personal` |
+| 관리 앱 화면 | 비밀번호 · API 키 · 환경 변수 | 결제 수단 | 개인정보 · 주소 |
+
+- **정책의 단위가 된다.** 규칙의 target으로 항목 이름뿐 아니라 도메인 전체(`payment:*`, `personal:*`)를 쓸 수 있다. 예를 들어 "codex는 결제 도메인 거부"를 규칙 하나로 건다. 기본값은 여전히 모두 허용이다(P2).
+- **키의 단위가 된다.** 도메인마다 별도 키를 둔다([03 §3.3](03-security-whitepaper.md#33-키-계층)). 이후 "결제 도메인 평문 보기는 인증 필요" 같은 선택지를 도메인 단위로 붙일 수 있다.
+- **코드의 단위가 된다.** `kh-domain` 안에 `session`, `credentials`, `payment`, `personal`, `policy`, `audit` 모듈을 둔다. 도메인 사이 참조는 ID로만 한다(예: 카드의 `billing_address` = address 항목 ID).
+- 독립 `note` 종류는 두지 않는다. 모든 항목에 `note` 필드가 있다. [설계자 판단]
+- placeholder 형식은 도메인과 상관없이 `{{secret:<항목 이름>.<필드>}}` 하나다. 항목 이름은 금고 전체에서 유일하다. [설계자 판단]
+
+### 2.7.2 항목 종류와 필드 스키마
+
+| 도메인 | 종류 | 필드 | 주 사용처 | origin 바인딩 기본 |
+|---|---|---|---|---|
+| 자격 증명 | `login` | `username`, `password`, `totp_seed`(선택, 저장만), `note` | 로그인 폼 | 켜짐 |
+| 자격 증명 | `secret` | `value`, `note` | API 키 등 단일 값 | 꺼짐 |
+| 자격 증명 | `env` | 사용자가 정한 변수 이름들 (`DATABASE_URL`, `OPENAI_API_KEY` …), `note` | `keyharbor run` | 해당 없음 |
+| 결제 | `card` | `holder`, `number`, `exp_month`, `exp_year`, `cvc`, `billing_address`(address ID), `note` | 결제 폼 (대개 결제사 iframe) | 켜짐 — 결제사 origin을 함께 등록 |
+| 개인정보 | `identity` | `full_name`, `given_name`, `family_name`, `email`, `phone`, `birth_date`, `note` | 가입·주문 폼 | 꺼짐 |
+| 개인정보 | `address` | `recipient`, `line1`, `line2`, `city`, `region`, `postal_code`, `country`, `phone`, `note` | 배송·청구 주소 | 꺼짐 |
+
+- 종류마다 필드 스키마를 정해 두되, 사용자가 **사용자 정의 필드**를 더할 수 있다. 모든 필드는 소속 도메인의 키로 암호화한다.
+- `identity`·`address`의 origin 바인딩 기본값을 끈 이유는 여러 사이트에서 쓰는 정보이기 때문이다. 켤 수 있다. [설계자 판단]
+- `totp_seed`는 저장만 하고 코드 생성·입력은 하지 않는다. 인증 코드 처리는 범위 밖이다(R-07). [설계자 판단]
+- `username`도 암호화한다. 계정 이름도 민감한 정보이기 때문이다. [설계자 판단]
+- 항목 이름, 종류, origin, 시각은 정책 판정과 목록 표시를 위해 **평문**이다. 이 메타데이터도 민감하다는 점을 문서와 관리 앱에 적는다. ([03 §3.5](03-security-whitepaper.md#35-저장-데이터-분류))
+- `AUDIT_EVENT`에는 값 컬럼이 **존재하지 않는다**. 스키마 수준에서 값 기록을 막는다.
+
+## 2.8 정책 판정
+
+```mermaid
+flowchart TD
+  req["요청 (agent, action, target)"] --> collect["적용 규칙 수집<br/>agent 규칙 + '*' 규칙"]
+  collect --> eval["가장 구체적인 규칙 선택<br/>agent 규칙이 '*' 규칙보다,<br/>항목 target이 도메인 target이,<br/>도메인 target이 '*'보다 우선<br/>같은 단계면 deny 우선"]
+  eval --> d{"결과"}
+  d -- allow --> ob{"action = UseItem<br/>그리고 origin_binding?"}
+  ob -- 아니오 --> ok["허용"]
+  ob -- 예 --> oc{"frame origin ∈ item.origins?"}
+  oc -- 예 --> ok
+  oc -- 아니오 --> deny["거부 + audit"]
+  d -- deny --> deny
+  d -- 일치 규칙 없음 --> allow2["허용 (기본: 모두 허용)"]
+```
+
+- `'*'` 규칙은 **모든 에이전트에 적용**된다. 에이전트별 규칙이 있어도 사라지지 않으며, 더 구체적인 규칙이 있을 때만 그 규칙이 이긴다. 예를 들어 `'*'`에 `bank` 거부를 걸고 `claude`에 `bank` 허용을 걸면, claude만 허용된다.
+
+- **기본값은 모두 허용**이다(P2, P3). 사용자가 규칙을 추가하면 그때부터 제한된다. [설계자 판단]
+- origin 바인딩은 정책과 별개로 **항목 속성**이다. 기본값은 켜짐이고, 항목마다 끌 수 있다. [설계자 판단]
+- `--agent` 이름은 MCP 등록 인자로 정한다. 같은 OS 사용자는 이름을 사칭할 수 있으므로, 이것은 **오작동 방지와 기록용 경계이지 보안 경계가 아니다**.
+
+## 2.9 MCP 도구 표면
+
+| 분류 | 도구 | 비고 |
+|---|---|---|
+| 세션 | `session_list`, `session_create`, `session_open`, `session_stop`, `session_wait_auth`, `session_wait_for_resume` | 기존 유지 |
+| 세션 (선택) | `session_endpoint` | raw CDP가 켜진 경우에만. 마스킹 우회 경고 |
+| 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_type`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` | 신규. `fill`·`type`은 placeholder 지원 |
+| 금고 | `vault_list` | 이름·종류·필드 이름·origin·draft 여부·출처만. **값 조회 도구 없음** |
+| 금고 등록 | `vault_generate`, `vault_request`, `vault_wait`, `vault_put` | [08](08-registration-flows.md). 반환값에 값 없음 |
+| CLI 전용 | `keyharbor run --env …` | MCP 도구가 아니라 에이전트가 셸로 실행 ([§2.5.5](#255-env-변수-주입-실행-keyharbor-run)) |
+| 상태 | `site_state_get`, `site_state_set` | 신규 |
+
+`session_account`(기존 OpenKeylet 이름 참조)는 `vault_list`와 `site_state`로 대체한다.
+
+## 2.10 배포 뷰
+
+```mermaid
+flowchart TB
+  subgraph fs["~/.keyharbor (0700)"]
+    db["keyharbor.sqlite3 (+ -wal, -shm)"]
+    profiles["profiles/&lt;session-id&gt;/"]
+    run["run/&lt;session-id&gt;.lock · .sock"]
+  end
+  subgraph bins["설치물"]
+    b1["keyharbor (CLI · MCP · 감독자 공용 바이너리)"]
+    b2["KeyHarbor.app (Tauri)"]
+    b3["Claude Code 플러그인<br/>.mcp.json + skills/"]
+  end
+  kc["login keychain<br/>service = dev.keyharbor.vault"]
+  b1 & b2 --> fs
+  b1 & b2 --> kc
+  b3 -->|"command: keyharbor mcp --agent claude"| b1
+```
+
+- 데이터 경로는 기존과 같다(`--data-dir`, `KEYHARBOR_HOME`). 재구현은 `~/.keyharbor-rebuild`를 쓰다가, 이식이 끝나면 기본 경로를 정한다.
+- CLI·MCP·감독자는 **하나의 바이너리**다. Keychain의 앱별 접근 목록(ACL)에 바이너리 하나만 등록되도록 하기 위해서다. ([03 §3.4](03-security-whitepaper.md#34-금고-키-보관-macos-keychain))
+- 관리 앱은 Keychain에 **직접 접근하지 않는다**. 금고 키가 필요한 작업은 앱 번들에 넣은 같은 `keyharbor` 바이너리를 Tauri sidecar로 호출한다. 그래야 ACL에 등록되는 바이너리가 하나로 유지된다. [설계자 판단]
+
+## 2.11 교차 관심사
+
+| 관심사 | 방침 |
+|---|---|
+| 오류 메시지 | 값·placeholder 치환 결과를 담지 않는다. 항목 이름과 이유 코드만 |
+| 로깅 | `tracing` 사용. 비밀 타입은 `Debug`/`Display`를 구현하지 않거나 `[REDACTED]`를 출력 |
+| 동시성 | SQLite 짧은 트랜잭션 + generation CAS. 브라우저 대기 중 트랜잭션을 잡고 있지 않는다 |
+| 마이그레이션 | 단일 실행자 잠금 + 트랜잭션. 실패 시 원본을 보존한다 |
+| 테스트 | 합성 비밀(`KH-SYNTH-<uuid>`)로 모든 출력 채널을 스캔하는 누출 검사 |

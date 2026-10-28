@@ -1,0 +1,14 @@
+[workspace]
+members = ["crates/domain", "crates/sqlite", "crates/cli"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1"
+uuid = { version = "1", features = ["v4"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+tempfile = "3"

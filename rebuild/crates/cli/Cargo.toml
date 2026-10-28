@@ -1,0 +1,11 @@
+[package]
+name = "keyharbor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap = { version = "4", features = ["derive", "env"] }
+keyharbor-domain = { path = "../domain" }
+keyharbor-sqlite = { path = "../sqlite" }
