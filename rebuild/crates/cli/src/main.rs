@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 mod audit_cmd;
 mod policy_cmd;
+mod run_cmd;
 mod session_cmd;
 mod vault_cmd;
 
@@ -44,6 +45,8 @@ enum Command {
     /// Read or change settings
     #[command(subcommand)]
     Settings(audit_cmd::SettingsCmd),
+    /// Run a command with env items injected; its output is masked
+    Run(run_cmd::RunArgs),
 }
 
 /// The macOS per-user application data folder; `--data-dir` and `KEYHARBOR_HOME` override it.
@@ -64,6 +67,10 @@ fn main() -> Result<()> {
         Command::Policy(command) => policy_cmd::run(&root, command),
         Command::Audit(args) => audit_cmd::audit(&root, args),
         Command::Settings(command) => audit_cmd::settings(&root, command),
+        Command::Run(args) => {
+            let code = run_cmd::run(&root, args)?;
+            std::process::exit(code)
+        }
         Command::Session(command) => session_cmd::run(&root, command),
         Command::Mcp {
             session,

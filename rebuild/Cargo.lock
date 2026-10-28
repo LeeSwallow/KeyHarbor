@@ -1317,6 +1317,7 @@ dependencies = [
  "keyharbor-mcp",
  "keyharbor-sqlite",
  "keyharbor-vault",
+ "libc",
  "rpassword",
  "serde_json",
  "tempfile",

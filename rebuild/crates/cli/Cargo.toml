@@ -15,6 +15,7 @@ keyharbor-mcp = { path = "../mcp" }
 keyharbor-sqlite = { path = "../sqlite" }
 keyharbor-vault = { path = "../vault" }
 age.workspace = true
+libc.workspace = true
 rpassword.workspace = true
 serde_json.workspace = true
 zeroize.workspace = true
