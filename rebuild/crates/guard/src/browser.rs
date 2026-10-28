@@ -125,11 +125,45 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         })
     }
 
+    /// Waits for navigations to finish before checking anything, so the checks see the
+    /// document the text will go into (I4). Returns the page's navigation count then.
+    async fn settled(&mut self, page: &Page, template: &str) -> Result<u64> {
+        if self.inner.settle(page, None).await.unwrap_or(false) {
+            return Ok(self.inner.navigation_epoch(page).await);
+        }
+        let refs = parse_placeholders(template).map_err(|e| anyhow!("{e}"))?;
+        let first = &refs.first().context("no placeholder")?.item;
+        Err(self.guard.denied(self.agent, first, None, "navigating"))
+    }
+
+    /// Refuses when a navigation started (or finished) in the page since `epoch`, or is still
+    /// under way in the frame: the checked document may be gone (I4).
+    async fn still_there(
+        &mut self,
+        page: &Page,
+        frame: &str,
+        epoch: u64,
+        prepared: &Prepared,
+        origin: Option<&Origin>,
+    ) -> Result<()> {
+        let quiet = self.inner.settle(page, Some(frame)).await.unwrap_or(false);
+        if quiet && self.inner.navigation_epoch(page).await == epoch {
+            return Ok(());
+        }
+        Err(self.guard.denied(
+            self.agent,
+            &prepared.items[0],
+            origin.map(Origin::as_str),
+            "navigating",
+        ))
+    }
+
     async fn fill_checked(&mut self, target: &Value, template: &str) -> Result<Value> {
         if !template.contains(PLACEHOLDER) {
             return self.inner.fill(target, template).await;
         }
         let page = self.inner.page().await?;
+        let epoch = self.settled(&page, template).await?;
         let node = self.inner.focus_element(&page, target).await?;
         let (focus, element, origin) = self.checked_focus(&page, template, Some(node)).await?;
         let prepared = self.guard.prepare_text(
@@ -151,6 +185,8 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
                 "focus",
             ));
         }
+        self.still_there(&page, &focus.frame, epoch, &prepared, origin.as_ref())
+            .await?;
         self.insert_prepared(&page, &focus, origin, prepared).await
     }
 
@@ -159,6 +195,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
             return self.inner.type_text(template).await;
         }
         let page = self.inner.page().await?;
+        let epoch = self.settled(&page, template).await?;
         let (focus, element, origin) = self.checked_focus(&page, template, None).await?;
         let prepared = self.guard.prepare_text(
             self.agent,
@@ -168,6 +205,8 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
                 element: Some(&element),
             },
         )?;
+        self.still_there(&page, &focus.frame, epoch, &prepared, origin.as_ref())
+            .await?;
         self.insert_prepared(&page, &focus, origin, prepared).await
     }
 }
@@ -290,6 +329,11 @@ mod tests {
         /// The focused node; inserting text moves the focus to `focus_after_insert`.
         focused: u64,
         focus_after_insert: Option<u64>,
+        /// Whether navigations have settled, and the page's navigation count; clearing an
+        /// element adds `navigate_on_clear` to it (page code that navigates).
+        settled: bool,
+        epoch: u64,
+        navigate_on_clear: u64,
     }
     impl Default for Fake {
         fn default() -> Self {
@@ -304,6 +348,9 @@ mod tests {
                 hidden: BTreeSet::new(),
                 focused: 7,
                 focus_after_insert: None,
+                settled: true,
+                epoch: 0,
+                navigate_on_clear: 0,
             }
         }
     }
@@ -355,6 +402,7 @@ mod tests {
             Ok(7)
         }
         async fn clear_element(&mut self, _: &Page, _: u64) -> Result<()> {
+            self.epoch += self.navigate_on_clear;
             Ok(())
         }
         async fn insert_text(&mut self, _: &Page, text: &str) -> Result<()> {
@@ -381,6 +429,12 @@ mod tests {
         }
         async fn element(&mut self, _: &Page, _: u64) -> Result<Element> {
             Ok(self.element.clone())
+        }
+        async fn settle(&mut self, _: &Page, _: Option<&str>) -> Result<bool> {
+            Ok(self.settled)
+        }
+        async fn navigation_epoch(&mut self, _: &Page) -> u64 {
+            self.epoch
         }
     }
 
@@ -706,5 +760,44 @@ mod tests {
             3
         );
         assert!(kinds.contains(&(AuditKind::SubstitutionLocked, "mask_probe".into())));
+    }
+
+    #[test]
+    fn navigations_under_way_or_during_the_checks_stop_substitution() {
+        let e = env();
+        init(&e).add(login("github", "KH-SYNTH-pw-84")).unwrap();
+        let (guard, probe) = guard(&e);
+        // A click started a navigation that has not finished.
+        let mut fake = Fake {
+            settled: false,
+            ..Fake::default()
+        };
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .type_text("{{secret:github.password}}"),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "denied: github (navigating)");
+        // Page code navigates between the checks and the input.
+        let mut fake = Fake {
+            navigate_on_clear: 1,
+            ..Fake::default()
+        };
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .fill(&json!({"ref": 7}), "{{secret:github.password}}"),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "denied: github (navigating)");
+        assert!(fake.typed.is_empty());
+        assert_eq!(
+            probe.kinds(),
+            vec![
+                (AuditKind::SecretDenied, "navigating".into()),
+                (AuditKind::SecretDenied, "navigating".into())
+            ]
+        );
     }
 }

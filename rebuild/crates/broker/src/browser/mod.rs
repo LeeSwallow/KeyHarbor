@@ -6,6 +6,7 @@
 mod frames;
 mod input;
 mod navigate;
+mod navigation;
 mod screenshot;
 mod snapshot;
 mod tabs;
@@ -42,6 +43,10 @@ pub(crate) struct CdpBrowser {
     /// The data directory and session, for screenshot files.
     data: PathBuf,
     session: SessionId,
+    /// Navigation state per attached page, kept current from CDP events (I4).
+    navigations: navigation::Navigations,
+    /// When the last click or key press was sent.
+    last_input: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 struct Tab {
@@ -51,13 +56,18 @@ struct Tab {
 }
 
 impl CdpBrowser {
+    /// Must be called inside a Tokio runtime (it starts the navigation tracker).
     pub fn new(cdp: Arc<Cdp>, data: PathBuf, session: SessionId) -> Self {
+        let navigations = navigation::Navigations::default();
+        tokio::spawn(navigation::track(cdp.events(), navigations.clone()));
         Self {
             cdp,
             active: None,
             attached: HashMap::new(),
             data,
             session,
+            navigations,
+            last_input: std::sync::Mutex::new(None),
         }
     }
 
@@ -209,5 +219,11 @@ impl FrameInspector for CdpBrowser {
     }
     async fn element(&mut self, page: &Page, node: u64) -> Result<Element> {
         self.describe_element(&page.0, node).await
+    }
+    async fn settle(&mut self, page: &Page, frame: Option<&str>) -> Result<bool> {
+        self.settle_frames(&page.0, frame).await
+    }
+    async fn navigation_epoch(&mut self, page: &Page) -> u64 {
+        self.epoch(&page.0)
     }
 }

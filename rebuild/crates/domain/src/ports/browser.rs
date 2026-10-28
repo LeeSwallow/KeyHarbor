@@ -126,6 +126,17 @@ pub trait FrameInspector: Send {
     fn focus(&mut self, page: &Page) -> impl Future<Output = Result<Focus>> + Send;
     /// What the DOM says about the element `node` of `page`.
     fn element(&mut self, page: &Page, node: u64) -> impl Future<Output = Result<Element>> + Send;
+    /// Waits (a few seconds at most) until no navigation is under way in the page's main
+    /// frame or in `frame`, and a click or key press had time to start one. False if one is
+    /// still under way.
+    fn settle(
+        &mut self,
+        page: &Page,
+        frame: Option<&str>,
+    ) -> impl Future<Output = Result<bool>> + Send;
+    /// Counts navigations requested, started or committed in any frame of the page; it moves
+    /// whenever a document may have been replaced.
+    fn navigation_epoch(&mut self, page: &Page) -> impl Future<Output = u64> + Send;
     /// The security origin of `frame`, if it is one an item can be bound to.
     fn frame_origin(
         &mut self,

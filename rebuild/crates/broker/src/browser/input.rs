@@ -61,6 +61,7 @@ impl CdpBrowser {
         }
         let x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4.0;
         let y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4.0;
+        self.note_input();
         for kind in ["mouseMoved", "mousePressed", "mouseReleased"] {
             self.call(
                 "Input.dispatchMouseEvent",
@@ -129,6 +130,7 @@ impl CdpBrowser {
         };
         let key = if code == "Space" { " " } else { code };
         let session = self.active_page().await?;
+        self.note_input();
         let mut down = json!({
             "type": "keyDown", "key": key, "code": code,
             "windowsVirtualKeyCode": key_code, "nativeVirtualKeyCode": key_code,
