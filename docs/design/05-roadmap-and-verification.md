@@ -45,12 +45,14 @@ flowchart LR
 | raw CDP 선택 기능 유지 | `--allow-cdp` + `cdp: true` 세션만 endpoint 반환 |
 | Keychain 접근 확인창 실험 ([03 §3.4](03-security-whitepaper.md#34-금고-키-보관-macos-keychain)) | 재빌드 후에도 에이전트 경로에서 창이 뜨지 않는 방법 확정 |
 
-### 2단계 — 로컬 금고
+### 2단계 — 로컬 금고 ✅ 구현됨 (2026-10-28, 브랜치 `feat/phase2-local-vault`)
+
+테스트: `keyharbor-vault`(record·meta·keystore·KAT), `keyharbor-sqlite::vault_repo`, `keyharbor-core`(init·open·schema·tamper·동시 추가·누출·rotate·dotenv·transfer), `keyharbor` CLI `tests/vault_cli.rs`(누출 스캔 `no_command_prints_plaintext` 포함). 실제 Keychain 수동 확인은 사용자 확인 대기.
 
 | 범위 | 완료 조건 |
 |---|---|
 | `kh-vault`: 레코드 v1 seal/open, Keychain 어댑터 | 왕복 테스트, AD 바꿔치기 시 실패, 잘못된 key_id 시 실패 |
-| 항목 종류 7가지(`login`·`card`·`identity`·`address`·`env`·`secret`·`note`)와 사용자 정의 필드 | 종류별 스키마 검증, 모든 필드 암호화 |
+| 항목 종류 6가지(`login`·`secret`·`env`·`card`·`identity`·`address`, 모든 종류에 `note` 필드) | 종류별 스키마 검증, 모든 필드 암호화. 사용자 정의 필드는 `env`에서만 (나머지는 이후 단계) |
 | `vault init / add / list / edit / rm`, `vault import-env` | CLI에는 평문 출력 명령이 없다 ([03 §3.12](03-security-whitepaper.md#312-열린-질문--셸을-가진-에이전트와-cli-평문-경로) A안) |
 | 데이터 이전 | 프로토타입 데이터는 **이전하지 않는다**. 재구현은 새 데이터 경로에서 시작 [설계자 판단] |
 | `vault export / import` (age 형식, [07 §7.7](07-cryptography-design.md#77-내보내기가져오기-age-형식)) | 다른 데이터 디렉터리로 가져오기 성공, 틀린 비밀번호 실패, `age -d`로 열림 |

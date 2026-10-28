@@ -182,12 +182,12 @@ AD = "keyharbor/dk/v1" ‖ 0x00 ‖ vault_id ‖ domain ‖ dk_id ‖ 헤더
 
 ```text
 meta_mac = HMAC-SHA256(MK,
-  "keyharbor/meta/v1" ‖ 0x00 ‖ vault_id ‖ item_id ‖ domain ‖ kind
-  ‖ lp(name) ‖ origin_binding (1B) ‖ u16be(count) ‖ lp(origin_1) … (정렬)
-  ‖ updated_at)
+  "keyharbor/meta/v1" ‖ 0x00 ‖ vault_id ‖ item_id ‖ domain (1B) ‖ lp(kind)
+  ‖ lp(name) ‖ origin_binding (1B) ‖ u16be(count) ‖ lp(origin_1) … (정렬·중복 제거)
+  ‖ lp(status) ‖ lp(updated_at))
 ```
 
-`lp(x)`는 길이를 앞에 붙인 바이트열이다. origin 목록은 정렬한 뒤 넣는다. 감독자는 치환 입력 전에 이 MAC을 검증한다. **DB 쓰기 권한은 있지만 Keychain 키를 꺼낼 수 없는 프로세스**가 origin 목록을 바꿔 피싱 origin을 추가하면 검증에 실패한다. 03의 T6을 부분적으로 완화한다(§7.9).
+`lp(x)`는 `u16be(길이) ‖ x`다. origin 목록은 정렬하고 중복을 없앤 뒤 넣는다. `status`(draft·active·discarded)도 포함해 확정 상태를 몰래 바꾸지 못하게 한다. [구현 J-27] 감독자는 치환 입력 전에 이 MAC을 검증한다. **DB 쓰기 권한은 있지만 Keychain 키를 꺼낼 수 없는 프로세스**가 origin 목록을 바꿔 피싱 origin을 추가하면 검증에 실패한다. 03의 T6을 부분적으로 완화한다(§7.9).
 
 ## 7.7 내보내기·가져오기: age 형식
 
@@ -267,6 +267,16 @@ sequenceDiagram
 | 수명 주기 | RK·DK 교체의 각 단계 뒤에 프로세스를 강제 종료하고 복구 |
 | 상호 운용 | 내보내기 파일을 `age -d`로 열 수 있는지 확인 |
 | 누출 검사 | [05 §5.3](05-roadmap-and-verification.md#53-검증-게이트-모든-단계-공통)의 합성 비밀 스캔 |
+
+### 부록: v1 KAT
+
+`rebuild/crates/vault/tests/kat.rs`에 고정된 값이다. 바뀌면 기존 금고를 읽을 수 없다. HKDF 값은 Python 표준 라이브러리(`hmac`·`hashlib`)로 따로 계산해 일치를 확인했다.
+
+| 입력 | 출력 (hex) |
+|---|---|
+| RK = `11`×32, vault_id = `22`×16 → KEK | `50e57b267060479352f0371205a95d6dfc95509d4ebc436c14a6cb170f826ffc` |
+| 같은 입력 → MK | `dbbbe3429d5dcf75b555f8d134c8f28de6666f0790bff98a26f1f54fbbe06479` |
+| DK = `33`×32, dk_id = `44`×16, item = `55`×16, field = `password`, domain = credentials, nonce = `66`×24, 평문 `KH-KAT` → 필드 레코드 | `0101` ‖ `44`×16 ‖ `66`×24 ‖ `f7159b83f760b5caa17a237a12585b8564417968cbf3` |
 
 ## 7.12 출처
 
