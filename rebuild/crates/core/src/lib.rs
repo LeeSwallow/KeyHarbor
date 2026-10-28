@@ -10,7 +10,10 @@ pub use dotenv::parse_dotenv;
 pub use transfer::ImportReport;
 
 use anyhow::{Context, Result, anyhow, bail};
-use keyharbor_domain::vault::{Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
+use keyharbor_domain::{
+    audit::{AuditEvent, AuditKind},
+    vault::{Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
+};
 use keyharbor_sqlite::{DomainKeyRow, FieldRow, ItemRow, KeyGuard, SqliteStore, VaultRow};
 use keyharbor_vault::{
     VaultError,
@@ -23,6 +26,9 @@ use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
 pub const MAX_FIELD_BYTES: usize = 64 * 1024;
+
+/// The agent name recorded for changes made by the local user through the CLI.
+pub const LOCAL_AGENT: &str = "cli";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemStatus {
@@ -425,7 +431,16 @@ impl Vault {
             .iter()
             .map(|(name, value)| self.seal(&id, domain, name, value))
             .collect();
-        self.store.item_insert(&self.guard(domain), &row, &fields)
+        self.store.item_insert(&self.guard(domain), &row, &fields)?;
+        self.note_change(&item.name, "added");
+        Ok(())
+    }
+
+    /// Records a vault change. Best effort: the change itself is already committed.
+    fn note_change(&self, name: &ItemName, result: &str) {
+        let _ = self.store.record(
+            &AuditEvent::new(LOCAL_AGENT, AuditKind::VaultItemChanged, result).item(name.as_str()),
+        );
     }
 
     pub fn edit(&self, name: &ItemName, change: ItemChange) -> Result<()> {
@@ -459,11 +474,17 @@ impl Vault {
         }
         row.updated_at = now_rfc3339();
         row.meta_mac = self.mac_for(&row, kind, &name, &origins);
-        self.store.item_update(&self.guard(domain), &row, &kept)
+        self.store.item_update(&self.guard(domain), &row, &kept)?;
+        self.note_change(&name, "updated");
+        Ok(())
     }
 
     pub fn remove(&self, name: &ItemName) -> Result<bool> {
-        self.store.item_delete(name.as_str())
+        let removed = self.store.item_delete(name.as_str())?;
+        if removed {
+            self.note_change(name, "removed");
+        }
+        Ok(removed)
     }
 
     pub fn list(&self) -> Result<Vec<ItemSummary>> {

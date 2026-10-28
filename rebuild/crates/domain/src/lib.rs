@@ -270,5 +270,6 @@ mod tests {
         assert!(!State::Failed.permits(State::Starting));
     }
 }
+pub mod audit;
 pub mod policy;
 pub mod vault;

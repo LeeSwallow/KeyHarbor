@@ -3,7 +3,10 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Subcommand};
-use keyharbor_domain::policy::{Effect, Resource, Rule, normalize_target, parse_agent};
+use keyharbor_domain::{
+    audit::{AuditEvent, AuditKind},
+    policy::{Effect, Resource, Rule, normalize_target, parse_agent},
+};
 use keyharbor_sqlite::SqliteStore;
 use std::path::Path;
 
@@ -84,6 +87,10 @@ pub fn run(root: &Path, command: PolicyCmd) -> Result<()> {
             if !store.policy_remove(&agent, resource, &target)? {
                 bail!("rule not found");
             }
+            changed(
+                &store,
+                &format!("removed {agent} {} {target}", resource.as_str()),
+            );
             println!("removed\t{agent}\t{}\t{target}", resource.as_str());
         }
     }
@@ -92,6 +99,16 @@ pub fn run(root: &Path, command: PolicyCmd) -> Result<()> {
 
 fn set(store: &SqliteStore, rule: Rule) -> Result<()> {
     store.policy_set(&rule)?;
+    changed(
+        store,
+        &format!(
+            "{} {} {} {}",
+            rule.effect.as_str(),
+            rule.agent,
+            rule.resource.as_str(),
+            rule.target
+        ),
+    );
     println!(
         "{}\t{}\t{}\t{}",
         rule.effect.as_str(),
@@ -100,4 +117,13 @@ fn set(store: &SqliteStore, rule: Rule) -> Result<()> {
         rule.target
     );
     Ok(())
+}
+
+/// Records a policy change. Best effort: the change is already saved.
+fn changed(store: &SqliteStore, what: &str) {
+    let _ = store.record(&AuditEvent::new(
+        keyharbor_core::LOCAL_AGENT,
+        AuditKind::PolicyChanged,
+        what,
+    ));
 }

@@ -2,7 +2,11 @@
 
 use crate::{control, paths, supervisor};
 use anyhow::{Context, Result, bail};
-use keyharbor_domain::{RequestId, SessionId, State};
+use keyharbor_domain::{
+    RequestId, SessionId, State,
+    audit::{AuditEvent, AuditKind},
+    vault::Origin,
+};
 use keyharbor_sqlite::{SessionRow, SqliteStore};
 use serde_json::json;
 use std::{
@@ -49,6 +53,16 @@ pub struct OpenOptions<'a> {
     pub url: Option<&'a str>,
     pub cdp: bool,
     pub browser: &'a Path,
+    /// Who asked, for the usage record (`cli` for the local user).
+    pub agent: &'a str,
+}
+
+/// Records a session event. Best effort: the change it describes has already happened.
+fn note(store: &SqliteStore, agent: &str, kind: AuditKind, id: SessionId, result: &str) {
+    note_event(store, AuditEvent::new(agent, kind, result).session(id));
+}
+fn note_event(store: &SqliteStore, event: AuditEvent) {
+    let _ = store.record(&event);
 }
 
 /// Reserves the session and starts its supervisor (`exe __supervise …`) detached,
@@ -144,11 +158,20 @@ pub fn open(data: &Path, id: SessionId, options: &OpenOptions<'_>, exe: &Path) -
     thread::spawn(move || {
         let _ = child.wait();
     });
+    if result.is_ok() {
+        note(
+            &store,
+            options.agent,
+            AuditKind::SessionOpened,
+            id,
+            "running",
+        );
+    }
     result
 }
 
 /// Asks the supervisor to close the browser and waits until the session has stopped.
-pub fn stop(data: &Path, id: SessionId) -> Result<State> {
+pub fn stop(data: &Path, id: SessionId, agent: &str) -> Result<State> {
     let store = SqliteStore::open(data)?;
     let row = session(&store, id)?;
     if !matches!(
@@ -169,6 +192,13 @@ pub fn stop(data: &Path, id: SessionId) -> Result<State> {
     loop {
         let row = session(&store, id)?;
         if row.generation != Some(generation) || row.state != State::Stopping {
+            note(
+                &store,
+                agent,
+                AuditKind::SessionStopped,
+                id,
+                row.state.as_str(),
+            );
             return Ok(row.state);
         }
         if Instant::now() >= deadline {
@@ -179,12 +209,25 @@ pub fn stop(data: &Path, id: SessionId) -> Result<State> {
 }
 
 /// Marks a running session as waiting for the user and returns the new request ID.
-pub fn wait_auth(data: &Path, id: SessionId, origin: Option<&str>) -> Result<RequestId> {
+pub fn wait_auth(
+    data: &Path,
+    id: SessionId,
+    origin: Option<&str>,
+    agent: &str,
+) -> Result<RequestId> {
     let store = SqliteStore::open(data)?;
     let row = session(&store, id)?;
     require_supervisor(data, &id)?;
     let generation = row.generation.context("session is not running")?;
-    store.request_handoff(id, generation, origin)
+    let request = store.request_handoff(id, generation, origin)?;
+    let origin = origin.and_then(|o| Origin::parse(o).ok());
+    note_event(
+        &store,
+        AuditEvent::new(agent, AuditKind::HandoffRequested, "awaiting_user")
+            .session(id)
+            .origin(origin.as_ref().map(Origin::as_str)),
+    );
+    Ok(request)
 }
 
 /// The pending request and its claimed origin.
@@ -197,13 +240,15 @@ pub fn pending_handoff(data: &Path, id: SessionId) -> Result<(RequestId, Option<
         .context("no pending authentication request")
 }
 
-pub fn resume(data: &Path, id: SessionId, request: &str) -> Result<()> {
+pub fn resume(data: &Path, id: SessionId, request: &str, agent: &str) -> Result<()> {
     let request = RequestId::parse(request).context("invalid request id")?;
     let store = SqliteStore::open(data)?;
     let row = session(&store, id)?;
     require_supervisor(data, &id)?;
     let generation = row.generation.context("session is not running")?;
-    store.resume_handoff(id, generation, request)
+    store.resume_handoff(id, generation, request)?;
+    note(&store, agent, AuditKind::HandoffResumed, id, "running");
+    Ok(())
 }
 
 /// Returns an abandoned session to `stopped`. Refused while a supervisor holds the lock.

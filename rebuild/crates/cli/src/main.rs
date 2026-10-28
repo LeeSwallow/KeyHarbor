@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
+mod audit_cmd;
 mod policy_cmd;
 mod session_cmd;
 mod vault_cmd;
@@ -38,6 +39,11 @@ enum Command {
     /// Limit what each agent may use (default: everything allowed)
     #[command(subcommand)]
     Policy(policy_cmd::PolicyCmd),
+    /// Show the usage record (never contains values)
+    Audit(audit_cmd::AuditArgs),
+    /// Read or change settings
+    #[command(subcommand)]
+    Settings(audit_cmd::SettingsCmd),
 }
 
 /// The macOS per-user application data folder; `--data-dir` and `KEYHARBOR_HOME` override it.
@@ -56,6 +62,8 @@ fn main() -> Result<()> {
     match args.command {
         Command::Vault(command) => vault_cmd::run(&root, command),
         Command::Policy(command) => policy_cmd::run(&root, command),
+        Command::Audit(args) => audit_cmd::audit(&root, args),
+        Command::Settings(command) => audit_cmd::settings(&root, command),
         Command::Session(command) => session_cmd::run(&root, command),
         Command::Mcp {
             session,

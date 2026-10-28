@@ -3,7 +3,10 @@
 
 use crate::{cdp::Cdp, control, ops::Ops, paths};
 use anyhow::{Context, Result, bail};
-use keyharbor_domain::{Generation, SessionId, State};
+use keyharbor_domain::{
+    Generation, SessionId, State,
+    audit::{AuditEvent, AuditKind},
+};
 use keyharbor_sqlite::SqliteStore;
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
@@ -375,7 +378,15 @@ async fn record_exit(shared: &Shared, status: ExitStatus) {
             } else {
                 State::Failed
             };
-            store.transition(shared.id, shared.generation, row.state, next)
+            let moved = store.transition(shared.id, shared.generation, row.state, next)?;
+            // `stop` records its own event; this one is for browsers that ended otherwise.
+            if moved && row.state != State::Stopping {
+                let _ = store.record(
+                    &AuditEvent::new("browser", AuditKind::SessionStopped, next.as_str())
+                        .session(shared.id),
+                );
+            }
+            Ok(moved)
         })();
         if matches!(outcome, Ok(true)) {
             return;

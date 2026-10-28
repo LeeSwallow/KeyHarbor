@@ -1,6 +1,8 @@
+mod audit_repo;
 mod policy_repo;
 mod session_repo;
 mod vault_repo;
+pub use audit_repo::AUDIT_ENABLED;
 pub use session_repo::SessionRow;
 pub use vault_repo::*;
 
@@ -41,6 +43,7 @@ impl SqliteStore {
         session_repo::migrate(&conn)?;
         vault_repo::migrate(&conn)?;
         policy_repo::migrate(&conn)?;
+        audit_repo::migrate(&conn)?;
         Ok(Self {
             conn,
             root: root.to_path_buf(),

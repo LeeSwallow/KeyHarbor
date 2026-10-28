@@ -7,6 +7,7 @@ use keyharbor_broker::{
     lifecycle::{self, DEFAULT_BROWSER, OpenOptions},
     supervisor,
 };
+use keyharbor_core::LOCAL_AGENT;
 use keyharbor_domain::{Generation, SessionId, SessionName};
 use keyharbor_sqlite::SqliteStore;
 use std::path::{Path, PathBuf};
@@ -102,6 +103,7 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
                 url: url.as_deref(),
                 cdp,
                 browser: &browser,
+                agent: LOCAL_AGENT,
             };
             lifecycle::open(root, id, &options, &std::env::current_exe()?)?;
             if cdp {
@@ -113,12 +115,12 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
         }
         SessionCmd::Stop { id } => {
             let id = session_id(&id)?;
-            let state = lifecycle::stop(root, id)?;
+            let state = lifecycle::stop(root, id, LOCAL_AGENT)?;
             println!("{id}\t{}", state.as_str());
         }
         SessionCmd::WaitAuth { id, origin } => {
             let id = session_id(&id)?;
-            let request = lifecycle::wait_auth(root, id, origin.as_deref())?;
+            let request = lifecycle::wait_auth(root, id, origin.as_deref(), LOCAL_AGENT)?;
             println!("{id}\tawaiting_user\t{request}");
         }
         SessionCmd::Handoff { id } => {
@@ -131,7 +133,7 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
         }
         SessionCmd::Resume { id, request_id } => {
             let id = session_id(&id)?;
-            lifecycle::resume(root, id, &request_id)?;
+            lifecycle::resume(root, id, &request_id, LOCAL_AGENT)?;
             println!("{id}\trunning");
         }
         SessionCmd::Recover {

@@ -30,13 +30,19 @@ pub struct Options {
     /// Only this session is visible and usable.
     pub session: Option<String>,
     pub allow_cdp: bool,
-    /// The agent's name, kept for phase 3 policy decisions.
+    /// The agent's name for policies and the usage record; `mcp` when absent.
     pub agent: Option<String>,
     pub browser: Option<PathBuf>,
 }
 
 /// Runs the server on stdin/stdout until the client disconnects.
 pub fn run(options: Options) -> Result<()> {
+    if let Some(agent) = &options.agent {
+        if agent == keyharbor_domain::policy::ANY {
+            bail!("agent name * is reserved for rules that apply to every agent");
+        }
+        keyharbor_domain::policy::parse_agent(agent).map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
     let scope = match &options.session {
         Some(id) => {
             let id = SessionId::parse(id).context("invalid session id")?;
@@ -86,9 +92,18 @@ struct Inner {
     data: PathBuf,
     scope: Option<SessionId>,
     allow_cdp: bool,
-    #[allow(dead_code)]
     agent: Option<String>,
     browser: PathBuf,
+}
+
+/// The agent name used when the server was started without `--agent`.
+pub const DEFAULT_AGENT: &str = "mcp";
+
+impl Inner {
+    /// The name policies and the usage record know this server's agent by.
+    fn agent(&self) -> &str {
+        self.agent.as_deref().unwrap_or(DEFAULT_AGENT)
+    }
 }
 
 #[derive(Clone)]
@@ -313,6 +328,7 @@ impl Server {
                     url: url.as_deref(),
                     cdp,
                     browser: &inner.browser,
+                    agent: inner.agent(),
                 };
                 lifecycle::open(&inner.data, id, &options, &inner.exe)?;
                 Ok(json!({"id": id.to_string(), "state": "running"}))
@@ -331,7 +347,7 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                let state = lifecycle::stop(&inner.data, id)?;
+                let state = lifecycle::stop(&inner.data, id, inner.agent())?;
                 Ok(json!({"id": id.to_string(), "state": state.as_str()}))
             })
             .await,
@@ -351,7 +367,7 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                let request = lifecycle::wait_auth(&inner.data, id, origin.as_deref())?;
+                let request = lifecycle::wait_auth(&inner.data, id, origin.as_deref(), inner.agent())?;
                 Ok(json!({"id": id.to_string(), "state": "awaiting_user", "request_id": request.to_string()}))
             })
             .await,
