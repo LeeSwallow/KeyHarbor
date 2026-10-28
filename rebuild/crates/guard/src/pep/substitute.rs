@@ -13,14 +13,21 @@ use keyharbor_core::{ItemStatus, PlaintextAccess, Vault, fill_template};
 use keyharbor_domain::{
     policy::Rule,
     ports::browser::Element,
-    vault::{InputKind, ItemName, Origin, PlaceholderRef, parse_placeholders},
+    vault::{Domain, InputKind, ItemName, Origin, PlaceholderRef, parse_placeholders},
 };
 use zeroize::Zeroizing;
 
-/// Text resolved for one input, with the items it used.
+/// Text resolved for one input, with the items it used and their domains (same order).
 pub struct Prepared {
     pub text: Zeroizing<String>,
     pub items: Vec<ItemName>,
+    pub domains: Vec<Domain>,
+}
+
+/// What [`resolve_checked`] produced.
+pub struct Resolved {
+    pub text: Zeroizing<String>,
+    pub domains: Vec<Domain>,
 }
 
 /// The template's placeholders and the items they name (first use first, once each).
@@ -59,7 +66,7 @@ pub fn resolve_checked(
     request: &Request<'_>,
     to: Destination<'_>,
     deny: &dyn Fn(&ItemName, &str) -> anyhow::Error,
-) -> Result<Zeroizing<String>> {
+) -> Result<Resolved> {
     let Request {
         agent,
         template,
@@ -71,6 +78,7 @@ pub fn resolve_checked(
     let Some(vault) = vault else {
         return Err(deny(first, "not_found"));
     };
+    let mut domains = Vec::with_capacity(items.len());
     for item in items {
         let info = match vault.item_use(item) {
             Ok(Some(info)) => info,
@@ -87,9 +95,12 @@ pub fn resolve_checked(
         if !decide(rules, agent, &action).allowed() {
             return Err(deny(item, "policy"));
         }
-        if !origin::allows_frame(info.origin_binding, &info.origins, frame) {
-            return Err(deny(item, "origin"));
+        if let Err(reason) =
+            origin::allows_browser(info.domain, info.origin_binding, &info.origins, frame)
+        {
+            return Err(deny(item, reason));
         }
+        domains.push(info.domain);
         let missing = refs
             .iter()
             .any(|r| &r.item == item && !info.fields.iter().any(|f| f == r.field.as_str()));
@@ -114,5 +125,7 @@ pub fn resolve_checked(
     }
     // Every check passed: this is where the guard grants plaintext.
     let access = PlaintextAccess::issue();
-    fill_template(template, |r| vault.resolve(&access, r)).map_err(|_| deny(first, "vault"))
+    let text =
+        fill_template(template, |r| vault.resolve(&access, r)).map_err(|_| deny(first, "vault"))?;
+    Ok(Resolved { text, domains })
 }

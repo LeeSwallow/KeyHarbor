@@ -3,7 +3,7 @@
 use super::{
     mappers::{rule, rule_model},
     models::RuleModel,
-    schema::policy_rules,
+    schema::{origin_uses, policy_rules},
 };
 use crate::SqliteStore;
 use anyhow::Result;
@@ -43,6 +43,18 @@ impl PolicyStore for SqliteStore {
                 .set(policy_rules::effect.eq(excluded(policy_rules::effect)))
                 .execute(conn)?;
             Ok(())
+        })
+    }
+
+    fn note_origin_use(&self, item: &str, origin: &str) -> Result<bool> {
+        self.read(|conn| {
+            Ok(diesel::insert_or_ignore_into(origin_uses::table)
+                .values((
+                    origin_uses::item_name.eq(item),
+                    origin_uses::origin.eq(origin),
+                ))
+                .execute(conn)?
+                == 1)
         })
     }
 
@@ -92,5 +104,15 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(store.policy_rules().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn origin_uses_are_first_only_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open(&tmp.path().join("data")).unwrap();
+        assert!(store.note_origin_use("me", "https://a.example").unwrap());
+        assert!(!store.note_origin_use("me", "https://a.example").unwrap());
+        assert!(store.note_origin_use("me", "https://b.example").unwrap());
+        assert!(store.note_origin_use("home", "https://a.example").unwrap());
     }
 }

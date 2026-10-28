@@ -10,4 +10,6 @@ pub trait PolicyStore {
     fn policy_set(&self, rule: &Rule) -> Result<()>;
     /// False if no such rule existed.
     fn policy_remove(&self, agent: &str, resource: Resource, target: &str) -> Result<bool>;
+    /// Remembers that `item` was typed into a frame of `origin`; true the first time (R-36).
+    fn note_origin_use(&self, item: &str, origin: &str) -> Result<bool>;
 }

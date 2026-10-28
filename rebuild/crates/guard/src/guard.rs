@@ -14,7 +14,7 @@ use keyharbor_domain::{
     SessionId,
     audit::{AuditEvent, AuditKind},
     ports::Store,
-    vault::{ItemName, Origin},
+    vault::{Domain, ItemName, Origin},
 };
 use serde_json::Value;
 use std::{
@@ -203,6 +203,27 @@ impl Guard {
         self.session
     }
 
+    /// Records `first_use_origin` the first time a personal item goes into `origin` (R-36).
+    /// Never refuses: identity and address details are meant for many sites.
+    pub(crate) fn note_use(&self, agent: &str, item: &ItemName, domain: Domain, origin: &Origin) {
+        if domain != Domain::Personal {
+            return;
+        }
+        let first = self
+            .store
+            .lock()
+            .ok()
+            .and_then(|s| s.note_origin_use(item.as_str(), origin.as_str()).ok());
+        if first == Some(true) {
+            self.record(
+                &AuditEvent::new(agent, AuditKind::FirstUseOrigin, "ok")
+                    .session(self.session)
+                    .item(item.as_str())
+                    .origin(Some(origin.as_str())),
+            );
+        }
+    }
+
     /// Remembers that `node` received substituted text.
     pub(crate) fn taint(&self, node: u64) {
         if let Ok(mut tainted) = self.tainted.lock() {
@@ -283,6 +304,7 @@ impl Guard {
             return Ok(Prepared {
                 text: Zeroizing::new(template.to_owned()),
                 items,
+                domains: Vec::new(),
             });
         };
         let origin_text = origin.map(Origin::as_str);
@@ -309,11 +331,15 @@ impl Guard {
                 &deny,
             )
         });
-        let text = match checked {
+        let resolved = match checked {
             Ok(result) => result?,
             Err(_) => return Err(deny(&first, "vault")),
         };
-        Ok(Prepared { text, items })
+        Ok(Prepared {
+            text: resolved.text,
+            items,
+            domains: resolved.domains,
+        })
     }
 
     /// Every result before it leaves the supervisor: each vault value becomes its placeholder.

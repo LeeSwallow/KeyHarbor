@@ -96,12 +96,15 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         let after = self.inner.frame_origin(page, &focus.frame).await;
         let changed = after != origin;
         let session = self.guard.session();
-        for item in &prepared.items {
+        for (item, domain) in prepared.items.iter().zip(&prepared.domains) {
             let used = AuditEvent::new(self.agent, AuditKind::SecretUsed, "ok")
                 .session(session)
                 .item(item.as_str())
                 .origin(origin.as_ref().map(Origin::as_str));
             self.guard.record(&used);
+            if let Some(origin) = &origin {
+                self.guard.note_use(self.agent, item, *domain, origin);
+            }
             if changed {
                 let moved = AuditEvent::new(
                     self.agent,
@@ -855,6 +858,89 @@ mod tests {
             probe
                 .kinds()
                 .contains(&(AuditKind::DeniedSuppressed, "3".into()))
+        );
+    }
+
+    #[test]
+    fn api_keys_need_an_origin_and_personal_details_note_their_first_origin() {
+        use crate::test_support::field;
+        use keyharbor_domain::vault::{ItemKind, ItemName};
+        let e = env();
+        let v = init(&e);
+        let mut key = login("openai", "");
+        key.kind = ItemKind::Secret;
+        key.fields = vec![field("value", "KH-SYNTH-key-86")];
+        key.origins = vec![];
+        v.add(key).unwrap();
+        let mut me = login("me", "");
+        me.kind = ItemKind::Identity;
+        me.fields = vec![field("email", "kh-synth-86@example.com")];
+        me.origins = vec![];
+        v.add(me).unwrap();
+        let (guard, probe) = guard(&e);
+        let mut fake = Fake::default();
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .type_text("{{secret:openai.value}}"),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "denied: openai (no-origin)");
+        // Listing an origin lets it go there, and only there.
+        v.edit(
+            &ItemName::parse("openai").unwrap(),
+            keyharbor_core::ItemChange {
+                origins: Some(vec![Origin::parse("https://platform.openai.com").unwrap()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .type_text("{{secret:openai.value}}"),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "denied: openai (origin)");
+        v.edit(
+            &ItemName::parse("openai").unwrap(),
+            keyharbor_core::ItemChange {
+                origins: Some(vec![Origin::parse("https://github.com").unwrap()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        block(
+            guard
+                .browser(&mut fake, "claude")
+                .type_text("{{secret:openai.value}}"),
+        )
+        .unwrap();
+        // An identity goes anywhere; its first use at an origin is recorded once.
+        for _ in 0..2 {
+            block(
+                guard
+                    .browser(&mut fake, "claude")
+                    .type_text("{{secret:me.email}}"),
+            )
+            .unwrap();
+        }
+        let kinds = probe.kinds();
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|(k, _)| *k == AuditKind::FirstUseOrigin)
+                .count(),
+            1,
+            "{kinds:?}"
+        );
+        assert_eq!(
+            fake.typed,
+            vec![
+                "KH-SYNTH-key-86",
+                "kh-synth-86@example.com",
+                "kh-synth-86@example.com"
+            ]
         );
     }
 }

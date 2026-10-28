@@ -288,3 +288,41 @@ fn a_navigation_the_agent_starts_stops_substitution_until_it_is_over() {
     assert!(!got.lock().unwrap().iter().any(|p| p.starts_with("/got")));
     h.assert_absent(&[&user]);
 }
+
+#[test]
+fn api_keys_reach_a_page_only_at_their_listed_origins() {
+    let Some(browser) = chrome() else { return };
+    let base = serve_fn(|_| login_page());
+    let mut h = Harness::new();
+    let (key, email) = (h.synth("key"), h.synth("mail@example.com"));
+    h.add("openai", "secret", &[], json!({"value": key}));
+    h.add("me", "identity", &[], json!({"email": email}));
+    h.open(&browser);
+    h.ok_call(json!({"op": "navigate", "url": format!("{base}/")}));
+    assert_eq!(
+        h.fill("#user", "{{secret:openai.value}}")
+            .unwrap_err()
+            .to_string(),
+        "denied: openai (no-origin)"
+    );
+    // Listing an origin is a weakening a person confirms; then the key goes there.
+    let refused = h.run(&["vault", "edit", "openai", "--origin", &base], None);
+    assert!(!refused.status.success());
+    h.confirmed(&["vault", "edit", "openai", "--origin", &base]);
+    h.fill("#user", "{{secret:openai.value}}").unwrap();
+    // Personal details go anywhere; the first use at an origin is recorded, once.
+    h.fill("#user", "{{secret:me.email}}").unwrap();
+    h.fill("#user", "{{secret:me.email}}").unwrap();
+    let audit: serde_json::Value = serde_json::from_str(&h.ok(&["audit", "--json"], None)).unwrap();
+    let first: Vec<_> = audit
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "first_use_origin")
+        .collect();
+    assert_eq!(first.len(), 1, "{audit}");
+    assert_eq!(first[0]["item_name"], "me");
+    assert_eq!(first[0]["origin"], base.as_str());
+    assert!(audit.to_string().contains("\"result\":\"no-origin\""));
+    h.assert_absent(&[&key, &email]);
+}

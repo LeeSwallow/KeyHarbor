@@ -37,7 +37,13 @@ fn placeholders_fill_only_allowed_items_into_bound_frames() {
         &[&other.base],
         json!({"username": inner_user}),
     );
-    h.add("free", "secret", &[], json!({"value": note}));
+    // An API key goes into a browser only at its listed origins (R-36).
+    h.add(
+        "free",
+        "secret",
+        &[&shop.base, &other.base],
+        json!({"value": note}),
+    );
     h.open(&browser);
 
     // The bound origin matches: both fields are typed, the response holds no value.
@@ -201,7 +207,7 @@ fn values_shown_back_by_the_page_are_masked() {
         &[&shop.base],
         json!({"number": number, "cvc": "123", "exp_month": "12"}),
     );
-    h.add("api", "secret", &[], json!({"value": spaced}));
+    h.add("api", "secret", &[&shop.base], json!({"value": spaced}));
     h.add("other", "secret", &[], json!({"value": token}));
     h.open(&browser);
 
