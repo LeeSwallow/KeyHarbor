@@ -242,7 +242,7 @@ mod tests {
                 .unwrap(),
             "k"
         );
-        let github = vb
+        let visa = vb
             .list()
             .unwrap()
             .into_iter()
