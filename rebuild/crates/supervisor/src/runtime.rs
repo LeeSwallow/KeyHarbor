@@ -11,6 +11,11 @@ use crate::{
 };
 use anyhow::{Result, bail};
 use keyharbor_broker::chrome::{DEVTOOLS_ACTIVE_PORT, parse_devtools_active_port};
+
+/// How long `endpoint` waits for Chrome to write `DevToolsActivePort`. As long as a session
+/// start may take (core `START_TIMEOUT`): on a busy machine Chrome writes the file seconds
+/// after the session is running, and 5 s was too short on CI (#25).
+const ENDPOINT_WAIT: Duration = Duration::from_secs(15);
 use keyharbor_domain::{
     Generation, SessionId,
     ports::{
@@ -107,7 +112,7 @@ impl SessionRuntime for ProcessRuntime {
 
     fn debug_endpoint(&self, id: SessionId) -> Result<String> {
         let file = paths::profile_dir(&self.data, &id).join(DEVTOOLS_ACTIVE_PORT);
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + ENDPOINT_WAIT;
         let text = loop {
             match std::fs::symlink_metadata(&file) {
                 Ok(meta) if meta.is_file() && meta.len() <= 256 => {
