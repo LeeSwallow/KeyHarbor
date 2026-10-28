@@ -16,26 +16,6 @@ use keyharbor_domain::{
     vault::Origin,
 };
 
-/// Builds before the raw CDP option have no `generations.cdp`; add it (once) after the
-/// session migrations. Raw SQL because SQLite has no `ADD COLUMN IF NOT EXISTS`.
-pub(crate) fn upgrade(conn: &mut SqliteConnection) -> QueryResult<()> {
-    #[derive(QueryableByName)]
-    struct Count {
-        #[diesel(sql_type = diesel::sql_types::BigInt)]
-        n: i64,
-    }
-    let has_cdp = diesel::sql_query(
-        "SELECT count(*) AS n FROM pragma_table_info('generations') WHERE name='cdp'",
-    )
-    .get_result::<Count>(conn)?
-    .n == 1;
-    if !has_cdp {
-        diesel::sql_query("ALTER TABLE generations ADD COLUMN cdp INTEGER NOT NULL DEFAULT 0")
-            .execute(conn)?;
-    }
-    Ok(())
-}
-
 /// The session's run is still `generation`.
 macro_rules! current_run {
     ($id:expr, $generation:expr) => {

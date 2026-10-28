@@ -5,8 +5,10 @@
 # 1. Normal dependencies (dev-dependencies excluded) between keyharbor crates
 #    follow the allowed table below.
 # 2. Only keyharbor-vault depends on or names the AEAD/KDF/MAC crates.
-# 3. rusqlite is not used anywhere; raw SQL (`sql_query(`) lives only in the
-#    persistence contexts' repositories (crates/sqlite/src/contexts/*/repo.rs).
+# 3. rusqlite is not used anywhere. Production code runs no raw SQL: schema
+#    SQL lives in crates/sqlite/migrations/, and `sql_query(`/`batch_execute(`
+#    appear only in test code (`#[cfg(test)]` items, the `test-support`
+#    feature, tests/ directories) — plus the connection PRAGMAs.
 # 4. `PlaintextAccess::issue` is called only by the guard, by core's export,
 #    and by tests.
 # 5. The raw browser adapter (CDP) stays inside keyharbor-broker: interfaces
@@ -90,14 +92,34 @@ $hits"
 hits="$(grep -rn 'rusqlite' --include='*.rs' . || true)"
 [ -n "$hits" ] && no "rusqlite referenced:
 $hits"
-hits="$(grep -rn 'sql_query(' --include='*.rs' . | grep -vE '^\./sqlite/src/contexts/[a-z_]+/repo\.rs:' || true)"
-[ -n "$hits" ] && no "sql_query outside a persistence context repository:
+# Prints file:line for matches of $1 outside items marked #[cfg(test)] or
+# #[cfg(feature = "test-support")] (the marked item's brace block is skipped).
+outside_tests() {
+	find . -name '*.rs' -not -path '*/tests/*' -not -path '*/target/*' | while read -r f; do
+		PAT="$1" awk -v file="$f" '
+			BEGIN { pat = ENVIRON["PAT"] }
+			/#\[cfg\((test|feature = "test-support")\)\]/ { pending = 1 }
+			{
+				line = $0
+				if (depth == 0 && !pending && line ~ pat) print file ":" NR ": " line
+				if (pending || depth > 0) {
+					opens = gsub(/\{/, "{", line); closes = gsub(/\}/, "}", line)
+					if (pending && opens > 0) { pending = 0; started = 1 }
+					if (started) { depth += opens - closes; if (depth <= 0) { depth = 0; started = 0 } }
+				}
+			}
+		' "$f"
+	done
+}
+hits="$(outside_tests 'sql_query\(|batch_execute\(' | grep -v '^\./sqlite/src/connection\.rs:.*batch_execute(PRAGMAS)' || true)"
+[ -n "$hits" ] && no "raw SQL in production code (put schema changes in a migration):
 $hits"
 
 # --- 4. the plaintext capability -------------------------------------------------
 hits="$(grep -rn 'PlaintextAccess::issue' --include='*.rs' . |
+	grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' |
 	grep -vE '^\./guard/' |
-	grep -vE '^\./core/src/vault/transfer\.rs:' |
+	grep -vE '^\./core/src/transfer\.rs:' |
 	grep -vE '^\./core/src/test_support\.rs:' |
 	grep -vE '^\./[a-z]+/tests/' || true)"
 [ -n "$hits" ] && no "PlaintextAccess::issue called outside the guard, core's export and tests:

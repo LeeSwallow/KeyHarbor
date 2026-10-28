@@ -2,8 +2,8 @@
 //!
 //! The schema is split into bounded contexts (`contexts/`), each owning its tables, models,
 //! mappers, repository and migrations; `contexts::CONTEXTS` lists them in the order their
-//! migrations run when a store is opened. Raw SQL lives only in `migrations/` (and the few
-//! statements Diesel's DSL cannot express, inside a context's `repo.rs`).
+//! migrations run when a store is opened. Raw SQL lives only in `migrations/`; production
+//! queries use Diesel's DSL (test-only helpers may use `sql_query`).
 
 mod connection;
 mod contexts;
@@ -16,6 +16,7 @@ use std::{
 };
 
 pub use keyharbor_domain::ports::AUDIT_ENABLED;
+use keyharbor_domain::ports::{Store, StoreFactory};
 
 /// One connection to `<root>/keyharbor.sqlite3`. Not shared between threads; open one per thread.
 pub struct SqliteStore {
@@ -52,6 +53,24 @@ impl SqliteStore {
         work: impl FnOnce(&mut SqliteConnection) -> Result<T>,
     ) -> Result<T> {
         self.conn.borrow_mut().immediate_transaction(work)
+    }
+}
+
+/// Opens a `SqliteStore` in one data directory, for layers that must not name this adapter.
+#[derive(Clone, Debug)]
+pub struct SqliteStores {
+    root: PathBuf,
+}
+impl SqliteStores {
+    pub fn new(root: &Path) -> Self {
+        Self {
+            root: root.to_path_buf(),
+        }
+    }
+}
+impl StoreFactory for SqliteStores {
+    fn open(&self) -> Result<Box<dyn Store>> {
+        Ok(Box::new(SqliteStore::open(&self.root)?))
     }
 }
 
@@ -121,9 +140,8 @@ mod tests {
         );
     }
 
-    /// A database from a build before migrations (and before `generations.cdp`) opens
-    /// unchanged: the initial migrations find their tables and the session context adds the
-    /// missing column.
+    /// A database created before migrations existed (same tables, no
+    /// `__diesel_schema_migrations`) opens unchanged: the initial migrations find their tables.
     #[test]
     fn databases_from_before_migrations_open() {
         use diesel::{Connection, connection::SimpleConnection};
@@ -140,7 +158,7 @@ mod tests {
             SqliteConnection::establish(root.join("keyharbor.sqlite3").to_str().unwrap()).unwrap();
         old.batch_execute(&format!(
             "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, state TEXT NOT NULL CHECK(state IN ('stopped','starting','running','awaiting_user','stopping','failed')));
-            CREATE TABLE generations (session_id TEXT PRIMARY KEY, generation TEXT NOT NULL);
+            CREATE TABLE generations (session_id TEXT PRIMARY KEY, generation TEXT NOT NULL, cdp INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             INSERT INTO sessions VALUES ('{id}', 'old', 'stopped');
             INSERT INTO settings VALUES ('audit_enabled', 'false');"

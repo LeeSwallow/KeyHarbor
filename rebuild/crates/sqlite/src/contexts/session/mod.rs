@@ -6,5 +6,3 @@ mod mappers;
 mod models;
 mod repo;
 mod schema;
-
-pub(crate) use repo::upgrade;

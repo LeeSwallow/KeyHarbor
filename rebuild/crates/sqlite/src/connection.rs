@@ -57,9 +57,6 @@ pub(crate) fn open(root: &Path) -> Result<SqliteConnection> {
         for context in CONTEXTS {
             conn.run_pending_migrations(Source(&context.migrations))
                 .map_err(|e| anyhow!("migrating the {} context: {e}", context.name))?;
-            if let Some(upgrade) = context.upgrade {
-                upgrade(conn).with_context(|| format!("upgrading the {} context", context.name))?;
-            }
         }
         Ok(())
     })?;
