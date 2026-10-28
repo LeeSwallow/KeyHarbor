@@ -24,6 +24,8 @@ sh "$(dirname "$0")/sync-labels.sh" "$repo"
 gh api -X PUT "repos/$repo/private-vulnerability-reporting" >/dev/null && echo "private vulnerability reporting: on"
 # The download page is built by .github/workflows/pages.yml.
 gh api -X POST "repos/$repo/pages" -f build_type=workflow >/dev/null 2>&1 && echo "pages: on (workflow)" || echo "pages: already on"
+# The first push ran pages.yml before Pages existed; deploy once now.
+gh workflow run pages.yml -R "$repo" && echo "pages: deploy started"
 # main takes changes only when CI is green. The maintainer may still push directly.
 gh api -X PUT "repos/$repo/branches/main/protection" --input - >/dev/null <<'JSON'
 {

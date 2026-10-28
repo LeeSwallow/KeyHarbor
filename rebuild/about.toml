@@ -1,5 +1,8 @@
 # cargo-about: the licenses accepted in the release's third-party notice.
 # Keep in step with [licenses] allow in deny.toml.
+ignore-dev-dependencies = true
+ignore-build-dependencies = true
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
 accepted = [
   "MIT",
   "Apache-2.0",

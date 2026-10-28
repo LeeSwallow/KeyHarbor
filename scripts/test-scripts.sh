@@ -34,5 +34,8 @@ out="$(sh scripts/check-version.sh v9.9.9 2>&1)" && no "check-version accepted a
 	printf '%s' "$out" | grep -q 'does not match' && ok "check-version rejects a wrong tag" || no "check-version gave no reason"
 }
 
+# The shipped binary has no test-only features (dev-dependencies excluded).
+sh scripts/check-release-features.sh >/dev/null 2>&1 && ok "release build has no test-only features" || no "check-release-features failed"
+
 [ "$fail" -eq 0 ] && echo "all script tests passed"
 exit "$fail"

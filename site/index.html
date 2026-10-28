@@ -28,7 +28,7 @@
         <figcaption><span class="dot now"></span>지금 되는 것 — 로컬 금고</figcaption>
 <pre><code><span class="p">$</span> keyharbor vault init
 vault   7c1e…
-<span class="p">$</span> keyharbor vault add blog --kind login \
+<span class="p">$</span> printf '{"password":"…"}' | keyharbor vault add blog --kind login \
     --origin https://blog.example.com --set username=me --stdin
 added   blog
 <span class="p">$</span> keyharbor vault list
@@ -46,7 +46,7 @@ exported  /Users/me/keyharbor-backup.age</code></pre>
   browser_click      로그인
   browser_fill       #editor  "KeyHarbor 0.1.0을 소개합니다 …"
   browser_click      발행
-<span class="ok">✓ 게시됨</span> — 사람이 비밀번호를 넣어 주지 않았습니다</code></pre>
+<span class="ok">✓ 게시됨</span> — 비밀번호를 사람이 입력하지 않았습니다</code></pre>
         <p class="note">이 흐름은 아직 쓸 수 없습니다. <a href="https://github.com/LeeSwallow/KeyHarbor/blob/main/ROADMAP.md">로드맵</a>을 보세요.</p>
       </figure>
     </section>
@@ -56,11 +56,11 @@ exported  /Users/me/keyharbor-backup.age</code></pre>
       <ul>
         <li>
           <h3>로컬 · 무료 · 오픈소스</h3>
-          <p>클라우드 계정도, 외부 금고도 필요 없습니다. 루트 키는 macOS Keychain에, 나머지는 암호문으로 내 Mac에만 있습니다.</p>
+          <p>클라우드 계정도, 외부 금고도 필요 없습니다. 루트 키는 macOS Keychain에, 비밀 값은 암호문으로 내 Mac에만 있습니다. 항목 이름·사이트 같은 메타데이터는 평문이니 이름에 비밀을 넣지 마세요.</p>
         </li>
         <li>
           <h3>평문은 밖으로 나가지 않습니다</h3>
-          <p>CLI는 비밀 값을 출력하지 않고, 명령행 인자로 받지도 않습니다. 에이전트는 이름으로 가리키기만 합니다.</p>
+          <p>CLI는 비밀 값을 출력하지 않고, 명령행 인자로 받지도 않습니다. 3단계부터는 에이전트도 값 대신 이름(placeholder)으로만 가리킵니다.</p>
         </li>
         <li>
           <h3>사이트에 묶인 비밀</h3>

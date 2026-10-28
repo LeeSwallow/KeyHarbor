@@ -26,12 +26,16 @@ jobs:
           cargo fmt --all --check
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test --workspace --locked
-      - name: the release build has no test-only features
-        working-directory: rebuild
+      - name: the tag is on main
         run: |
-          if cargo tree -p keyharbor -e features | grep -q insecure-test-keystore; then
-            echo "insecure-test-keystore is enabled in the release build"; exit 1
-          fi
+          git fetch --quiet origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "tag $GITHUB_REF_NAME is not on main"; exit 1; }
+      - name: dependency licenses and advisories
+        run: |
+          cargo install cargo-deny --locked
+          cargo deny --manifest-path rebuild/Cargo.toml check
+      - name: the release build has no test-only features
+        run: sh scripts/check-release-features.sh
       - run: cargo install cargo-about --locked --features cli
       - uses: goreleaser/goreleaser-action@v6
         with:

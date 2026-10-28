@@ -20,7 +20,7 @@ author="${PR_AUTHOR:-}"
 has_label() { printf '%s\n' "$labels" | grep -qxF "$1"; }
 
 if ! printf '%s' "$title" | grep -qE '^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert)(\([a-z0-9/._-]+\))?!?: .+'; then
-	say "the title \"$title\" is not a Conventional Commit: type(scope): what changes, as in \"fix: show README.md links a root file\""
+	say "the title \"$title\" is not a Conventional Commit: type(scope): what changes, as in \"fix: reject item names with a dot\""
 fi
 
 case "$author" in
@@ -37,7 +37,7 @@ for k in feature enhancement bug "breaking change" docs plugin chore dependencie
 	if has_label "$k"; then kinds=$((kinds + 1)); fi
 done
 if [ "$kinds" -eq 0 ]; then
-	say "no kind label: add one of feature, enhancement, bug, breaking change, docs, plugin, chore"
+	say "no kind label: add one of feature, enhancement, bug, breaking change, docs, plugin, chore, security"
 fi
 
 if [ "$fail" -eq 0 ]; then

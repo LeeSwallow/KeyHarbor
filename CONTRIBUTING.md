@@ -101,7 +101,7 @@ cd .. && sh scripts/check-docs.sh && sh scripts/test-scripts.sh
 - macOS와 Ubuntu에서 fmt·clippy·테스트, 프로토타입 테스트, `cargo deny`, 릴리스 dry-run
 - 제목이 Conventional Commit이고 릴리스 노트 한 줄로 읽힐 것(squash 후 `main`의 커밋 제목이 됩니다)
 - 본문이 이슈를 닫거나, 작은 수정이면 `no-issue` 라벨
-- 종류 라벨 하나: `feature`, `enhancement`, `bug`, `breaking change`, `docs`, `plugin`, `chore`
+- 종류 라벨 하나: `feature`, `enhancement`, `bug`, `breaking change`, `docs`, `plugin`, `chore`, `security`
 - 어떤 커밋도 AI 도구를 저자로 적지 않을 것
 
 관리자가 일주일 안에 리뷰합니다. PR은 `main`에 squash되고, `v*` 태그가 `main`에서 릴리스를 만듭니다.
