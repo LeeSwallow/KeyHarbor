@@ -50,13 +50,13 @@
 - 다이어그램을 바꾸면 Mermaid로 유지하고 렌더링이 되는지 확인한다.
 
 ## 완료 조건 (모두 참이어야 한다)
-- [ ] 계획의 Task 1–10 체크박스가 모두 완료다
-- [ ] `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`가 모두 성공한다
-- [ ] `no_command_prints_plaintext`, `db_and_wal_never_contain_plaintext`, `export_is_age_and_contains_no_plaintext` 누출 테스트가 통과한다
-- [ ] `interrupted_root_rotation_recovers`가 failpoint 1·2·3 모두에서 통과한다
-- [ ] `vault show`가 존재하지 않는다
-- [ ] README와 설계 문서가 구현과 일치한다
-- [ ] Keychain 수동 확인 결과가 기록돼 있거나, 하지 못한 이유가 기록돼 있다
+- [x] 계획의 Task 1–10 체크박스가 모두 완료다
+- [x] `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`가 모두 성공한다
+- [x] `no_command_prints_plaintext`, `db_and_wal_never_contain_plaintext`, `export_is_age_and_contains_no_plaintext` 누출 테스트가 통과한다
+- [x] `interrupted_root_rotation_recovers`가 failpoint 1·2·3 모두에서 통과한다
+- [x] `vault show`가 존재하지 않는다
+- [x] README와 설계 문서가 구현과 일치한다
+- [x] Keychain 수동 확인 결과가 기록돼 있거나, 하지 못한 이유가 기록돼 있다 — 하지 못한 이유를 계획 파일 「실행 기록」과 03 §3.4에 기록
 
 ## 최종 보고 형식
 1. 완료한 Task와 커밋 목록(해시·메시지)

@@ -94,7 +94,7 @@ rebuild/
 | Identity | `full_name`, `given_name`, `family_name`, `email`, `phone`, `birth_date`, `note` |
 | Address | `recipient`, `line1`, `line2`, `city`, `region`, `postal_code`, `country`, `phone`, `note` |
 
-- [ ] **Step 1: 실패하는 테스트 작성** (`vault.rs`의 `#[cfg(test)] mod tests`)
+- [x] **Step 1: 실패하는 테스트 작성** (`vault.rs`의 `#[cfg(test)] mod tests`)
 
 ```rust
 #[test]
@@ -138,13 +138,13 @@ fn placeholders_parse_and_reject_malformed() {
 }
 ```
 
-- [ ] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-domain` — Expected: FAIL (`vault` 모듈 없음)
+- [x] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-domain` — Expected: FAIL (`vault` 모듈 없음)
 
-- [ ] **Step 3: 구현** — `ItemName`: 문자는 `char::is_alphanumeric`·`-`·`_`만, 1–64자. `FieldName`: ASCII 영숫자·`_`, 1–64자. `Origin::parse`: `url::Url`로 파싱해 path가 `/`이고 query·fragment·userinfo가 없을 때만 허용. scheme은 `https`, 또는 host가 `localhost`/`127.0.0.1`/`[::1]`인 `http`만 받는다(기존 프로토타입 `src/lib.rs` `validate_origin`과 같은 규칙). `url::Url::origin().ascii_serialization()`으로 정규화한다. `parse_placeholders`: `{{secret:`로 시작하는 구간마다 `}}`까지 잘라 `item.field`로 나누고, 어느 쪽이든 검증에 실패하면 전체를 `Err`로 돌려준다.
+- [x] **Step 3: 구현** — `ItemName`: 문자는 `char::is_alphanumeric`·`-`·`_`만, 1–64자. `FieldName`: ASCII 영숫자·`_`, 1–64자. `Origin::parse`: `url::Url`로 파싱해 path가 `/`이고 query·fragment·userinfo가 없을 때만 허용. scheme은 `https`, 또는 host가 `localhost`/`127.0.0.1`/`[::1]`인 `http`만 받는다(기존 프로토타입 `src/lib.rs` `validate_origin`과 같은 규칙). `url::Url::origin().ascii_serialization()`으로 정규화한다. `parse_placeholders`: `{{secret:`로 시작하는 구간마다 `}}`까지 잘라 `item.field`로 나누고, 어느 쪽이든 검증에 실패하면 전체를 `Err`로 돌려준다.
 
-- [ ] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-domain` — Expected: PASS (기존 테스트 2개 포함)
+- [x] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-domain` — Expected: PASS (기존 테스트 2개 포함)
 
-- [ ] **Step 5: 커밋** — `git add rebuild/crates/domain && git commit -m "feat(domain): vault item kinds, domains, names, origins, placeholders"`
+- [x] **Step 5: 커밋** — `git add rebuild/crates/domain && git commit -m "feat(domain): vault item kinds, domains, names, origins, placeholders"`
 
 ---
 
@@ -172,7 +172,7 @@ fn placeholders_parse_and_reject_malformed() {
 
 레코드 배치와 AD는 07 §7.6.1·§7.6.2를 그대로 따른다. 도메인 키 레코드 AD = `b"keyharbor/dk/v1" ‖ 0x00 ‖ vault_id ‖ domain_byte ‖ dk_id ‖ version ‖ suite ‖ kek_id`.
 
-- [ ] **Step 1: 실패하는 테스트 작성** (`src/record.rs` 테스트 모듈)
+- [x] **Step 1: 실패하는 테스트 작성** (`src/record.rs` 테스트 모듈)
 
 ```rust
 fn ad<'a>(v: &'a VaultId, item: &'a [u8;16], field: &'a str, domain: Domain) -> FieldAd<'a> {
@@ -239,10 +239,10 @@ fn keyset_derivation_separates_keys_and_depends_on_vault() {
 
 `tests/kat.rs`: `root = [0x11;32]`, `vault = [0x22;16]`의 KEK·MK를 hex로 고정하고, `dk = [0x33;32]`, `dk_id = [0x44;16]`, `item = [0x55;16]`, `field = "password"`, `nonce = [0x66;24]`, 평문 `"KH-KAT"`인 `seal_field_with_nonce` 출력 바이트를 hex로 고정한다. 기대값은 Step 3 구현 뒤 한 번 계산해 넣고, 이후 형식이 바뀌면 실패하게 둔다. 고정 hex 위에 "07 §7.6.1 v1 형식 KAT — 값을 바꾸면 기존 금고를 읽지 못한다" 주석을 단다.
 
-- [ ] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-vault` — Expected: FAIL (crate 없음)
-- [ ] **Step 3: 구현** — `chacha20poly1305::XChaCha20Poly1305`와 `aead::Payload { msg, aad }`, `hkdf::Hkdf::<sha2::Sha256>::new(Some(salt), ikm).expand(info, &mut out)`. nonce는 `getrandom`(또는 aead가 노출하는 OS RNG)으로 24바이트. AD는 Global Constraints의 길이 접두사 규칙으로 만든다.
-- [ ] **Step 4: KAT 값 고정 후 통과 확인** — Run: `cargo test -p keyharbor-vault` — Expected: PASS
-- [ ] **Step 5: 커밋** — `git commit -m "feat(vault): HKDF key separation and XChaCha20-Poly1305 field/domain-key records"`
+- [x] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-vault` — Expected: FAIL (crate 없음)
+- [x] **Step 3: 구현** — `chacha20poly1305::XChaCha20Poly1305`와 `aead::Payload { msg, aad }`, `hkdf::Hkdf::<sha2::Sha256>::new(Some(salt), ikm).expand(info, &mut out)`. nonce는 `getrandom`(또는 aead가 노출하는 OS RNG)으로 24바이트. AD는 Global Constraints의 길이 접두사 규칙으로 만든다.
+- [x] **Step 4: KAT 값 고정 후 통과 확인** — Run: `cargo test -p keyharbor-vault` — Expected: PASS
+- [x] **Step 5: 커밋** — `git commit -m "feat(vault): HKDF key separation and XChaCha20-Poly1305 field/domain-key records"`
 
 ---
 
@@ -260,7 +260,7 @@ fn keyset_derivation_separates_keys_and_depends_on_vault() {
 
 입력 인코딩은 07 §7.6.3에 `status`를 더한 것이다. origin은 바이트 순서로 정렬해 넣는다.
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 ```rust
 #[test]
@@ -277,10 +277,10 @@ fn mac_detects_origin_and_binding_changes_but_not_order() {
 
 각 번호를 별도 `assert!`로 쓴다.
 
-- [ ] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-vault meta` — Expected: FAIL
-- [ ] **Step 3: 구현** — `hmac::Hmac<Sha256>`, 검증은 `Mac::verify_slice`(상수 시간).
-- [ ] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-vault meta` — Expected: PASS
-- [ ] **Step 5: 커밋** — `git commit -m "feat(vault): item metadata HMAC"`
+- [x] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-vault meta` — Expected: FAIL
+- [x] **Step 3: 구현** — `hmac::Hmac<Sha256>`, 검증은 `Mac::verify_slice`(상수 시간).
+- [x] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-vault meta` — Expected: PASS
+- [x] **Step 5: 커밋** — `git commit -m "feat(vault): item metadata HMAC"`
 
 ---
 
@@ -298,11 +298,11 @@ fn mac_detects_origin_and_binding_changes_but_not_order() {
   - `struct FileKeyStore { dir: PathBuf }` — **시험 전용**. 파일 `<dir>/<account>.key`(0600, 32바이트). 모듈 문서 첫 줄: "INSECURE: tests only — stores the root key in plaintext."
   - `fn keystore_from_env() -> Box<dyn KeyStore>` — `KEYHARBOR_TEST_KEYSTORE_DIR`가 있으면 `FileKeyStore`, 없으면 `MacKeychain`. 이 환경 변수 이름은 README에 "시험 전용, 쓰지 말 것"으로 적는다.
 
-- [ ] **Step 1: 실패하는 테스트 작성** — `FileKeyStore`로: create 후 get 일치, 두 번째 create는 `KeyExists`, 없는 account의 get은 `KeyNotFound`, replace 후 get이 새 키, delete 후 get은 `KeyNotFound`, 파일 권한 `0o600`. `MacKeychain`도 같은 시나리오를 `#[ignore]` 테스트로 둔다(account = 무작위 UUID, 마지막에 delete).
-- [ ] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-vault keystore` — Expected: FAIL
-- [ ] **Step 3: 구현**
-- [ ] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-vault keystore` — Expected: PASS. 그리고 `cargo test -p keyharbor-vault keystore -- --ignored`를 한 번 실행해 Keychain 확인 창이 뜨는지, "항상 허용" 뒤 다시 실행하면 뜨지 않는지 **결과를 커밋 메시지 본문에 기록**한다(03 §3.4의 실험).
-- [ ] **Step 5: 커밋** — `git commit -m "feat(vault): KeyStore trait with macOS Keychain and test-only file store"`
+- [x] **Step 1: 실패하는 테스트 작성** — `FileKeyStore`로: create 후 get 일치, 두 번째 create는 `KeyExists`, 없는 account의 get은 `KeyNotFound`, replace 후 get이 새 키, delete 후 get은 `KeyNotFound`, 파일 권한 `0o600`. `MacKeychain`도 같은 시나리오를 `#[ignore]` 테스트로 둔다(account = 무작위 UUID, 마지막에 delete).
+- [x] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-vault keystore` — Expected: FAIL
+- [x] **Step 3: 구현**
+- [x] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-vault keystore` — Expected: PASS. 그리고 `cargo test -p keyharbor-vault keystore -- --ignored`를 한 번 실행해 Keychain 확인 창이 뜨는지, "항상 허용" 뒤 다시 실행하면 뜨지 않는지 **결과를 커밋 메시지 본문에 기록**한다(03 §3.4의 실험).
+- [x] **Step 5: 커밋** — `git commit -m "feat(vault): KeyStore trait with macOS Keychain and test-only file store"`
 
 ---
 
@@ -339,11 +339,11 @@ CREATE TABLE IF NOT EXISTS item_origins (item_id BLOB NOT NULL REFERENCES vault_
 
 `PRAGMA foreign_keys = ON`도 켠다.
 
-- [ ] **Step 1: 실패하는 테스트 작성** — `item_roundtrip_and_cascade`(insert → get 일치 → delete → 필드·origin 행 0개), `duplicate_name_fails_without_partial_rows`, `writes_bump_version`(insert·update·delete마다 +1), `rekey_is_atomic`(잘못된 domain 값 4를 넣어 CHECK로 실패시키면 kek_id와 meta_mac이 바뀌지 않음).
-- [ ] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-sqlite` — Expected: FAIL
-- [ ] **Step 3: 구현** — 쓰기는 기존 `reserve`처럼 `TransactionBehavior::Immediate`.
-- [ ] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-sqlite` — Expected: PASS (기존 테스트 포함)
-- [ ] **Step 5: 커밋** — `git commit -m "feat(sqlite): vault tables with atomic rekey and version counter"`
+- [x] **Step 1: 실패하는 테스트 작성** — `item_roundtrip_and_cascade`(insert → get 일치 → delete → 필드·origin 행 0개), `duplicate_name_fails_without_partial_rows`, `writes_bump_version`(insert·update·delete마다 +1), `rekey_is_atomic`(잘못된 domain 값 4를 넣어 CHECK로 실패시키면 kek_id와 meta_mac이 바뀌지 않음).
+- [x] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-sqlite` — Expected: FAIL
+- [x] **Step 3: 구현** — 쓰기는 기존 `reserve`처럼 `TransactionBehavior::Immediate`.
+- [x] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-sqlite` — Expected: PASS (기존 테스트 포함)
+- [x] **Step 5: 커밋** — `git commit -m "feat(sqlite): vault tables with atomic rekey and version counter"`
 
 ---
 
@@ -369,7 +369,7 @@ CREATE TABLE IF NOT EXISTS item_origins (item_id BLOB NOT NULL REFERENCES vault_
   - `fn resolve(&self, r: &PlaceholderRef) -> Result<Zeroizing<String>>` — 메타 MAC 검증 후 복호화. 이후 단계(치환)가 쓴다. **CLI는 이것을 호출하지 않는다.**
   - `fn item_origins_verified(&self, name: &ItemName) -> Result<(bool, Vec<Origin>)>` — 메타 MAC 검증 후 바인딩·origin 반환
 
-- [ ] **Step 1: 실패하는 테스트 작성** (`FileKeyStore` + tempdir)
+- [x] **Step 1: 실패하는 테스트 작성** (`FileKeyStore` + tempdir)
 
 ```rust
 #[test] fn init_twice_fails() { /* 두 번째 init → Err, 첫 금고 그대로 open 가능 */ }
@@ -397,10 +397,10 @@ CREATE TABLE IF NOT EXISTS item_origins (item_id BLOB NOT NULL REFERENCES vault_
 }
 ```
 
-- [ ] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-core` — Expected: FAIL
-- [ ] **Step 3: 구현** — 시각은 RFC 3339 UTC 문자열(외부 crate 없이 `std::time::SystemTime`에서 초 단위로 만들어도 된다). 메타 MAC은 쓰기마다 다시 계산한다.
-- [ ] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-core` — Expected: PASS
-- [ ] **Step 5: 커밋** — `git commit -m "feat(core): vault facade with schema checks, metadata MAC verification"`
+- [x] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-core` — Expected: FAIL
+- [x] **Step 3: 구현** — 시각은 RFC 3339 UTC 문자열(외부 crate 없이 `std::time::SystemTime`에서 초 단위로 만들어도 된다). 메타 MAC은 쓰기마다 다시 계산한다.
+- [x] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-core` — Expected: PASS
+- [x] **Step 5: 커밋** — `git commit -m "feat(core): vault facade with schema checks, metadata MAC verification"`
 
 ---
 
@@ -417,11 +417,11 @@ CREATE TABLE IF NOT EXISTS item_origins (item_id BLOB NOT NULL REFERENCES vault_
   - `fn Vault::open`이 복구를 맡는다: 금고 행의 kek_id로 DK를 풀 수 없으면 `account#next`의 키로 시도하고, 성공하면 `replace(account, next)` → `delete(next)`로 마무리한다.
   - 시험용 `#[doc(hidden)] pub fn rotate_root_with_failpoint(&self, stop_after: u8) -> Result<()>` — 1·2·3단계 뒤에 `Err("failpoint")`를 반환
 
-- [ ] **Step 1: 실패하는 테스트 작성** — `rotate_root_keeps_values`, `rotate_domain_only_touches_that_domain`(payment 교체 후 credentials 필드의 sealed 바이트는 그대로, card 필드는 바뀜, 값은 모두 resolve 일치), `interrupted_root_rotation_recovers`(stop_after 1·2·3 각각 → 새 `Vault::open` 성공 → 모든 값 resolve 일치 → `#next` 키 없음).
-- [ ] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-core rotate` — Expected: FAIL
-- [ ] **Step 3: 구현**
-- [ ] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-core rotate` — Expected: PASS
-- [ ] **Step 5: 커밋** — `git commit -m "feat(core): crash-safe root and domain key rotation"`
+- [x] **Step 1: 실패하는 테스트 작성** — `rotate_root_keeps_values`, `rotate_domain_only_touches_that_domain`(payment 교체 후 credentials 필드의 sealed 바이트는 그대로, card 필드는 바뀜, 값은 모두 resolve 일치), `interrupted_root_rotation_recovers`(stop_after 1·2·3 각각 → 새 `Vault::open` 성공 → 모든 값 resolve 일치 → `#next` 키 없음).
+- [x] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-core rotate` — Expected: FAIL
+- [x] **Step 3: 구현**
+- [x] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-core rotate` — Expected: PASS
+- [x] **Step 5: 커밋** — `git commit -m "feat(core): crash-safe root and domain key rotation"`
 
 ---
 
@@ -440,7 +440,7 @@ CREATE TABLE IF NOT EXISTS item_origins (item_id BLOB NOT NULL REFERENCES vault_
 
 age 0.12의 정확한 API는 docs.rs `age/0.12.1`에서 `Encryptor::with_recipients`, `scrypt::Recipient::new`, `Decryptor::new`, `scrypt::Identity::new`를 확인하고 쓴다.
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 ```rust
 #[test] fn parses_common_dotenv_forms() {
@@ -458,10 +458,10 @@ age 0.12의 정확한 API는 docs.rs `age/0.12.1`에서 `Encryptor::with_recipie
 #[test] fn wrong_passphrase_and_existing_target_fail() { /* 둘 다 Err, 기존 파일 내용 불변 */ }
 ```
 
-- [ ] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-core dotenv transfer` — Expected: FAIL
-- [ ] **Step 3: 구현**
-- [ ] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-core` — Expected: PASS
-- [ ] **Step 5: 커밋** — `git commit -m "feat(core): dotenv import and age export/import"`
+- [x] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor-core dotenv transfer` — Expected: FAIL
+- [x] **Step 3: 구현**
+- [x] **Step 4: 통과 확인** — Run: `cargo test -p keyharbor-core` — Expected: PASS
+- [x] **Step 5: 커밋** — `git commit -m "feat(core): dotenv import and age export/import"`
 
 ---
 
@@ -491,7 +491,7 @@ age 0.12의 정확한 API는 docs.rs `age/0.12.1`에서 `Encryptor::with_recipie
 
 `--set`은 비밀이 아닌 필드(예: `username`, `holder`, `exp_month`, `exp_year`, `full_name`, `email`, `phone`, `line1` …)에만 허용한다. 비밀 필드에 `--set`을 쓰면 `"field <f> is secret; use the prompt or --stdin"` 오류로 거부한다. 비밀 필드 목록은 `vault_cmd.rs`에 `const SECRET_FIELDS: &[&str]`로 둔다(Env는 전부 비밀). stdin JSON과 프롬프트로 받은 값은 즉시 `Zeroizing<String>`에 넣는다.
 
-- [ ] **Step 1: 실패하는 테스트 작성** (`tests/vault_cli.rs`, `env!("CARGO_BIN_EXE_keyharbor")`, 각 테스트마다 tempdir data-dir + `KEYHARBOR_TEST_KEYSTORE_DIR`)
+- [x] **Step 1: 실패하는 테스트 작성** (`tests/vault_cli.rs`, `env!("CARGO_BIN_EXE_keyharbor")`, 각 테스트마다 tempdir data-dir + `KEYHARBOR_TEST_KEYSTORE_DIR`)
 
 ```rust
 #[test] fn init_add_list_rm_flow() { /* init → add github --kind login --origin https://github.com --set username=me --stdin '{"password":"KH-SYNTH-…"}' → list에 github·login·credentials·active → rm → list 비어 있음 */ }
@@ -508,10 +508,10 @@ age 0.12의 정확한 API는 docs.rs `age/0.12.1`에서 `Encryptor::with_recipie
 #[test] fn missing_key_is_reported_not_recreated() { /* keystore 디렉터리 비움 → `vault list` 실패, 메시지에 "vault key not found", keystore 디렉터리에 새 파일 없음 */ }
 ```
 
-- [ ] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor --test vault_cli` — Expected: FAIL
-- [ ] **Step 3: 구현** — 입력 수집은 `vault_cmd.rs`의 `fn collect_secret_fields(kind: ItemKind, stdin: bool) -> Result<Vec<(FieldName, Zeroizing<String>)>>` 하나로 모은다. TTY가 아니고 `--stdin`도 없는데 비밀 필드가 필요하면 `"secret input requires a terminal or --stdin"`로 실패한다.
-- [ ] **Step 4: 통과 확인** — Run: `cargo test --workspace` — Expected: PASS
-- [ ] **Step 5: 커밋** — `git commit -m "feat(cli): keyharbor vault commands without plaintext output"`
+- [x] **Step 2: 실패 확인** — Run: `cargo test -p keyharbor --test vault_cli` — Expected: FAIL
+- [x] **Step 3: 구현** — 입력 수집은 `vault_cmd.rs`의 `fn collect_secret_fields(kind: ItemKind, stdin: bool) -> Result<Vec<(FieldName, Zeroizing<String>)>>` 하나로 모은다. TTY가 아니고 `--stdin`도 없는데 비밀 필드가 필요하면 `"secret input requires a terminal or --stdin"`로 실패한다.
+- [x] **Step 4: 통과 확인** — Run: `cargo test --workspace` — Expected: PASS
+- [x] **Step 5: 커밋** — `git commit -m "feat(cli): keyharbor vault commands without plaintext output"`
 
 ---
 
@@ -520,7 +520,17 @@ age 0.12의 정확한 API는 docs.rs `age/0.12.1`에서 `Encryptor::with_recipie
 **Files:**
 - Modify: `rebuild/README.md`, `docs/design/05-roadmap-and-verification.md` (2단계 표에 "완료" 표시와 실제 테스트 이름), `docs/design/06-requirements-log.md` (Keychain 확인 창 실험 결과를 03 §3.4 [미검증] 대신 기록)
 
-- [ ] **Step 1: README 갱신** — 금고 명령 표, "CLI는 평문을 출력하지 않는다 — 값 보기는 관리 앱(5단계)", "Mac·키를 잃으면 데이터를 잃는다, `vault export`로 age 백업", `KEYHARBOR_TEST_KEYSTORE_DIR`은 시험 전용이라는 경고, 키체인 확인 창 안내.
-- [ ] **Step 2: 전체 검증** — Run: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` — Expected: 세 명령 모두 성공
-- [ ] **Step 3: 실제 Keychain 수동 확인** — `KEYHARBOR_TEST_KEYSTORE_DIR` 없이 임시 `--data-dir`로 `vault init` → `vault add` → `vault list` → `vault rotate-root` → `vault list`. 확인 창 횟수를 기록한 뒤 `security delete-generic-password -s dev.keyharbor.vault -a <vault_id>`로 정리한다.
-- [ ] **Step 4: 커밋** — `git commit -m "docs: phase 2 vault usage, limits, and verification results"`
+- [x] **Step 1: README 갱신** — 금고 명령 표, "CLI는 평문을 출력하지 않는다 — 값 보기는 관리 앱(5단계)", "Mac·키를 잃으면 데이터를 잃는다, `vault export`로 age 백업", `KEYHARBOR_TEST_KEYSTORE_DIR`은 시험 전용이라는 경고, 키체인 확인 창 안내.
+- [x] **Step 2: 전체 검증** — Run: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` — Expected: 세 명령 모두 성공
+- [ ] **Step 3: 실제 Keychain 수동 확인** — ⏸ 미실행: 2026-10-28 자동 모드 권한 검사가 실제 키체인 쓰기(Secret-Store Writes)를 거부했다. 사용자가 직접 실행해야 한다(아래 「실행 기록」). — `KEYHARBOR_TEST_KEYSTORE_DIR` 없이 임시 `--data-dir`로 `vault init` → `vault add` → `vault list` → `vault rotate-root` → `vault list`. 확인 창 횟수를 기록한 뒤 `security delete-generic-password -s dev.keyharbor.vault -a <vault_id>`로 정리한다.
+- [x] **Step 4: 커밋** — `git commit -m "docs: phase 2 vault usage, limits, and verification results"`
+
+---
+
+## 실행 기록 (2026-10-28)
+
+- 브랜치 `feat/phase2-local-vault`, 커밋 `1fd1b03`..`e11eb9b` (main 첫 커밋 `ebd1d48` 위).
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` → 62 passed, 0 failed, 1 ignored(실제 키체인 테스트).
+- Task 4 Step 4: ignored 키체인 테스트 2회 실행, 각 0.06초, 확인 창 없음(같은 바이너리가 생성·조회).
+- **Task 10 Step 3 미실행 이유**: 실제 login keychain에 항목을 만드는 명령이 자동 모드 권한 검사(Secret-Store Writes)에서 거부됐다. 재빌드한 다른 바이너리가 기존 항목을 읽을 때 확인 창이 뜨는지는 미확인이며, 사용자가 직접 실행할 명령은 `rebuild/README.md`가 아니라 이 세션의 최종 보고에 있다. 결과를 받으면 `docs/design/03-security-whitepaper.md` §3.4에 기록한다.
+- 최종 브랜치 검토(별도 에이전트): Critical 0, Important 3(I1 교체 중 `#next` 삭제, I2 교체·쓰기 경합, I3 평문 테스트 키 저장소) → 모두 RED→GREEN으로 수정(`e11eb9b`). Minor 13건은 보류, 목록은 `docs/design/06-requirements-log.md` §6.5.
