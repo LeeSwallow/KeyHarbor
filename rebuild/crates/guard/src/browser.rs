@@ -185,6 +185,14 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
     fn literals(&self, literals: &[&str]) -> Result<()> {
         self.guard.check_literals(self.agent, literals)
     }
+
+    /// Refuses selectors outside the structural grammar of `pep::selector` (I3).
+    fn target(&self, target: &Value) -> Result<()> {
+        match target.get("selector").and_then(Value::as_str) {
+            Some(css) => crate::pep::selector::check(css),
+            None => Ok(()),
+        }
+    }
 }
 
 impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser<'_, B> {
@@ -203,11 +211,13 @@ impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser
         self.guard.redact_outcome(outcome)
     }
     async fn click(&mut self, target: &Value) -> Result<Value> {
+        self.target(target)?;
         self.literals(&[selector(target)])?;
         let outcome = self.inner.click(target).await;
         self.guard.redact_outcome(outcome)
     }
     async fn fill(&mut self, target: &Value, text: &str) -> Result<Value> {
+        self.target(target)?;
         self.literals(&[selector(target), text])?;
         let outcome = self.fill_checked(target, text).await;
         self.guard.redact_outcome(outcome)
@@ -238,6 +248,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser
     }
     async fn wait(&mut self, until: &WaitFor) -> Result<Value> {
         if let WaitFor::Selector(selector) = until {
+            crate::pep::selector::check(selector)?;
             self.literals(&[selector])?;
         }
         let outcome = self.inner.wait(until).await;

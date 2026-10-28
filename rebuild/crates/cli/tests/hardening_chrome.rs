@@ -213,3 +213,41 @@ fn the_masker_is_no_oracle_and_escaped_values_stay_masked() {
     );
     h.assert_absent(&[&quoted]);
 }
+
+#[test]
+fn selectors_cannot_test_what_a_field_holds() {
+    let Some(browser) = chrome() else { return };
+    // A page that copies what is typed into the value attribute, which `[value^=…]` reads.
+    let base = serve_fn(|_| {
+        "<!doctype html><title>Login</title><input id=user aria-label=User placeholder=name \
+         oninput=\"this.setAttribute('value', this.value)\"><button id=go>Go</button>"
+            .to_owned()
+    });
+    let mut h = Harness::new();
+    let user = h.synth("user");
+    h.add("site", "login", &[&base], json!({"username": user}));
+    h.open(&browser);
+    h.ok_call(json!({"op": "navigate", "url": format!("{base}/")}));
+    h.fill("#user", "{{secret:site.username}}").unwrap();
+    for selector in [
+        "input[value^=\"KH-SYNTH\"]",
+        "#user:placeholder-shown",
+        "body:has(#user[value^=K])",
+        "#user:valid",
+        "input\\5b value^=K]",
+    ] {
+        for request in [
+            json!({"op": "wait", "selector": selector}),
+            json!({"op": "click", "target": {"selector": selector}}),
+            json!({"op": "fill", "target": {"selector": selector}, "text": "x"}),
+        ] {
+            let error = h.denied(request);
+            assert!(
+                error.starts_with("selector not allowed"),
+                "{selector}: {error}"
+            );
+        }
+    }
+    h.ok_call(json!({"op": "click", "target": {"selector": "button#go"}}));
+    h.assert_absent(&[&user]);
+}

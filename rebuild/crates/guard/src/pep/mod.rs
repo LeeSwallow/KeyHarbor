@@ -2,4 +2,5 @@
 
 pub mod mask;
 pub mod origin;
+pub mod selector;
 pub mod substitute;
