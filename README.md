@@ -35,13 +35,16 @@ keyharbor policy deny --agent codex --resource domain --target payment
 keyharbor audit --limit 20                             # 누가 어떤 항목을 어디에 썼는지 (값 없음)
 ```
 
-에이전트는 MCP 도구 `browser_fill`에 `{{secret:blog.password}}`처럼 placeholder를 넘깁니다. 등록된 사이트(origin)의 입력란일 때만 값이 들어가고, 에이전트가 받는 결과에서는 값이 다시 placeholder로 바뀝니다.
+에이전트는 MCP 도구 `browser_fill`에 `{{secret:blog.password}}`처럼 placeholder를 넘기거나, `browser_login {item: "blog"}`으로 로그인 폼을 한 번에 채웁니다. 등록된 사이트(origin)의 입력란일 때만 값이 들어가고(비밀번호는 비밀번호 칸에만), 에이전트가 받는 결과에서는 값이 다시 placeholder로 바뀝니다.
+
+API 키는 `keyharbor vault import-env openai .env` 뒤 `keyharbor run --env openai -- <명령>`으로 주입합니다. `secret`·`env` 항목은 `run`에 기본으로 쓸 수 있고, 브라우저에는 origin을 등록했을 때 그 사이트에만 들어갑니다. 항목·필드·세션에는 에이전트가 읽는 설명을, 항목에는 만료일(`--expires`, 기본 무기한)을 붙일 수 있습니다. browser-use와 함께 쓰는 방법: [docs/guides/browser-use.md](docs/guides/browser-use.md).
 
 항목 종류는 `login`, `secret`, `env`, `card`, `identity`, `address`이고 자격 증명(`login`)·결제(`card`)·개인정보(`identity`·`address`)·개발자(`secret`·`env`, API 키와 환경 변수) 네 도메인으로 나뉘어 각각 다른 키로 암호화됩니다. 전체 명령은 [`rebuild/README.md`](rebuild/README.md)에 있습니다.
 
 ## 알아 둘 것
 
 - **CLI는 평문을 출력하지 않습니다.** 셸을 쓰는 에이전트가 값을 꺼내지 못하게 하려는 설계입니다. 비밀 값은 숨김 프롬프트나 `--stdin`으로만 받고, 명령행 인자로는 받지 않습니다.
+- **보호를 약하게 하는 변경은 터미널에서 `yes`를 쳐야 합니다**(origin 바인딩 끄기, origin 추가, `run` 허용, 정책 allow, 기록 끄기 등). 터미널이 없으면 거부됩니다. 다만 터미널을 흉내 내는 프로그램은 대신 답할 수 있어 강한 경계는 아닙니다.
 - **Mac이나 Keychain 항목을 잃으면 금고도 잃습니다.** 복구 서비스는 없습니다. `vault export`로 만든 백업과 그 비밀번호는 직접 보관하세요.
 - 서명하지 않은 바이너리라서 업데이트 후 macOS가 Keychain 접근을 다시 물을 수 있습니다. "항상 허용"을 누르면 됩니다.
 - `keyharbor run`의 자식 프로세스는 값을 평문으로 갖습니다. 그 프로세스가 값을 밖으로 보내는 것은 막지 못하고, 출력만 가립니다.
