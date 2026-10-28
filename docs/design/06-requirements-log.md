@@ -147,6 +147,9 @@ flowchart TD
 | J-65 | `browser_login`: username은 `autocomplete=username` → `type=email` → name·id에 user/email/login 순, password는 C1과 같은 판정. 같은 origin의 frame까지 찾는다(`documentURL`의 origin 비교). 항목에 username 필드가 없으면 password만 넣는다. 입력은 `fill`의 검사 경로를 그대로 부른다. login 종류만 받는다 | 02 §2.5.2 |
 | J-66 | Minor: 제어 socket의 `agent`가 `*`이면 거부(빈 문자열은 이미 거부). `RLIMIT_CORE=0`은 `keyharbor` 바이너리 시작 시 설정해 감독자(`__supervise`)와 CLI 모두에 적용된다. 거부 기록은 세션당 초당 10건, 넘친 수는 다음 초가 시작되거나 감독자가 끝날 때 `secret_denied_suppressed` 한 건(결과 = 개수)으로 남긴다 | 02 §2.7 |
 | J-67 | I4: 탐색 상태는 broker가 `Page.frameRequestedNavigation`·`frameStartedNavigating`·`frameStartedLoading`·`frameScheduledNavigation`(시작), `frameStoppedLoading`·`frameDetached`(끝)으로 판단한다. `frameClearedScheduledNavigation`은 끝으로 보지 않는다(Chrome이 실제 탐색이 시작될 때 보낸다). 정착 대기는 브라우저에 묻지 않는다: 탐색이 대기 중이면 페이지 명령(`Page.getFrameTree` 등)이 새 문서가 올 때까지 멈추기 때문 | 03 §3.8 |
+| J-68 | 디자인 시스템: 주 버튼과 개수 배지는 강조색이 아니라 한 단계 짙은 `--c-accent-fill`(라이트 `#047a7a`)을 칠한다. 흰 글자가 `#05a8a8` 위에서 2.93:1이라 AA를 넘지 못한다. 강조색은 포커스·토글·탭에 남긴다. `--c-ink-3`은 보조 글자로 3:1만 약속한다 | ADR-0015 |
+| J-69 | 확장의 쿠키 변환: host-only 쿠키는 CDP에 `domain` 없이 `url`로 준다. CDP는 `domain`이 있으면 도메인 쿠키로 넓히기 때문이다. `SameSite=None`인데 `Secure`가 아니면 sameSite를 뺀다. 파티션 쿠키는 최상위 사이트가 이 사이트인 것만 넘긴다 | integrations/browser-extension/README.md |
+| J-70 | 확장 권한에 `scripting`을 더한다. 사람이 `localStorage`도 넘기기를 고를 때 그 탭에서 읽는 데만 쓴다. 사이트 접근은 설치 때 받지 않고 넘길 때 그 사이트와 하위 도메인만 `permissions.request`로 묻는다 | integrations/browser-extension/README.md |
 
 ## 6.4 열린 질문
 
