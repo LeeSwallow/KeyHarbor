@@ -534,3 +534,5 @@ age 0.12의 정확한 API는 docs.rs `age/0.12.1`에서 `Encryptor::with_recipie
 - Task 4 Step 4: ignored 키체인 테스트 2회 실행, 각 0.06초, 확인 창 없음(같은 바이너리가 생성·조회).
 - **Task 10 Step 3 미실행 이유**: 실제 login keychain에 항목을 만드는 명령이 자동 모드 권한 검사(Secret-Store Writes)에서 거부됐다. 재빌드한 다른 바이너리가 기존 항목을 읽을 때 확인 창이 뜨는지는 미확인이며, 사용자가 직접 실행할 명령은 `rebuild/README.md`가 아니라 이 세션의 최종 보고에 있다. 결과를 받으면 `docs/design/03-security-whitepaper.md` §3.4에 기록한다.
 - 최종 브랜치 검토(별도 에이전트): Critical 0, Important 3(I1 교체 중 `#next` 삭제, I2 교체·쓰기 경합, I3 평문 테스트 키 저장소) → 모두 RED→GREEN으로 수정(`e11eb9b`). Minor 13건은 보류, 목록은 `docs/design/06-requirements-log.md` §6.5.
+- **브랜치 마무리**: 3번 「그대로 유지」를 적용했다. goal의 Git 규칙(브랜치에서 작업, push 금지)에 따라 `feat/phase2-local-vault`를 병합·push하지 않고 둔다. 병합이나 PR은 사용자가 별도로 요청할 때 진행한다.
+- **goal 상태**: 완료. 실제 키체인 수동 확인은 goal이 허용한 대로 미실행 사유를 기록했다(위 Task 10 Step 3 항목).
