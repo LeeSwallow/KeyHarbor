@@ -10,12 +10,12 @@ use keyharbor_broker::{
     lifecycle::{self, DEFAULT_BROWSER, OpenOptions},
     paths, supervisor,
 };
-use keyharbor_core::policy::{Action, Decision, decide};
 use keyharbor_domain::ports::*;
 use keyharbor_domain::{
     RequestId, SessionId, SessionName, State,
     vault::{Domain, ItemKind},
 };
+use keyharbor_guard::pdp::{Action, Decision, decide};
 use keyharbor_sqlite::SqliteStore;
 use rmcp::{
     ServerHandler, ServiceExt,

@@ -9,16 +9,16 @@
 use crate::{cdp::Cdp, paths, supervisor::Shared};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
-use keyharbor_core::{
-    ItemStatus, LOCAL_AGENT, Vault, fill_template,
-    mask::Masker,
-    policy::{Action, decide},
-};
+use keyharbor_core::{ItemStatus, LOCAL_AGENT, PlaintextAccess, Vault, fill_template};
 use keyharbor_domain::ports::*;
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     policy::parse_agent,
     vault::{ItemName, Origin, parse_placeholders},
+};
+use keyharbor_guard::{
+    pdp::{Action, decide},
+    pep::mask::{Masker, masker},
 };
 use keyharbor_sqlite::SqliteStore;
 use serde_json::{Value, json};
@@ -183,7 +183,8 @@ impl Ops {
                     return Err(deny(item, "not_found"));
                 }
             }
-            fill_template(template, |r| vault.resolve(r)).map_err(|_| deny(&first, "vault"))
+            fill_template(template, |r| vault.resolve(&PlaintextAccess::issue(), r))
+                .map_err(|_| deny(&first, "vault"))
         });
         let text = match checked {
             Ok(result) => result?,
@@ -200,7 +201,7 @@ impl Ops {
                 return Ok(value);
             };
             if loaded.masker.is_none() {
-                loaded.masker = Some(loaded.vault.masker()?);
+                loaded.masker = Some(masker(&loaded.vault)?);
             }
             Ok(loaded.masker.as_ref().expect("built").redact_json(value))
         });

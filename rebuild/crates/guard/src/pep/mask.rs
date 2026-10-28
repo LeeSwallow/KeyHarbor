@@ -5,11 +5,10 @@
 //! Values shorter than 4 characters are not masked (they would match almost any text). The
 //! automaton keeps its own copy of the patterns, which is not zeroized on drop.
 
-use crate::Vault;
 use aho_corasick::{AhoCorasick, MatchKind};
-use anyhow::{Context, Result, anyhow};
-use keyharbor_domain::vault::{Domain, FieldName, ItemName, PlaceholderRef};
-use keyharbor_vault::record::{FieldAd, open_field};
+use anyhow::Result;
+use keyharbor_core::{PlaintextAccess, Vault};
+use keyharbor_domain::vault::PlaceholderRef;
 use serde_json::Value;
 use zeroize::Zeroizing;
 
@@ -204,52 +203,19 @@ impl Masker {
     }
 }
 
-impl Vault {
-    /// A masker for every field value in the vault, whatever its status or policy (an item an
-    /// agent may not use must not leak either). Fails if any value cannot be decrypted, so
-    /// callers can withhold responses rather than send them unmasked.
-    pub fn masker(&self) -> Result<Masker> {
-        let version = self.version()?;
-        let mut values = Vec::new();
-        for row in self.store.item_list()? {
-            let item = ItemName::parse(&row.name).map_err(|e| anyhow!("{e}"))?;
-            let domain = Domain::from_byte(row.domain).context("unknown domain in database")?;
-            let (_, fields) = self
-                .store
-                .item_get(&row.name)?
-                .context("item changed while masking")?;
-            for field in fields {
-                let ad = FieldAd {
-                    vault: &self.vault_id,
-                    domain,
-                    item: &row.id,
-                    field: &field.field,
-                };
-                let bytes = open_field(&self.domain_keys[&domain].1, &ad, &field.sealed)
-                    .map_err(|e| anyhow!("{e}"))
-                    .context("could not decrypt a value for masking")?;
-                let text = Zeroizing::new(
-                    std::str::from_utf8(&bytes)
-                        .context("stored field is not UTF-8")?
-                        .to_owned(),
-                );
-                values.push((
-                    PlaceholderRef {
-                        item: item.clone(),
-                        field: FieldName::parse(&field.field).map_err(|e| anyhow!("{e}"))?,
-                    },
-                    text,
-                ));
-            }
-        }
-        Ok(Masker::build(values).with_version(version))
-    }
+/// A masker for every field value in the vault, whatever its status or policy (an item an
+/// agent may not use must not leak either), tagged with the vault version it was read at.
+/// Fails if any value cannot be decrypted, so callers can withhold responses rather than send
+/// them unmasked. The value list never leaves this function; only the automaton does (J-37).
+pub fn masker(vault: &Vault) -> Result<Masker> {
+    let values = vault.mask_values(&PlaintextAccess::issue())?;
+    Ok(Masker::build(values.values).with_version(values.version))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{env, field, init, login, pref};
+    use crate::test_support::{env, field, init, login, pref};
     use keyharbor_domain::vault::ItemKind;
     use serde_json::json;
 
@@ -350,7 +316,7 @@ mod tests {
         card.fields = vec![field("number", "4000056655665556"), field("cvc", "123")];
         v.add(card).unwrap();
         let mut draft = login("draft", "KH-SYNTH-draft");
-        draft.status = crate::ItemStatus::Discarded;
+        draft.status = keyharbor_core::ItemStatus::Discarded;
         v.add(draft).unwrap();
         let m = v.masker().unwrap();
         assert_eq!(m.version(), Some(v.version().unwrap()));

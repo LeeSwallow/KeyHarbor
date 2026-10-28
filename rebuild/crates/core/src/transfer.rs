@@ -1,6 +1,6 @@
 //! Encrypted export/import in the age format (docs/design/07-cryptography-design.md §7.7).
 
-use crate::{ItemSource, ItemStatus, NewItem, Vault};
+use crate::{ItemSource, ItemStatus, NewItem, PlaintextAccess, Vault};
 use age::secrecy::SecretString;
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::vault::{FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
@@ -69,6 +69,9 @@ impl Vault {
         if let Some(bad) = summaries.iter().find(|s| s.tampered) {
             bail!("item {} failed verification; refusing to export", bad.name);
         }
+        // The user asked for a backup of every value: export is the one plaintext path that
+        // does not go through the guard (it never reaches an agent, only the age file).
+        let access = PlaintextAccess::issue();
         let mut values: Vec<Vec<(String, Zeroizing<String>)>> = Vec::new();
         for summary in &summaries {
             let item = ItemName::parse(&summary.name).map_err(|e| anyhow!(e.to_string()))?;
@@ -78,7 +81,7 @@ impl Vault {
                     item: item.clone(),
                     field: FieldName::parse(field).map_err(|e| anyhow!(e.to_string()))?,
                 };
-                fields.push((field.clone(), self.resolve(&reference)?));
+                fields.push((field.clone(), self.resolve(&access, &reference)?));
             }
             values.push(fields);
         }

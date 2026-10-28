@@ -1,0 +1,20 @@
+[package]
+name = "keyharbor-guard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+aho-corasick.workspace = true
+anyhow.workspace = true
+keyharbor-core = { path = "../core" }
+keyharbor-domain = { path = "../domain" }
+serde_json.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+keyharbor-sqlite = { path = "../sqlite" }
+keyharbor-vault = { path = "../vault" }
+tempfile.workspace = true
+tokio.workspace = true

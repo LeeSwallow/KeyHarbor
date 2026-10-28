@@ -6,18 +6,9 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
-use keyharbor_core::{
-    ItemStatus, Vault, fill_template,
-    mask::Masker,
-    parse_dotenv,
-    policy::{Action, decide},
-};
-use keyharbor_domain::ports::*;
-use keyharbor_domain::{
-    audit::{AuditEvent, AuditKind},
-    policy::{ANY, Rule, parse_agent},
-    vault::{FieldName, ItemKind, ItemName, PlaceholderRef, parse_placeholders},
-};
+use keyharbor_core::Vault;
+use keyharbor_domain::policy::{ANY, parse_agent};
+use keyharbor_guard::{pep::mask::Masker, run as guard_run};
 use keyharbor_sqlite::SqliteStore;
 use keyharbor_vault::keystore::keystore_from_env;
 use std::{
@@ -42,68 +33,6 @@ pub struct RunArgs {
     /// The command and its arguments, after `--`
     #[arg(last = true, required = true, value_name = "COMMAND")]
     command: Vec<OsString>,
-}
-
-struct Checker<'a> {
-    vault: &'a Vault,
-    store: &'a SqliteStore,
-    rules: Vec<Rule>,
-    agent: &'a str,
-    checked: Vec<ItemName>,
-}
-
-impl Checker<'_> {
-    fn deny(&self, item: &ItemName, reason: &str) -> anyhow::Error {
-        let _ = self.store.record(
-            &AuditEvent::new(self.agent, AuditKind::SecretDenied, reason).item(item.as_str()),
-        );
-        anyhow!("denied: {} ({reason})", item.as_str())
-    }
-
-    /// Checks `item` once; returns its field names.
-    fn check(&mut self, item: &ItemName, env_only: bool) -> Result<Vec<String>> {
-        let info = match self.vault.item_use(item) {
-            Ok(Some(info)) => info,
-            Ok(None) => return Err(self.deny(item, "not_found")),
-            Err(_) => return Err(self.deny(item, "tampered")),
-        };
-        if env_only && info.kind != ItemKind::Env {
-            bail!(
-                "{} is not an env item; use --env-file with placeholders",
-                item.as_str()
-            );
-        }
-        if info.status == ItemStatus::Discarded {
-            return Err(self.deny(item, "discarded"));
-        }
-        let action = Action::UseItem {
-            item: item.clone(),
-            domain: info.domain,
-        };
-        if !decide(&self.rules, self.agent, &action).allowed() {
-            return Err(self.deny(item, "policy"));
-        }
-        // Origin-bound values are only ever typed into their sites, never handed to a process.
-        if info.origin_binding {
-            return Err(self.deny(item, "origin"));
-        }
-        if !self.checked.contains(item) {
-            self.checked.push(item.clone());
-        }
-        Ok(info.fields)
-    }
-}
-
-fn add_var(
-    vars: &mut Vec<(String, Zeroizing<String>)>,
-    name: &str,
-    value: Zeroizing<String>,
-) -> Result<()> {
-    if vars.iter().any(|(n, _)| n == name) {
-        bail!("variable {name} given twice");
-    }
-    vars.push((name.to_owned(), value));
-    Ok(())
 }
 
 /// Copies `input` to `output` a line at a time through the masker.
@@ -139,53 +68,17 @@ pub fn run(root: &Path, args: RunArgs) -> Result<i32> {
     }
     let store = SqliteStore::open(root)?;
     let vault = Vault::open(SqliteStore::open(root)?, keystore_from_env())?;
-    let mut checker = Checker {
-        vault: &vault,
-        store: &store,
-        rules: store.policy_rules()?,
-        agent: &agent,
-        checked: Vec::new(),
-    };
-
-    // Check everything before resolving anything.
-    let mut item_vars: Vec<(ItemName, Vec<String>)> = Vec::new();
-    for name in &args.items {
-        let item = ItemName::parse(name).map_err(|e| anyhow!("{e}"))?;
-        let fields = checker.check(&item, true)?;
-        item_vars.push((item, fields));
-    }
-    let mut templates = Vec::new();
-    for path in &args.files {
-        let text = Zeroizing::new(
-            std::fs::read_to_string(path)
-                .with_context(|| format!("cannot read {}", path.display()))?,
-        );
-        for (name, template) in parse_dotenv(&text)? {
-            for reference in parse_placeholders(&template).map_err(|e| anyhow!("{e}"))? {
-                let fields = checker.check(&reference.item, false)?;
-                if !fields.iter().any(|f| f == reference.field.as_str()) {
-                    return Err(checker.deny(&reference.item, "not_found"));
-                }
-            }
-            templates.push((name, template));
-        }
-    }
-
-    let mut vars: Vec<(String, Zeroizing<String>)> = Vec::new();
-    for (item, fields) in &item_vars {
-        for field in fields {
-            let reference = PlaceholderRef {
-                item: item.clone(),
-                field: FieldName::parse(field).map_err(|e| anyhow!("{e}"))?,
-            };
-            add_var(&mut vars, field, vault.resolve(&reference)?)?;
-        }
-    }
-    for (name, template) in &templates {
-        let value = fill_template(template, |r| vault.resolve(r))?;
-        add_var(&mut vars, name.as_str(), value)?;
-    }
-    let masker = vault.masker()?;
+    // The guard checks every item before resolving any, and builds the output masker.
+    let mut injection = guard_run::prepare(
+        &store,
+        &vault,
+        &guard_run::Request {
+            agent: &agent,
+            items: &args.items,
+            files: &args.files,
+        },
+    )?;
+    let vars = std::mem::take(&mut injection.vars);
 
     let mut command = Command::new(&args.command[0]);
     command
@@ -213,17 +106,14 @@ pub fn run(root: &Path, args: RunArgs) -> Result<i32> {
         .with_context(|| format!("could not start {}", Path::new(&args.command[0]).display()))?;
     drop(command);
     drop(vars);
-    for item in &checker.checked {
-        let _ = store
-            .record(&AuditEvent::new(&agent, AuditKind::EnvInjected, "ok").item(item.as_str()));
-    }
+    injection.record_injected(&store);
     let (out, err) = (
         child.stdout.take().context("child stdout")?,
         child.stderr.take().context("child stderr")?,
     );
     let status = std::thread::scope(|scope| {
-        scope.spawn(|| pump(out, std::io::stdout().lock(), &masker));
-        scope.spawn(|| pump(err, std::io::stderr().lock(), &masker));
+        scope.spawn(|| pump(out, std::io::stdout().lock(), &injection.masker));
+        scope.spawn(|| pump(err, std::io::stderr().lock(), &injection.masker));
         child.wait()
     })?;
     use std::os::unix::process::ExitStatusExt;

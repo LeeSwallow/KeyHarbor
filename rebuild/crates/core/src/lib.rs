@@ -1,12 +1,19 @@
-//! Vault use cases shared by the CLI, MCP server and admin app.
-//! Plaintext leaves this crate only through `Vault::resolve`, which the CLI never calls.
+//! Vault use cases shared by the CLI, MCP server and admin app. Depends only on the ports in
+//! `keyharbor_domain::ports` and on the I/O-free record functions of `keyharbor-vault`.
+//!
+//! Plaintext leaves this crate only through `Vault::resolve` and `Vault::mask_values`, which
+//! demand a [`PlaintextAccess`]: the guard layer (`keyharbor-guard`) issues it after its
+//! policy and origin checks.
 
+mod access;
 mod dotenv;
-pub mod mask;
-pub mod policy;
 mod rotate;
+#[cfg(test)]
+mod test_support;
 mod transfer;
 mod usage;
+
+pub use access::PlaintextAccess;
 
 pub use dotenv::parse_dotenv;
 pub use transfer::ImportReport;
@@ -128,6 +135,12 @@ pub struct ItemSummary {
 /// What a vault needs from storage: its tables and the usage record.
 pub trait VaultBackend: VaultStore + AuditStore {}
 impl<T: VaultStore + AuditStore> VaultBackend for T {}
+
+/// Every vault value with its placeholder, as of `version`. Values are zeroized on drop.
+pub struct MaskValues {
+    pub version: i64,
+    pub values: Vec<(PlaceholderRef, Zeroizing<String>)>,
+}
 
 pub struct Vault {
     store: Box<dyn VaultBackend>,
@@ -523,8 +536,13 @@ impl Vault {
         Ok(out)
     }
 
-    /// Decrypts one field after verifying the item's metadata. Not exposed by the CLI.
-    pub fn resolve(&self, reference: &PlaceholderRef) -> Result<Zeroizing<String>> {
+    /// Decrypts one field after verifying the item's metadata. Only the guard (and export)
+    /// holds the capability this needs.
+    pub fn resolve(
+        &self,
+        _access: &PlaintextAccess,
+        reference: &PlaceholderRef,
+    ) -> Result<Zeroizing<String>> {
         let (row, fields) = self
             .store
             .item_get(reference.item.as_str())?
@@ -547,6 +565,47 @@ impl Vault {
         Ok(Zeroizing::new(text.to_owned()))
     }
 
+    /// Every field value in the vault, whatever its status or policy (an item an agent may not
+    /// use must not leak either), with the version they were read at — for building the
+    /// guard's masker. Fails if any value cannot be decrypted, so callers can withhold
+    /// responses rather than send them unmasked.
+    pub fn mask_values(&self, _access: &PlaintextAccess) -> Result<MaskValues> {
+        let version = self.version()?;
+        let mut values = Vec::new();
+        for row in self.store.item_list()? {
+            let item = ItemName::parse(&row.name).map_err(|e| anyhow!("{e}"))?;
+            let domain = Domain::from_byte(row.domain).context("unknown domain in database")?;
+            let (_, fields) = self
+                .store
+                .item_get(&row.name)?
+                .context("item changed while masking")?;
+            for field in fields {
+                let ad = FieldAd {
+                    vault: &self.vault_id,
+                    domain,
+                    item: &row.id,
+                    field: &field.field,
+                };
+                let bytes = open_field(&self.domain_keys[&domain].1, &ad, &field.sealed)
+                    .map_err(|e| anyhow!("{e}"))
+                    .context("could not decrypt a value for masking")?;
+                let text = Zeroizing::new(
+                    std::str::from_utf8(&bytes)
+                        .context("stored field is not UTF-8")?
+                        .to_owned(),
+                );
+                values.push((
+                    PlaceholderRef {
+                        item: item.clone(),
+                        field: FieldName::parse(&field.field).map_err(|e| anyhow!("{e}"))?,
+                    },
+                    text,
+                ));
+            }
+        }
+        Ok(MaskValues { version, values })
+    }
+
     pub fn item_origins_verified(&self, name: &ItemName) -> Result<(bool, Vec<Origin>)> {
         let (row, _) = self
             .store
@@ -560,6 +619,7 @@ impl Vault {
 #[cfg(test)]
 mod tests {
     use super::*;
+    pub(crate) use crate::test_support::TestVault;
     use keyharbor_domain::vault::{FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
     use keyharbor_sqlite::SqliteStore;
     use keyharbor_vault::keystore::FileKeyStore;
@@ -584,18 +644,21 @@ mod tests {
     pub(crate) fn open_store(data: &Path) -> SqliteStore {
         SqliteStore::open(data).unwrap()
     }
-    pub(crate) fn init(e: &Env) -> Vault {
-        Vault::init(
-            open_store(&e.data),
-            Box::new(FileKeyStore::new(e.keys.clone())),
+    pub(crate) fn init(e: &Env) -> TestVault {
+        TestVault(
+            Vault::init(
+                open_store(&e.data),
+                Box::new(FileKeyStore::new(e.keys.clone())),
+            )
+            .unwrap(),
         )
-        .unwrap()
     }
-    pub(crate) fn reopen(e: &Env) -> anyhow::Result<Vault> {
+    pub(crate) fn reopen(e: &Env) -> anyhow::Result<TestVault> {
         Vault::open(
             open_store(&e.data),
             Box::new(FileKeyStore::new(e.keys.clone())),
         )
+        .map(TestVault)
     }
     pub(crate) fn field(name: &str, value: &str) -> (FieldName, Zeroizing<String>) {
         (

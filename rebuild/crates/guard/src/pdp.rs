@@ -1,4 +1,5 @@
-//! Policy decisions (02 §2.8). Rules come from SQLite; deciding is a pure function.
+//! The policy decision point (02 §2.8). Rules come from the policy store; deciding is a pure
+//! function of the rules, the agent and the action.
 //!
 //! Applicable rules are the agent's own and the `*` rules. The most specific one wins: an
 //! agent rule beats a `*` rule; then an item target beats a domain target, which beats `*`.

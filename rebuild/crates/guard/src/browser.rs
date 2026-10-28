@@ -1,0 +1,395 @@
+//! `GuardedBrowser`: the decorator every control request goes through (ADR-0014).
+//!
+//! It implements `BrowserPort` over a raw browser `B`. Text for `fill` and `type_text` with
+//! `{{secret:item.field}}` placeholders is resolved only after the guard's checks against the
+//! frame that holds the focused element (03 §3.8, J-35); everything that comes back — values
+//! and error messages alike — is masked exactly once. Error messages never include input text.
+
+use crate::{Guard, pep::substitute::Prepared};
+use anyhow::{Context, Result, anyhow};
+use keyharbor_domain::{
+    audit::{AuditEvent, AuditKind},
+    ports::{
+        BrowserPort, FrameInspector, PageInput,
+        browser::{Focus, Page, WaitFor},
+    },
+    vault::{Origin, parse_placeholders},
+};
+use serde_json::{Value, json};
+
+const PLACEHOLDER: &str = "{{secret:";
+
+pub struct GuardedBrowser<'a, B> {
+    inner: &'a mut B,
+    guard: &'a Guard,
+    agent: &'a str,
+}
+
+impl<'a, B> GuardedBrowser<'a, B> {
+    pub(crate) fn new(inner: &'a mut B, guard: &'a Guard, agent: &'a str) -> Self {
+        Self {
+            inner,
+            guard,
+            agent,
+        }
+    }
+}
+
+impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
+    /// The focused element and its frame's origin, refusing (and recording) when the focus
+    /// cannot be located or, for `fill`, is not on the target element.
+    async fn checked_focus(
+        &mut self,
+        page: &Page,
+        template: &str,
+        expected: Option<u64>,
+    ) -> Result<(Focus, Option<Origin>)> {
+        let refs = parse_placeholders(template).map_err(|e| anyhow!("{e}"))?;
+        let first = &refs.first().context("no placeholder")?.item;
+        let focus = match self.inner.focus(page).await {
+            Ok(focus) => focus,
+            Err(_) => return Err(self.guard.denied(self.agent, first, None, "frame")),
+        };
+        let origin = self.inner.frame_origin(page, &focus.frame).await;
+        if expected.is_some_and(|node| node != focus.node) {
+            return Err(self.guard.denied(
+                self.agent,
+                first,
+                origin.as_ref().map(Origin::as_str),
+                "focus",
+            ));
+        }
+        Ok((focus, origin))
+    }
+
+    /// Types resolved text, then re-checks the frame's origin (detection only: the text is
+    /// already in) and records the use.
+    async fn insert_prepared(
+        &mut self,
+        page: &Page,
+        focus: &Focus,
+        origin: Option<Origin>,
+        prepared: Prepared,
+    ) -> Result<Value> {
+        let inserted = self.inner.insert_text(page, &prepared.text).await;
+        drop(prepared.text);
+        inserted?;
+        let after = self.inner.frame_origin(page, &focus.frame).await;
+        let changed = after != origin;
+        let session = self.guard.session();
+        for item in &prepared.items {
+            let used = AuditEvent::new(self.agent, AuditKind::SecretUsed, "ok")
+                .session(session)
+                .item(item.as_str())
+                .origin(origin.as_ref().map(Origin::as_str));
+            self.guard.record(&used);
+            if changed {
+                let moved = AuditEvent::new(
+                    self.agent,
+                    AuditKind::OriginChangedAfterFill,
+                    after.as_ref().map_or("unknown", Origin::as_str),
+                )
+                .session(session)
+                .item(item.as_str())
+                .origin(origin.as_ref().map(Origin::as_str));
+                self.guard.record(&moved);
+            }
+        }
+        Ok(if changed {
+            json!({"warning": "origin_changed_after_fill"})
+        } else {
+            json!({})
+        })
+    }
+
+    async fn fill_checked(&mut self, target: &Value, template: &str) -> Result<Value> {
+        if !template.contains(PLACEHOLDER) {
+            return self.inner.fill(target, template).await;
+        }
+        let page = self.inner.page().await?;
+        let node = self.inner.focus_element(&page, target).await?;
+        let (focus, origin) = self.checked_focus(&page, template, Some(node)).await?;
+        let prepared = self
+            .guard
+            .prepare_text(self.agent, template, origin.as_ref())?;
+        self.inner.clear_element(&page, node).await?;
+        // Clearing ran page code; the text must still go where it was checked.
+        if self.inner.focus(&page).await.ok().as_ref() != Some(&focus) {
+            let first = &prepared.items[0];
+            return Err(self.guard.denied(
+                self.agent,
+                first,
+                origin.as_ref().map(Origin::as_str),
+                "focus",
+            ));
+        }
+        self.insert_prepared(&page, &focus, origin, prepared).await
+    }
+
+    async fn type_checked(&mut self, template: &str) -> Result<Value> {
+        if !template.contains(PLACEHOLDER) {
+            return self.inner.type_text(template).await;
+        }
+        let page = self.inner.page().await?;
+        let (focus, origin) = self.checked_focus(&page, template, None).await?;
+        let prepared = self
+            .guard
+            .prepare_text(self.agent, template, origin.as_ref())?;
+        self.insert_prepared(&page, &focus, origin, prepared).await
+    }
+}
+
+impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser<'_, B> {
+    async fn navigate(&mut self, url: &str) -> Result<Value> {
+        let outcome = self.inner.navigate(url).await;
+        self.guard.redact_outcome(outcome)
+    }
+    async fn snapshot(&mut self) -> Result<Value> {
+        let outcome = self.inner.snapshot().await;
+        self.guard.redact_outcome(outcome)
+    }
+    async fn screenshot(&mut self) -> Result<Value> {
+        let outcome = self.inner.screenshot().await;
+        self.guard.redact_outcome(outcome)
+    }
+    async fn click(&mut self, target: &Value) -> Result<Value> {
+        let outcome = self.inner.click(target).await;
+        self.guard.redact_outcome(outcome)
+    }
+    async fn fill(&mut self, target: &Value, text: &str) -> Result<Value> {
+        let outcome = self.fill_checked(target, text).await;
+        self.guard.redact_outcome(outcome)
+    }
+    async fn type_text(&mut self, text: &str) -> Result<Value> {
+        let outcome = self.type_checked(text).await;
+        self.guard.redact_outcome(outcome)
+    }
+    async fn press(&mut self, key: &str) -> Result<Value> {
+        let outcome = self.inner.press(key).await;
+        self.guard.redact_outcome(outcome)
+    }
+    async fn tabs(&mut self) -> Result<Value> {
+        let outcome = self.inner.tabs().await;
+        self.guard.redact_outcome(outcome)
+    }
+    async fn new_tab(&mut self, url: Option<&str>) -> Result<Value> {
+        let outcome = self.inner.new_tab(url).await;
+        self.guard.redact_outcome(outcome)
+    }
+    async fn switch_tab(&mut self, id: &str) -> Result<Value> {
+        let outcome = self.inner.switch_tab(id).await;
+        self.guard.redact_outcome(outcome)
+    }
+    async fn wait(&mut self, until: &WaitFor) -> Result<Value> {
+        let outcome = self.inner.wait(until).await;
+        self.guard.redact_outcome(outcome)
+    }
+    fn close(&mut self) -> Result<Value> {
+        let outcome = self.inner.close();
+        self.guard.redact_outcome(outcome)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        Guard,
+        test_support::{env, init, login, open_vault},
+    };
+    use keyharbor_domain::{
+        SessionId,
+        audit::AuditKind,
+        policy::{Effect, Resource, Rule},
+        ports::{PolicyStore, Store},
+    };
+    use keyharbor_sqlite::SqliteStore;
+    use std::sync::{Arc, Mutex};
+
+    /// A browser whose page is `https://github.com` with one focused input (node 7).
+    #[derive(Default)]
+    struct Fake {
+        typed: Vec<String>,
+        echo: String,
+    }
+    impl BrowserPort for Fake {
+        async fn navigate(&mut self, _: &str) -> Result<Value> {
+            Ok(json!({"title": self.echo}))
+        }
+        async fn snapshot(&mut self) -> Result<Value> {
+            Ok(json!({"text": self.typed.join("|")}))
+        }
+        async fn screenshot(&mut self) -> Result<Value> {
+            Ok(json!({}))
+        }
+        async fn click(&mut self, _: &Value) -> Result<Value> {
+            anyhow::bail!("no element {}", self.echo)
+        }
+        async fn fill(&mut self, _: &Value, text: &str) -> Result<Value> {
+            self.typed.push(text.to_owned());
+            Ok(json!({}))
+        }
+        async fn type_text(&mut self, text: &str) -> Result<Value> {
+            self.typed.push(text.to_owned());
+            Ok(json!({}))
+        }
+        async fn press(&mut self, _: &str) -> Result<Value> {
+            Ok(json!({}))
+        }
+        async fn tabs(&mut self) -> Result<Value> {
+            Ok(json!([]))
+        }
+        async fn new_tab(&mut self, _: Option<&str>) -> Result<Value> {
+            Ok(json!({}))
+        }
+        async fn switch_tab(&mut self, _: &str) -> Result<Value> {
+            Ok(json!({}))
+        }
+        async fn wait(&mut self, _: &WaitFor) -> Result<Value> {
+            Ok(json!({}))
+        }
+        fn close(&mut self) -> Result<Value> {
+            Ok(json!({}))
+        }
+    }
+    impl PageInput for Fake {
+        async fn page(&mut self) -> Result<Page> {
+            Ok(Page("p".into()))
+        }
+        async fn focus_element(&mut self, _: &Page, _: &Value) -> Result<u64> {
+            Ok(7)
+        }
+        async fn clear_element(&mut self, _: &Page, _: u64) -> Result<()> {
+            Ok(())
+        }
+        async fn insert_text(&mut self, _: &Page, text: &str) -> Result<()> {
+            self.typed.push(text.to_owned());
+            Ok(())
+        }
+    }
+    impl FrameInspector for Fake {
+        async fn focus(&mut self, _: &Page) -> Result<Focus> {
+            Ok(Focus {
+                frame: "main".into(),
+                node: 7,
+            })
+        }
+        async fn frame_origin(&mut self, _: &Page, _: &str) -> Option<Origin> {
+            Origin::parse("https://github.com").ok()
+        }
+    }
+
+    fn guard(e: &crate::test_support::Env) -> (Guard, SharedStoreProbe) {
+        let store: Box<dyn Store> = Box::new(SqliteStore::open(&e.data).unwrap());
+        let store = Arc::new(Mutex::new(store));
+        let (data, keys) = (e.data.clone(), e.keys.clone());
+        let opener: crate::VaultOpener = Box::new(move || {
+            keyharbor_core::Vault::open(
+                SqliteStore::open(&data)?,
+                Box::new(keyharbor_vault::keystore::FileKeyStore::new(keys.clone())),
+            )
+        });
+        (
+            Guard::new(SessionId::new(), store.clone(), opener),
+            SharedStoreProbe(store),
+        )
+    }
+    struct SharedStoreProbe(crate::SharedStore);
+    impl SharedStoreProbe {
+        fn kinds(&self) -> Vec<(AuditKind, String)> {
+            let store = self.0.lock().unwrap();
+            store
+                .list_audit(None)
+                .unwrap()
+                .into_iter()
+                .filter(|r| r.event.kind != AuditKind::VaultItemChanged)
+                .map(|r| (r.event.kind, r.event.result))
+                .collect()
+        }
+    }
+
+    fn block<T>(future: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(future)
+    }
+
+    #[test]
+    fn placeholders_are_resolved_into_the_page_and_masked_on_the_way_out() {
+        let e = env();
+        init(&e).add(login("github", "KH-SYNTH-pw-77")).unwrap();
+        let (guard, probe) = guard(&e);
+        let mut fake = Fake::default();
+        block(async {
+            let mut browser = guard.browser(&mut fake, "claude");
+            let target = json!({"ref": 7});
+            let out = browser
+                .fill(&target, "{{secret:github.password}}")
+                .await
+                .unwrap();
+            assert_eq!(out, json!({}));
+            // The page has the value; the agent sees only the placeholder.
+            let snap = browser.snapshot().await.unwrap();
+            assert_eq!(snap, json!({"text": "{{secret:github.password}}"}));
+        });
+        assert_eq!(fake.typed, vec!["KH-SYNTH-pw-77".to_owned()]);
+        assert_eq!(probe.kinds(), vec![(AuditKind::SecretUsed, "ok".into())]);
+        // Errors are masked too.
+        fake.echo = "KH-SYNTH-pw-77".into();
+        let err = block(guard.browser(&mut fake, "claude").click(&json!({"ref": 1})))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "no element {{secret:github.password}}");
+        assert!(open_vault(&e).is_ok());
+    }
+
+    #[test]
+    fn refusals_type_nothing_and_are_recorded() {
+        let e = env();
+        let v = init(&e);
+        v.add(login("github", "KH-SYNTH-pw-78")).unwrap();
+        let mut bound_elsewhere = login("bank", "KH-SYNTH-bank");
+        bound_elsewhere.origins = vec![Origin::parse("https://bank.example").unwrap()];
+        v.add(bound_elsewhere).unwrap();
+        SqliteStore::open(&e.data)
+            .unwrap()
+            .policy_set(&Rule::new("codex", Resource::Item, "github", Effect::Deny).unwrap())
+            .unwrap();
+        let (guard, probe) = guard(&e);
+        let mut fake = Fake::default();
+        let cases = [
+            (
+                "codex",
+                "{{secret:github.password}}",
+                "denied: github (policy)",
+            ),
+            (
+                "claude",
+                "{{secret:bank.password}}",
+                "denied: bank (origin)",
+            ),
+            (
+                "claude",
+                "{{secret:nope.password}}",
+                "denied: nope (not_found)",
+            ),
+            (
+                "claude",
+                "{{secret:github.cvc}}",
+                "denied: github (not_found)",
+            ),
+        ];
+        for (agent, text, expected) in cases {
+            let err = block(guard.browser(&mut fake, agent).type_text(text)).unwrap_err();
+            assert_eq!(err.to_string(), expected);
+        }
+        assert!(fake.typed.is_empty());
+        let kinds = probe.kinds();
+        assert_eq!(kinds.len(), 4);
+        assert!(kinds.iter().all(|(k, _)| *k == AuditKind::SecretDenied));
+        // Text without placeholders passes through untouched.
+        block(guard.browser(&mut fake, "codex").type_text("hello")).unwrap();
+        assert_eq!(fake.typed, vec!["hello".to_owned()]);
+    }
+}

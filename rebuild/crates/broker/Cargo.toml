@@ -10,6 +10,7 @@ anyhow.workspace = true
 base64.workspace = true
 keyharbor-core = { path = "../core" }
 keyharbor-domain = { path = "../domain" }
+keyharbor-guard = { path = "../guard" }
 keyharbor-sqlite = { path = "../sqlite" }
 keyharbor-vault = { path = "../vault" }
 libc.workspace = true

@@ -6,7 +6,6 @@ license.workspace = true
 publish = false
 
 [dependencies]
-aho-corasick.workspace = true
 age.workspace = true
 anyhow.workspace = true
 keyharbor-domain = { path = "../domain" }

@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 getrandom.workspace = true
+serde_json.workspace = true
 zeroize.workspace = true
 uuid.workspace = true
 url = "2.5"

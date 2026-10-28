@@ -1397,6 +1397,7 @@ dependencies = [
  "keyharbor-broker",
  "keyharbor-core",
  "keyharbor-domain",
+ "keyharbor-guard",
  "keyharbor-mcp",
  "keyharbor-sqlite",
  "keyharbor-vault",
@@ -1415,6 +1416,7 @@ dependencies = [
  "base64",
  "keyharbor-core",
  "keyharbor-domain",
+ "keyharbor-guard",
  "keyharbor-sqlite",
  "keyharbor-vault",
  "libc",
@@ -1429,7 +1431,6 @@ name = "keyharbor-core"
 version = "0.1.0"
 dependencies = [
  "age",
- "aho-corasick",
  "anyhow",
  "keyharbor-domain",
  "keyharbor-sqlite",
@@ -1446,8 +1447,25 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "getrandom 0.4.3",
+ "serde_json",
  "url",
  "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "keyharbor-guard"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "anyhow",
+ "keyharbor-core",
+ "keyharbor-domain",
+ "keyharbor-sqlite",
+ "keyharbor-vault",
+ "serde_json",
+ "tempfile",
+ "tokio",
  "zeroize",
 ]
 
@@ -1459,6 +1477,7 @@ dependencies = [
  "keyharbor-broker",
  "keyharbor-core",
  "keyharbor-domain",
+ "keyharbor-guard",
  "keyharbor-sqlite",
  "rmcp",
  "serde",
