@@ -146,3 +146,70 @@ fn frames_behind_shadow_roots_and_objects_do_not_count_as_the_page() {
     );
     h.assert_absent(&[&user]);
 }
+
+#[test]
+fn the_masker_is_no_oracle_and_escaped_values_stay_masked() {
+    let Some(browser) = chrome() else { return };
+    let base = serve_fn(|_| login_page());
+    let mut h = Harness::new();
+    // I2: a value JSON would escape; I1: a short value the agent may not use.
+    let quoted = format!("{}\"q\\z", h.synth("qq"));
+    h.add("site", "login", &[&base], json!({"username": quoted}));
+    h.add("bank", "secret", &[], json!({"value": "4821"}));
+    h.ok(
+        &[
+            "policy",
+            "deny",
+            "--agent",
+            "*",
+            "--resource",
+            "item",
+            "--target",
+            "bank",
+        ],
+        None,
+    );
+    h.open(&browser);
+    h.ok_call(json!({"op": "navigate", "url": format!("{base}/")}));
+    h.fill("#user", "{{secret:site.username}}").unwrap();
+    h.ok_call(json!({"op": "click", "target": {"selector": "#go"}}));
+    h.ok_call(json!({"op": "wait", "ms": 500}));
+    h.snapshot();
+    h.ok_call(json!({"op": "tabs"}));
+
+    // A URL listing every candidate PIN is refused as a whole, never answered with a
+    // placeholder at the right position; the third such request locks the session.
+    let candidates: Vec<String> = (4000..5000).map(|n| format!("{n:04}")).collect();
+    let url = format!("{base}/x?q={}", candidates.join("."));
+    for _ in 0..3 {
+        let error = h.denied(json!({"op": "navigate", "url": url}));
+        assert!(
+            error.starts_with("denied: the request contains a vault value"),
+            "{error}"
+        );
+    }
+    let error = h.denied(json!({"op": "navigate", "url": format!("{base}/")}));
+    assert!(error.contains("accepts no more text"), "{error}");
+    let audit = h.ok(&["audit", "--json"], None);
+    assert_eq!(
+        audit.matches("\"kind\":\"mask_probe\"").count(),
+        3,
+        "{audit}"
+    );
+    assert!(
+        audit.contains("\"kind\":\"substitution_locked\""),
+        "{audit}"
+    );
+
+    let transcript = h.transcript.borrow().clone();
+    assert!(
+        !transcript.contains("{{secret:bank.value}}"),
+        "the masker answered"
+    );
+    let escaped = serde_json::to_string(&quoted).unwrap();
+    assert!(
+        !transcript.contains(&escaped[1..escaped.len() - 1]),
+        "{transcript}"
+    );
+    h.assert_absent(&[&quoted]);
+}

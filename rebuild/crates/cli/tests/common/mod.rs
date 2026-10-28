@@ -125,7 +125,8 @@ fn html_escape(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// `/` is a login form posting to `/session`; `/embed?port=N` holds a top-level input and an
+/// `/` is a login form posting to `/session`; `/find` a search form sending `q` to
+/// `/missing` with GET; `/embed?port=N` holds a top-level input and an
 /// iframe showing `http://127.0.0.1:N/`. `/session` records the fields and shows `user` back
 /// as written (`#raw`) and in groups of four separated by spaces (`#grouped`), as payment
 /// pages show card numbers.
@@ -185,6 +186,10 @@ pub fn serve_pages() -> Site {
                  <label>User <input id=user name=user></label>\
                  <label>Password <input id=pw name=pw type=password></label>\
                  <button id=go>Sign in</button></form>"
+                    .to_owned()
+            } else if path == "/find" {
+                "<!doctype html><title>Find</title><form action=/missing method=get>\
+                 <label>Query <input id=q name=q></label><button id=find>Find</button></form>"
                     .to_owned()
             } else if let Some(port) = path.strip_prefix("/embed?port=") {
                 format!(

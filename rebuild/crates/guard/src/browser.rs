@@ -172,8 +172,24 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
     }
 }
 
+/// The CSS selector a target carries, if any.
+fn selector(target: &Value) -> &str {
+    target
+        .get("selector")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+}
+
+impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
+    /// Refuses (and masks the refusal of) requests whose text holds a vault value (I1).
+    fn literals(&self, literals: &[&str]) -> Result<()> {
+        self.guard.check_literals(self.agent, literals)
+    }
+}
+
 impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser<'_, B> {
     async fn navigate(&mut self, url: &str) -> Result<Value> {
+        self.literals(&[url])?;
         let outcome = self.inner.navigate(url).await;
         self.guard.redact_outcome(outcome)
     }
@@ -187,18 +203,22 @@ impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser
         self.guard.redact_outcome(outcome)
     }
     async fn click(&mut self, target: &Value) -> Result<Value> {
+        self.literals(&[selector(target)])?;
         let outcome = self.inner.click(target).await;
         self.guard.redact_outcome(outcome)
     }
     async fn fill(&mut self, target: &Value, text: &str) -> Result<Value> {
+        self.literals(&[selector(target), text])?;
         let outcome = self.fill_checked(target, text).await;
         self.guard.redact_outcome(outcome)
     }
     async fn type_text(&mut self, text: &str) -> Result<Value> {
+        self.literals(&[text])?;
         let outcome = self.type_checked(text).await;
         self.guard.redact_outcome(outcome)
     }
     async fn press(&mut self, key: &str) -> Result<Value> {
+        self.literals(&[key])?;
         let outcome = self.inner.press(key).await;
         self.guard.redact_outcome(outcome)
     }
@@ -207,14 +227,19 @@ impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser
         self.guard.redact_outcome(outcome)
     }
     async fn new_tab(&mut self, url: Option<&str>) -> Result<Value> {
+        self.literals(&[url.unwrap_or_default()])?;
         let outcome = self.inner.new_tab(url).await;
         self.guard.redact_outcome(outcome)
     }
     async fn switch_tab(&mut self, id: &str) -> Result<Value> {
+        self.literals(&[id])?;
         let outcome = self.inner.switch_tab(id).await;
         self.guard.redact_outcome(outcome)
     }
     async fn wait(&mut self, until: &WaitFor) -> Result<Value> {
+        if let WaitFor::Selector(selector) = until {
+            self.literals(&[selector])?;
+        }
         let outcome = self.inner.wait(until).await;
         self.guard.redact_outcome(outcome)
     }
@@ -606,5 +631,69 @@ mod tests {
                 (AuditKind::SecretDenied, "locked".into()),
             ]
         );
+    }
+
+    #[test]
+    fn requests_carrying_vault_values_are_refused_and_lock_the_session() {
+        let e = env();
+        let v = init(&e);
+        v.add(login("github", "KH-SYNTH-pw-83")).unwrap();
+        let (guard, probe) = guard(&e);
+        let mut fake = Fake::default();
+        // A guess list holding the value, raw or encoded, gets no answer either way.
+        for url in [
+            "https://x.example/?q=1111.KH-SYNTH-pw-83.2222",
+            "https://x.example/#KH-SYNTH-pw-83",
+        ] {
+            let err = block(guard.browser(&mut fake, "claude").navigate(url)).unwrap_err();
+            assert!(
+                err.to_string()
+                    .starts_with("denied: the request contains a vault value"),
+                "{err}"
+            );
+            assert!(!err.to_string().contains("github"));
+        }
+        // Harmless requests still work until the limit.
+        block(
+            guard
+                .browser(&mut fake, "claude")
+                .navigate("https://x.example/"),
+        )
+        .unwrap();
+        assert!(!guard.is_locked());
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .type_text("KH-SYNTH-pw-83"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("vault value"));
+        assert!(guard.is_locked());
+        // After the third probe nothing carrying text is answered, and nothing substitutes.
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .navigate("https://x.example/"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("accepts no more text"), "{err}");
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .fill(&json!({"ref": 7}), "{{secret:github.password}}"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("accepts no more text"), "{err}");
+        block(guard.browser(&mut fake, "claude").snapshot()).unwrap();
+        assert!(fake.typed.is_empty());
+        let kinds = probe.kinds();
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|(k, _)| *k == AuditKind::MaskProbe)
+                .count(),
+            3
+        );
+        assert!(kinds.contains(&(AuditKind::SubstitutionLocked, "mask_probe".into())));
     }
 }

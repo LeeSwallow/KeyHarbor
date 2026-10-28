@@ -21,7 +21,7 @@ use std::{
     collections::BTreeSet,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
 use zeroize::Zeroizing;
@@ -50,7 +50,13 @@ pub struct Guard {
     tainted: Mutex<BTreeSet<u64>>,
     /// Once set, nothing more is substituted in this session (C2, I1).
     locked: AtomicBool,
+    /// Requests that carried a vault value (I1). At [`MAX_PROBES`] the session stops
+    /// substituting and refuses every request that carries agent text.
+    probes: AtomicU32,
 }
+
+/// Requests carrying a vault value a session tolerates before it locks (I1).
+pub const MAX_PROBES: u32 = 3;
 
 impl Guard {
     pub fn new(session: SessionId, store: SharedStore, open_vault: VaultOpener) -> Self {
@@ -61,6 +67,7 @@ impl Guard {
             vault: Mutex::new(None),
             tainted: Mutex::new(BTreeSet::new()),
             locked: AtomicBool::new(false),
+            probes: AtomicU32::new(0),
         }
     }
 
@@ -144,6 +151,44 @@ impl Guard {
 
     pub fn is_locked(&self) -> bool {
         self.locked.load(Ordering::SeqCst)
+    }
+
+    /// Refuses a request whose agent-written text (URL, typed text, selector, tab id) holds a
+    /// vault value in any masked form: answering it would let the masker confirm a guess
+    /// (I1). Each such request is recorded as `mask_probe` without naming the item; after
+    /// [`MAX_PROBES`] the session locks and refuses every request that carries text.
+    pub fn check_literals(&self, agent: &str, literals: &[&str]) -> Result<()> {
+        if literals.iter().all(|l| l.is_empty()) {
+            return Ok(());
+        }
+        if self.probes.load(Ordering::SeqCst) >= MAX_PROBES {
+            bail!("denied: this session sent vault values in requests; it accepts no more text");
+        }
+        let probed = self.with_vault(|loaded| -> Result<bool> {
+            let Some(loaded) = loaded else {
+                return Ok(false);
+            };
+            if loaded.masker.is_none() {
+                loaded.masker = Some(masker(&loaded.vault)?);
+            }
+            let masker = loaded.masker.as_ref().expect("built");
+            Ok(literals.iter().any(|l| masker.redact(l) != *l))
+        });
+        match probed {
+            Ok(Ok(false)) => Ok(()),
+            Ok(Ok(true)) => {
+                self.record(
+                    &AuditEvent::new(agent, AuditKind::MaskProbe, "denied").session(self.session),
+                );
+                if self.probes.fetch_add(1, Ordering::SeqCst) + 1 >= MAX_PROBES {
+                    self.lock(agent, "mask_probe");
+                }
+                bail!(
+                    "denied: the request contains a vault value; write its {{{{secret:item.field}}}} placeholder instead"
+                )
+            }
+            _ => bail!("request withheld: vault values could not be loaded for checking"),
+        }
     }
 
     /// The elements snapshots must redact.

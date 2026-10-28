@@ -233,7 +233,8 @@ fn values_shown_back_by_the_page_are_masked() {
     );
     assert!(!after.contains(&number[..8]), "{after}");
 
-    // Values in URLs, raw or percent-encoded, are masked in every result.
+    // A request that carries a value is refused (I1), so values reach URLs only through
+    // the page: a form sends them form-urlencoded, and every result masks that form (I5).
     let encoded: String = spaced
         .bytes()
         .map(|b| {
@@ -244,36 +245,36 @@ fn values_shown_back_by_the_page_are_masked() {
             }
         })
         .collect();
-    let page = h.ok_call(json!({
+    let error = h.denied(json!({
         "op": "navigate",
         "url": format!("{}/missing?a={encoded}&b={token}", shop.base),
     }));
-    assert_eq!(
-        page["url"],
-        format!(
-            "{}/missing?a={{{{secret:api.value}}}}&b={{{{secret:other.value}}}}",
-            shop.base
-        )
+    assert!(
+        error.starts_with("denied: the request contains a vault value"),
+        "{error}"
     );
+    h.ok_call(json!({"op": "navigate", "url": format!("{}/find", shop.base)}));
+    h.fill("#q", "{{secret:api.value}}").unwrap();
+    h.ok_call(json!({"op": "click", "target": {"selector": "#find"}}));
+    h.ok_call(json!({"op": "wait", "ms": 500}));
     let tabs = h.ok_call(json!({"op": "tabs"}));
     assert!(
-        tabs.to_string().contains("{{secret:other.value}}"),
+        tabs.to_string().contains("/missing?q={{secret:api.value}}"),
         "{tabs}"
     );
 
     // A vault change is picked up by the next response without restarting the session.
     let late = h.synth("late");
-    h.add("late", "secret", &[], json!({"value": late}));
-    let page = h.ok_call(json!({
-        "op": "navigate",
-        "url": format!("{}/missing?c={late}", shop.base),
-    }));
+    h.add("late", "secret", &[&shop.base], json!({"value": late}));
+    h.ok_call(json!({"op": "navigate", "url": format!("{}/find", shop.base)}));
+    h.fill("#q", "{{secret:late.value}}").unwrap();
+    h.ok_call(json!({"op": "click", "target": {"selector": "#find"}}));
+    h.ok_call(json!({"op": "wait", "ms": 500}));
+    let tabs = h.ok_call(json!({"op": "tabs"}));
     assert!(
-        page["url"]
-            .as_str()
-            .unwrap()
-            .ends_with("c={{secret:late.value}}"),
-        "{page}"
+        tabs.to_string()
+            .contains("/missing?q={{secret:late.value}}"),
+        "{tabs}"
     );
     h.assert_absent(&[&number, &spaced, &encoded, &token, &late]);
 }

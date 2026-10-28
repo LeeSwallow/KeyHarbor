@@ -87,14 +87,24 @@ fn grouped(digits: &str, separator: &str) -> String {
         .join(separator)
 }
 
-/// The forms of `value` that are masked: as written, percent-encoded (component and strict,
-/// upper- and lowercase hex, `+` for spaces), HTML-escaped, and for card numbers the bare
-/// digits and groups of four separated by spaces or hyphens.
+/// The body of a JSON string literal for `value` (`"` → `\"`, `\` → `\\`, control
+/// characters → `\n`, `\u001f`, …), as snapshots and other JSON text carry it.
+fn json_escaped(value: &str) -> String {
+    let quoted = serde_json::to_string(value).expect("strings serialize");
+    quoted[1..quoted.len() - 1].to_owned()
+}
+
+/// The forms of `value` that are masked: as written, percent-encoded (component, strict and
+/// `application/x-www-form-urlencoded`; upper- and lowercase hex, `+` for spaces),
+/// HTML-escaped, JSON-escaped, and for card numbers the bare digits and groups of four
+/// separated by spaces or hyphens.
 pub fn variants(value: &str) -> Vec<Zeroizing<String>> {
     if value.chars().count() < MIN_MASKED_CHARS {
         return Vec::new();
     }
     let strict = |b: u8| b.is_ascii_alphanumeric() || b"-_.~".contains(&b);
+    // What browsers send for form fields (WHATWG URL, urlencoded serializer).
+    let form = |b: u8| b.is_ascii_alphanumeric() || b"*-._".contains(&b);
     let mut out = vec![
         Zeroizing::new(value.to_owned()),
         Zeroizing::new(percent(value, component_safe, true, false)),
@@ -102,8 +112,11 @@ pub fn variants(value: &str) -> Vec<Zeroizing<String>> {
         Zeroizing::new(percent(value, strict, true, false)),
         Zeroizing::new(percent(value, component_safe, true, true)),
         Zeroizing::new(percent(value, strict, true, true)),
+        Zeroizing::new(percent(value, form, true, true)),
+        Zeroizing::new(percent(value, form, false, true)),
         Zeroizing::new(html(value, "&#39;")),
         Zeroizing::new(html(value, "&#x27;")),
+        Zeroizing::new(json_escaped(value)),
     ];
     if let Some(digits) = card_digits(value) {
         out.push(Zeroizing::new(grouped(&digits, " ")));
@@ -262,6 +275,36 @@ mod tests {
             assert_eq!(
                 m.redact(&format!("?k={form}&")),
                 "?k={{secret:api.value}}&",
+                "{form}"
+            );
+        }
+    }
+
+    #[test]
+    fn json_escaped_and_form_encoded_forms_are_masked() {
+        // I2: a value with quotes, backslashes or control characters, as JSON text holds it.
+        let m = masker(&[("site", "username", "KH\"q\\z\n\u{1}x")]);
+        for form in ["KH\\\"q\\\\z\\n\\u0001x", "KH\"q\\z\n\u{1}x"] {
+            assert_eq!(
+                m.redact(&format!("value=\"{form}\"")),
+                "value=\"{{secret:site.username}}\"",
+                "{form}"
+            );
+        }
+        let snapshot = format!(
+            "[1] textbox value={}",
+            serde_json::to_string("KH\"q\\z\n\u{1}x").unwrap()
+        );
+        assert_eq!(
+            m.redact(&snapshot),
+            "[1] textbox value=\"{{secret:site.username}}\""
+        );
+        // I5: what a browser sends for a form field: `*` kept, `~ ! ' ( )` encoded, `+` for space.
+        let m = masker(&[("api", "value", "a~b!c'd(e)f*g h")]);
+        for form in ["a%7Eb%21c%27d%28e%29f*g+h", "a%7eb%21c%27d%28e%29f*g+h"] {
+            assert_eq!(
+                m.redact(&format!("?q={form}&")),
+                "?q={{secret:api.value}}&",
                 "{form}"
             );
         }
