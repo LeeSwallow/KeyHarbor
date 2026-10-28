@@ -3,7 +3,8 @@
 use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use keyharbor_domain::audit::AuditRecord;
-use keyharbor_sqlite::{AUDIT_ENABLED, SqliteStore};
+use keyharbor_domain::ports::*;
+use keyharbor_sqlite::SqliteStore;
 use std::path::Path;
 
 #[derive(Args)]

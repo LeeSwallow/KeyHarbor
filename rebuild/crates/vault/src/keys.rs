@@ -1,33 +1,12 @@
 use hkdf::Hkdf;
 use sha2::Sha256;
-use std::fmt;
 use uuid::Uuid;
-use zeroize::Zeroizing;
 
 pub const KEK_INFO: &[u8] = b"keyharbor/kek/v1";
 pub const META_MAC_INFO: &[u8] = b"keyharbor/meta-mac/v1";
 
-/// A 256-bit symmetric key. Never printed; zeroized on drop.
-#[derive(Clone)]
-pub struct SecretKey(Zeroizing<[u8; 32]>);
-impl SecretKey {
-    pub fn generate() -> Self {
-        let mut bytes = Zeroizing::new([0u8; 32]);
-        getrandom::fill(bytes.as_mut()).expect("OS random number generator failed");
-        Self(bytes)
-    }
-    pub fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self(Zeroizing::new(bytes))
-    }
-    pub fn expose(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-impl fmt::Debug for SecretKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SecretKey([REDACTED])")
-    }
-}
+/// A 256-bit symmetric key, defined with the key-store port in `keyharbor-domain`.
+pub use keyharbor_domain::secret::SecretKey;
 
 macro_rules! id_type {
     ($name:ident) => {

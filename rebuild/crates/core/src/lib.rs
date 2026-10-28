@@ -13,15 +13,16 @@ pub use transfer::ImportReport;
 pub use usage::{ItemUse, fill_template};
 
 use anyhow::{Context, Result, anyhow, bail};
+use keyharbor_domain::ports::{
+    AuditStore, DomainKeyRow, FieldRow, ItemRow, KeyGuard, KeyStore, VaultRow, VaultStore,
+};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     vault::{Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
 };
-use keyharbor_sqlite::{DomainKeyRow, FieldRow, ItemRow, KeyGuard, SqliteStore, VaultRow};
 use keyharbor_vault::{
     VaultError,
     keys::{KeyId, KeySet, SecretKey, VaultId},
-    keystore::KeyStore,
     meta::{ItemMeta, meta_mac, verify_meta_mac},
     record::{FieldAd, open_field, seal_field, unwrap_domain_key, wrap_domain_key},
 };
@@ -124,8 +125,12 @@ pub struct ItemSummary {
     pub tampered: bool,
 }
 
+/// What a vault needs from storage: its tables and the usage record.
+pub trait VaultBackend: VaultStore + AuditStore {}
+impl<T: VaultStore + AuditStore> VaultBackend for T {}
+
 pub struct Vault {
-    store: SqliteStore,
+    store: Box<dyn VaultBackend>,
     keystore: Box<dyn KeyStore>,
     vault_id: VaultId,
     kek_id: KeyId,
@@ -199,7 +204,8 @@ fn sorted_origins(origins: &[Origin]) -> Vec<String> {
 }
 
 impl Vault {
-    pub fn init(store: SqliteStore, keystore: Box<dyn KeyStore>) -> Result<Vault> {
+    pub fn init(store: impl VaultBackend + 'static, keystore: Box<dyn KeyStore>) -> Result<Vault> {
+        let store: Box<dyn VaultBackend> = Box::new(store);
         if store.vault_get()?.is_some() {
             bail!("vault already initialized");
         }
@@ -244,7 +250,8 @@ impl Vault {
         })
     }
 
-    pub fn open(store: SqliteStore, keystore: Box<dyn KeyStore>) -> Result<Vault> {
+    pub fn open(store: impl VaultBackend + 'static, keystore: Box<dyn KeyStore>) -> Result<Vault> {
+        let store: Box<dyn VaultBackend> = Box::new(store);
         let row = store.vault_get()?.context("vault not initialized")?;
         let vault_id = VaultId::from_bytes(row.vault_id);
         let main = account(&vault_id);
@@ -257,11 +264,11 @@ impl Vault {
             Err(e) => Err(vault_err(e)),
         };
         let keys = KeySet::derive(&get_main()?, &vault_id);
-        let (keys, domain_keys) = match Self::unwrap_all(&store, &keys, &vault_id) {
+        let (keys, domain_keys) = match Self::unwrap_all(&*store, &keys, &vault_id) {
             Ok(domain_keys) => {
                 // A parked key left by an interrupted rotation is only safe to drop when no
                 // rotation is running; otherwise it may be the key the DB is about to depend on.
-                if let Some(_lock) = rotate::try_rotation_lock(&store)? {
+                if let Some(_lock) = rotate::try_rotation_lock(&*store)? {
                     match keystore.delete(&next) {
                         Ok(()) | Err(VaultError::KeyNotFound) => {}
                         Err(e) => return Err(vault_err(e)),
@@ -272,9 +279,9 @@ impl Vault {
             Err(original) => {
                 // The DB was re-keyed under a root key that is not promoted yet. Wait for any
                 // running rotation, then retry the main key before finishing the promotion.
-                let _lock = rotate::rotation_lock(&store)?;
+                let _lock = rotate::rotation_lock(&*store)?;
                 let keys = KeySet::derive(&get_main()?, &vault_id);
-                if let Ok(domain_keys) = Self::unwrap_all(&store, &keys, &vault_id) {
+                if let Ok(domain_keys) = Self::unwrap_all(&*store, &keys, &vault_id) {
                     (keys, domain_keys)
                 } else {
                     let Ok(parked) = keystore.get(&next) else {
@@ -282,7 +289,7 @@ impl Vault {
                     };
                     let parked_keys = KeySet::derive(&parked, &vault_id);
                     let domain_keys =
-                        Self::unwrap_all(&store, &parked_keys, &vault_id).map_err(|_| original)?;
+                        Self::unwrap_all(&*store, &parked_keys, &vault_id).map_err(|_| original)?;
                     keystore.replace(&main, &parked).map_err(vault_err)?;
                     keystore.delete(&next).map_err(vault_err)?;
                     (parked_keys, domain_keys)
@@ -310,7 +317,7 @@ impl Vault {
     }
 
     pub(crate) fn unwrap_all(
-        store: &SqliteStore,
+        store: &dyn VaultBackend,
         keys: &KeySet,
         vault_id: &VaultId,
     ) -> Result<BTreeMap<Domain, (KeyId, SecretKey)>> {
@@ -734,12 +741,9 @@ mod tests {
         let e = env();
         let v = init(&e);
         v.add(login("github", "pw")).unwrap();
-        let conn = rusqlite::Connection::open(e.data.join("keyharbor.sqlite3")).unwrap();
-        conn.execute(
+        open_store(&e.data).execute_for_tests(
             "INSERT INTO item_origins (item_id, origin) SELECT id, 'https://evil.example' FROM vault_items WHERE name='github'",
-            [],
-        )
-        .unwrap();
+        );
         assert!(v.resolve(&pref("github", "password")).is_err());
         assert!(
             v.item_origins_verified(&ItemName::parse("github").unwrap())

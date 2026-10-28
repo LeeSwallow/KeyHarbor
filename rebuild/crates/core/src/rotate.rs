@@ -4,10 +4,10 @@
 //! Rotations hold an exclusive lock on `<data dir>/vault.lock` and commit only if the vault
 //! version is unchanged since they read it, so concurrent writers make them abort, not corrupt.
 
-use crate::{Vault, account, vault_err};
+use crate::{Vault, VaultBackend, account, vault_err};
 use anyhow::{Context, Result, bail};
+use keyharbor_domain::ports::{DomainKeyRow, FieldRow};
 use keyharbor_domain::vault::{Domain, FieldName};
-use keyharbor_sqlite::{DomainKeyRow, FieldRow, SqliteStore};
 use keyharbor_vault::{
     keys::{KeyId, KeySet, SecretKey},
     record::{FieldAd, open_field, seal_field, wrap_domain_key},
@@ -18,7 +18,7 @@ pub(crate) fn next_account(vault: &str) -> String {
     format!("{vault}#next")
 }
 
-fn lock_file(store: &SqliteStore) -> Result<File> {
+fn lock_file(store: &dyn VaultBackend) -> Result<File> {
     let path = store.root().join("vault.lock");
     File::options()
         .create(true)
@@ -29,14 +29,14 @@ fn lock_file(store: &SqliteStore) -> Result<File> {
 }
 
 /// Blocks until no other process is rotating keys.
-pub(crate) fn rotation_lock(store: &SqliteStore) -> Result<File> {
+pub(crate) fn rotation_lock(store: &dyn VaultBackend) -> Result<File> {
     let file = lock_file(store)?;
     file.lock().context("cannot take the vault rotation lock")?;
     Ok(file)
 }
 
 /// `None` while another process holds the rotation lock.
-pub(crate) fn try_rotation_lock(store: &SqliteStore) -> Result<Option<File>> {
+pub(crate) fn try_rotation_lock(store: &dyn VaultBackend) -> Result<Option<File>> {
     let file = lock_file(store)?;
     match file.try_lock() {
         Ok(()) => Ok(Some(file)),
@@ -63,7 +63,7 @@ impl Vault {
     }
 
     fn rotate_root_inner(&mut self, stop_after: u8, hook: impl FnOnce()) -> Result<()> {
-        let _lock = rotation_lock(&self.store)?;
+        let _lock = rotation_lock(&*self.store)?;
         let version = self.store.vault_version()?;
         let items = self.store.item_list()?;
         for row in &items {
@@ -140,7 +140,7 @@ impl Vault {
     /// Runs `hook` after the fields were re-encrypted and before the commit, to test races.
     #[doc(hidden)]
     pub fn rotate_domain_with_hook(&mut self, domain: Domain, hook: impl FnOnce()) -> Result<()> {
-        let _lock = rotation_lock(&self.store)?;
+        let _lock = rotation_lock(&*self.store)?;
         let version = self.store.vault_version()?;
         let vault = self.store.vault_get()?.context("vault not initialized")?;
         if vault.kek_id != *self.kek_id.as_bytes() {
@@ -218,14 +218,7 @@ mod tests {
         }
     }
     fn sealed(e: &crate::tests::Env, item: &str) -> Vec<Vec<u8>> {
-        let conn = rusqlite::Connection::open(e.data.join("keyharbor.sqlite3")).unwrap();
-        let mut q = conn
-            .prepare("SELECT f.sealed FROM vault_fields f JOIN vault_items i ON i.id=f.item_id WHERE i.name=?1 ORDER BY f.field")
-            .unwrap();
-        q.query_map([item], |r| r.get(0))
-            .unwrap()
-            .map(Result::unwrap)
-            .collect()
+        crate::tests::open_store(&e.data).sealed_fields_for_tests(item)
     }
     fn next_key_exists(e: &crate::tests::Env) -> bool {
         std::fs::read_dir(&e.keys)
@@ -287,12 +280,8 @@ mod tests {
         let e = env();
         let mut v = init(&e);
         v.add(login("github", "pw")).unwrap();
-        let conn = rusqlite::Connection::open(e.data.join("keyharbor.sqlite3")).unwrap();
-        conn.execute(
-            "UPDATE vault_items SET origin_binding=0 WHERE name='github'",
-            [],
-        )
-        .unwrap();
+        crate::tests::open_store(&e.data)
+            .execute_for_tests("UPDATE vault_items SET origin_binding=0 WHERE name='github'");
         assert!(v.rotate_root().is_err());
         assert!(v.list().unwrap()[0].tampered);
     }

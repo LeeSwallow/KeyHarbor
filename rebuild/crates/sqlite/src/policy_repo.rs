@@ -3,6 +3,7 @@
 use crate::SqliteStore;
 use anyhow::{Context, Result};
 use keyharbor_domain::policy::{Effect, Resource, Rule};
+use keyharbor_domain::ports::PolicyStore;
 use rusqlite::{Connection, params};
 
 pub(crate) fn migrate(conn: &Connection) -> Result<()> {
@@ -12,8 +13,8 @@ pub(crate) fn migrate(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-impl SqliteStore {
-    pub fn policy_rules(&self) -> Result<Vec<Rule>> {
+impl PolicyStore for SqliteStore {
+    fn policy_rules(&self) -> Result<Vec<Rule>> {
         let mut query = self.conn.prepare(
             "SELECT agent, resource, target, effect FROM policy_rules ORDER BY agent, resource, target",
         )?;
@@ -38,7 +39,7 @@ impl SqliteStore {
     }
 
     /// Adds the rule or changes the effect of the rule with the same agent, resource and target.
-    pub fn policy_set(&self, rule: &Rule) -> Result<()> {
+    fn policy_set(&self, rule: &Rule) -> Result<()> {
         self.conn.execute(
             "INSERT INTO policy_rules (agent, resource, target, effect) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(agent, resource, target) DO UPDATE SET effect=excluded.effect",
             params![
@@ -52,7 +53,7 @@ impl SqliteStore {
     }
 
     /// False if no such rule existed.
-    pub fn policy_remove(&self, agent: &str, resource: Resource, target: &str) -> Result<bool> {
+    fn policy_remove(&self, agent: &str, resource: Resource, target: &str) -> Result<bool> {
         Ok(self.conn.execute(
             "DELETE FROM policy_rules WHERE agent=?1 AND resource=?2 AND target=?3",
             params![agent, resource.as_str(), target],
@@ -64,6 +65,7 @@ impl SqliteStore {
 mod tests {
     use crate::SqliteStore;
     use keyharbor_domain::policy::{Effect, Resource, Rule};
+    use keyharbor_domain::ports::PolicyStore;
 
     #[test]
     fn rules_upsert_list_and_remove() {

@@ -7,13 +7,8 @@ use zeroize::Zeroizing;
 pub const KEYCHAIN_SERVICE: &str = "io.github.leeswallow.keyharbor";
 pub const TEST_KEYSTORE_ENV: &str = "KEYHARBOR_TEST_KEYSTORE_DIR";
 
-/// Creates never overwrite; reads never create. A missing key is `KeyNotFound`.
-pub trait KeyStore: Send {
-    fn create(&self, account: &str, key: &SecretKey) -> Result<(), VaultError>;
-    fn get(&self, account: &str) -> Result<SecretKey, VaultError>;
-    fn replace(&self, account: &str, key: &SecretKey) -> Result<(), VaultError>;
-    fn delete(&self, account: &str) -> Result<(), VaultError>;
-}
+/// The key-store port (creates never overwrite; reads never create), implemented here.
+pub use keyharbor_domain::ports::KeyStore;
 
 fn to_key(bytes: &[u8]) -> Result<SecretKey, VaultError> {
     let array: [u8; 32] = bytes

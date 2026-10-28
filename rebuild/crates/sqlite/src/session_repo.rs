@@ -5,6 +5,7 @@
 
 use crate::SqliteStore;
 use anyhow::{Context, Result, bail};
+use keyharbor_domain::ports::session::{SessionRow, SessionStore};
 use keyharbor_domain::{
     Generation, HandoffStatus, RequestId, Session, SessionId, SessionName, State, vault::Origin,
 };
@@ -26,17 +27,6 @@ pub(crate) fn migrate(conn: &Connection) -> Result<()> {
         conn.execute_batch("ALTER TABLE generations ADD COLUMN cdp INTEGER NOT NULL DEFAULT 0")?;
     }
     Ok(())
-}
-
-/// A session as stored, with the generation of its current run (if any).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SessionRow {
-    pub id: SessionId,
-    pub name: SessionName,
-    pub state: State,
-    pub generation: Option<Generation>,
-    /// Raw CDP was requested for the current run.
-    pub cdp: bool,
 }
 
 const SELECT_ROW: &str = "SELECT s.id, s.name, s.state, g.generation, coalesce(g.cdp, 0) FROM sessions s LEFT JOIN generations g ON g.session_id = s.id";
@@ -82,8 +72,10 @@ impl SqliteStore {
             TransactionBehavior::Immediate,
         )?)
     }
+}
 
-    pub fn create(&self, name: SessionName) -> Result<Session> {
+impl SessionStore for SqliteStore {
+    fn create(&self, name: SessionName) -> Result<Session> {
         let id = SessionId::new();
         self.conn.execute(
             "INSERT INTO sessions (id,name,state) VALUES (?1,?2,'stopped')",
@@ -96,7 +88,7 @@ impl SqliteStore {
         })
     }
 
-    pub fn list(&self) -> Result<Vec<SessionRow>> {
+    fn list(&self) -> Result<Vec<SessionRow>> {
         let mut query = self
             .conn
             .prepare(&format!("{SELECT_ROW} ORDER BY s.name"))?;
@@ -104,7 +96,7 @@ impl SqliteStore {
         rows.map(|raw| decode(raw?)).collect()
     }
 
-    pub fn get(&self, id: SessionId) -> Result<Option<SessionRow>> {
+    fn get(&self, id: SessionId) -> Result<Option<SessionRow>> {
         self.conn
             .query_row(
                 &format!("{SELECT_ROW} WHERE s.id=?1"),
@@ -117,7 +109,7 @@ impl SqliteStore {
     }
 
     /// Deletes a stopped session and its records. Returns false if it is not stopped or absent.
-    pub fn delete(&self, id: SessionId) -> Result<bool> {
+    fn delete(&self, id: SessionId) -> Result<bool> {
         let tx = self.immediate()?;
         let changed = tx.execute(
             "DELETE FROM sessions WHERE id=?1 AND state='stopped'",
@@ -134,7 +126,7 @@ impl SqliteStore {
     }
 
     /// stopped → starting with a fresh generation. `None` if the session is not stopped.
-    pub fn reserve(&self, id: SessionId, cdp: bool) -> Result<Option<Generation>> {
+    fn reserve(&self, id: SessionId, cdp: bool) -> Result<Option<Generation>> {
         let tx = self.immediate()?;
         let changed = tx.execute(
             "UPDATE sessions SET state='starting' WHERE id=?1 AND state='stopped'",
@@ -154,7 +146,7 @@ impl SqliteStore {
 
     /// Moves `from → to` only if the session is still in `from` under `generation`.
     /// Leaving `awaiting_user` for anything but `running` cancels the pending request.
-    pub fn transition(
+    fn transition(
         &self,
         id: SessionId,
         generation: Generation,
@@ -176,17 +168,9 @@ impl SqliteStore {
         Ok(changed)
     }
 
-    pub fn generation(&self, id: SessionId) -> Result<Option<Generation>> {
-        Ok(self.get(id)?.and_then(|row| row.generation))
-    }
-
-    pub fn cdp_enabled(&self, id: SessionId) -> Result<bool> {
-        Ok(self.get(id)?.is_some_and(|row| row.cdp))
-    }
-
     /// Recovery: any non-stopped state → stopped, dropping the generation so the old run is
     /// fenced off. The caller must hold the session's supervisor lock. False if already stopped.
-    pub fn force_stopped(&self, id: SessionId) -> Result<bool> {
+    fn force_stopped(&self, id: SessionId) -> Result<bool> {
         let tx = self.immediate()?;
         let changed = tx.execute(
             "UPDATE sessions SET state='stopped' WHERE id=?1 AND state<>'stopped'",
@@ -204,7 +188,7 @@ impl SqliteStore {
     }
 
     /// running|awaiting_user → awaiting_user with a new request; an older pending one is superseded.
-    pub fn request_handoff(
+    fn request_handoff(
         &self,
         id: SessionId,
         generation: Generation,
@@ -241,7 +225,7 @@ impl SqliteStore {
     }
 
     /// The request the user is asked to finish, with the claimed origin.
-    pub fn pending_handoff(&self, id: SessionId) -> Result<Option<(RequestId, Option<String>)>> {
+    fn pending_handoff(&self, id: SessionId) -> Result<Option<(RequestId, Option<String>)>> {
         let found: Option<(String, Option<String>)> = self
             .conn
             .query_row(
@@ -261,7 +245,7 @@ impl SqliteStore {
     }
 
     /// awaiting_user → running, only for the pending request of the current generation.
-    pub fn resume_handoff(
+    fn resume_handoff(
         &self,
         id: SessionId,
         generation: Generation,
@@ -288,11 +272,7 @@ impl SqliteStore {
         Ok(())
     }
 
-    pub fn handoff_status(
-        &self,
-        id: SessionId,
-        request: RequestId,
-    ) -> Result<Option<HandoffStatus>> {
+    fn handoff_status(&self, id: SessionId, request: RequestId) -> Result<Option<HandoffStatus>> {
         let status: Option<String> = self
             .conn
             .query_row(
@@ -309,6 +289,7 @@ impl SqliteStore {
 #[cfg(test)]
 mod tests {
     use crate::SqliteStore;
+    use keyharbor_domain::ports::SessionStore;
     use keyharbor_domain::{Generation, HandoffStatus, RequestId, SessionName, State};
 
     fn store() -> (tempfile::TempDir, SqliteStore) {

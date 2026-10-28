@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Subcommand};
+use keyharbor_domain::ports::*;
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     policy::{Effect, Resource, Rule, normalize_target, parse_agent},

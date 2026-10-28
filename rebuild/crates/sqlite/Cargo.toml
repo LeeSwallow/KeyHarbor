@@ -13,3 +13,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[features]
+# Raw SQL helpers for other crates' tests (tampering with stored rows). Never in release builds.
+test-support = []

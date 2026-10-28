@@ -1351,7 +1351,6 @@ dependencies = [
  "keyharbor-domain",
  "keyharbor-sqlite",
  "keyharbor-vault",
- "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
@@ -1362,8 +1361,11 @@ dependencies = [
 name = "keyharbor-domain"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "getrandom 0.4.3",
  "url",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

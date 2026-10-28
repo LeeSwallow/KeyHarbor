@@ -2,6 +2,9 @@
 
 use crate::SqliteStore;
 use anyhow::{Context, Result, bail};
+use keyharbor_domain::ports::vault::{
+    DomainKeyRow, FieldRow, ItemRow, KeyGuard, VaultRow, VaultStore,
+};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 pub(crate) fn migrate(conn: &Connection) -> Result<()> {
@@ -15,51 +18,10 @@ pub(crate) fn migrate(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VaultRow {
-    pub vault_id: [u8; 16],
-    pub kek_id: [u8; 16],
-    pub version: i64,
-}
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DomainKeyRow {
-    pub domain: u8,
-    pub dk_id: [u8; 16],
-    pub wrapped: Vec<u8>,
-}
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ItemRow {
-    pub id: [u8; 16],
-    pub name: String,
-    pub domain: u8,
-    pub kind: String,
-    pub origin_binding: bool,
-    pub status: String,
-    pub source: String,
-    pub meta_mac: Vec<u8>,
-    pub updated_at: String,
-    /// Sorted ascending.
-    pub origins: Vec<String>,
-}
-/// `sealed` is a vault record; the field value itself never reaches SQLite.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FieldRow {
-    pub field: String,
-    pub sealed: Vec<u8>,
-}
-
 fn id16(bytes: Vec<u8>) -> rusqlite::Result<[u8; 16]> {
     bytes.try_into().map_err(|_| {
         rusqlite::Error::InvalidColumnType(0, "id".into(), rusqlite::types::Type::Blob)
     })
-}
-
-/// The key generation a writer sealed and signed with. Writes are refused if it is stale.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct KeyGuard {
-    pub kek_id: [u8; 16],
-    pub domain: u8,
-    pub dk_id: [u8; 16],
 }
 
 fn check_guard(tx: &Transaction, guard: &KeyGuard) -> Result<()> {
@@ -116,94 +78,6 @@ impl SqliteStore {
         )?)
     }
 
-    pub fn vault_get(&self) -> Result<Option<VaultRow>> {
-        Ok(self
-            .conn
-            .query_row("SELECT id, kek_id, version FROM vault", [], |row| {
-                Ok(VaultRow {
-                    vault_id: id16(row.get(0)?)?,
-                    kek_id: id16(row.get(1)?)?,
-                    version: row.get(2)?,
-                })
-            })
-            .optional()?)
-    }
-
-    pub fn vault_create(&self, vault: &VaultRow, dks: &[DomainKeyRow]) -> Result<()> {
-        let tx = self.write_tx()?;
-        tx.execute(
-            "INSERT INTO vault (id, kek_id, version) VALUES (?1, ?2, ?3)",
-            params![vault.vault_id, vault.kek_id, vault.version],
-        )
-        .context("vault already initialized")?;
-        for dk in dks {
-            tx.execute(
-                "INSERT INTO domain_keys (domain, dk_id, wrapped) VALUES (?1, ?2, ?3)",
-                params![dk.domain, dk.dk_id, dk.wrapped],
-            )?;
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub fn domain_keys(&self) -> Result<Vec<DomainKeyRow>> {
-        let mut query = self
-            .conn
-            .prepare("SELECT domain, dk_id, wrapped FROM domain_keys ORDER BY domain")?;
-        let rows = query.query_map([], |row| {
-            Ok(DomainKeyRow {
-                domain: row.get(0)?,
-                dk_id: id16(row.get(1)?)?,
-                wrapped: row.get(2)?,
-            })
-        })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
-    }
-
-    pub fn item_insert(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
-        let tx = self.write_tx()?;
-        check_guard(&tx, guard)?;
-        let inserted = tx.execute(
-            "INSERT INTO vault_items (id, name, domain, kind, origin_binding, status, source, meta_mac, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(name) DO NOTHING",
-            params![item.id, item.name, item.domain, item.kind, item.origin_binding, item.status, item.source, item.meta_mac, item.updated_at],
-        )?;
-        if inserted == 0 {
-            bail!("item already exists");
-        }
-        write_children(&tx, item, fields)?;
-        bump(&tx)?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub fn item_update(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
-        let tx = self.write_tx()?;
-        check_guard(&tx, guard)?;
-        let updated = tx.execute(
-            "UPDATE vault_items SET name=?2, domain=?3, kind=?4, origin_binding=?5, status=?6, source=?7, meta_mac=?8, updated_at=?9 WHERE id=?1",
-            params![item.id, item.name, item.domain, item.kind, item.origin_binding, item.status, item.source, item.meta_mac, item.updated_at],
-        )?;
-        if updated == 0 {
-            bail!("item not found");
-        }
-        tx.execute("DELETE FROM vault_fields WHERE item_id=?1", [item.id])?;
-        tx.execute("DELETE FROM item_origins WHERE item_id=?1", [item.id])?;
-        write_children(&tx, item, fields)?;
-        bump(&tx)?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub fn item_delete(&self, name: &str) -> Result<bool> {
-        let tx = self.write_tx()?;
-        let deleted = tx.execute("DELETE FROM vault_items WHERE name=?1", [name])? == 1;
-        if deleted {
-            bump(&tx)?;
-        }
-        tx.commit()?;
-        Ok(deleted)
-    }
-
     fn origins_of(&self, id: &[u8; 16]) -> Result<Vec<String>> {
         let mut query = self
             .conn
@@ -236,8 +110,102 @@ impl SqliteStore {
         }
         Ok(items)
     }
+}
 
-    pub fn item_get(&self, name: &str) -> Result<Option<(ItemRow, Vec<FieldRow>)>> {
+impl VaultStore for SqliteStore {
+    fn root(&self) -> &std::path::Path {
+        &self.root
+    }
+
+    fn vault_get(&self) -> Result<Option<VaultRow>> {
+        Ok(self
+            .conn
+            .query_row("SELECT id, kek_id, version FROM vault", [], |row| {
+                Ok(VaultRow {
+                    vault_id: id16(row.get(0)?)?,
+                    kek_id: id16(row.get(1)?)?,
+                    version: row.get(2)?,
+                })
+            })
+            .optional()?)
+    }
+
+    fn vault_create(&self, vault: &VaultRow, dks: &[DomainKeyRow]) -> Result<()> {
+        let tx = self.write_tx()?;
+        tx.execute(
+            "INSERT INTO vault (id, kek_id, version) VALUES (?1, ?2, ?3)",
+            params![vault.vault_id, vault.kek_id, vault.version],
+        )
+        .context("vault already initialized")?;
+        for dk in dks {
+            tx.execute(
+                "INSERT INTO domain_keys (domain, dk_id, wrapped) VALUES (?1, ?2, ?3)",
+                params![dk.domain, dk.dk_id, dk.wrapped],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn domain_keys(&self) -> Result<Vec<DomainKeyRow>> {
+        let mut query = self
+            .conn
+            .prepare("SELECT domain, dk_id, wrapped FROM domain_keys ORDER BY domain")?;
+        let rows = query.query_map([], |row| {
+            Ok(DomainKeyRow {
+                domain: row.get(0)?,
+                dk_id: id16(row.get(1)?)?,
+                wrapped: row.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    fn item_insert(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
+        let tx = self.write_tx()?;
+        check_guard(&tx, guard)?;
+        let inserted = tx.execute(
+            "INSERT INTO vault_items (id, name, domain, kind, origin_binding, status, source, meta_mac, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(name) DO NOTHING",
+            params![item.id, item.name, item.domain, item.kind, item.origin_binding, item.status, item.source, item.meta_mac, item.updated_at],
+        )?;
+        if inserted == 0 {
+            bail!("item already exists");
+        }
+        write_children(&tx, item, fields)?;
+        bump(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn item_update(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
+        let tx = self.write_tx()?;
+        check_guard(&tx, guard)?;
+        let updated = tx.execute(
+            "UPDATE vault_items SET name=?2, domain=?3, kind=?4, origin_binding=?5, status=?6, source=?7, meta_mac=?8, updated_at=?9 WHERE id=?1",
+            params![item.id, item.name, item.domain, item.kind, item.origin_binding, item.status, item.source, item.meta_mac, item.updated_at],
+        )?;
+        if updated == 0 {
+            bail!("item not found");
+        }
+        tx.execute("DELETE FROM vault_fields WHERE item_id=?1", [item.id])?;
+        tx.execute("DELETE FROM item_origins WHERE item_id=?1", [item.id])?;
+        write_children(&tx, item, fields)?;
+        bump(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn item_delete(&self, name: &str) -> Result<bool> {
+        let tx = self.write_tx()?;
+        let deleted = tx.execute("DELETE FROM vault_items WHERE name=?1", [name])? == 1;
+        if deleted {
+            bump(&tx)?;
+        }
+        tx.commit()?;
+        Ok(deleted)
+    }
+
+    fn item_get(&self, name: &str) -> Result<Option<(ItemRow, Vec<FieldRow>)>> {
         let Some(item) = self
             .items_where("WHERE name=?1", &[&name])?
             .into_iter()
@@ -259,12 +227,12 @@ impl SqliteStore {
         Ok(Some((item, fields)))
     }
 
-    pub fn item_list(&self) -> Result<Vec<ItemRow>> {
+    fn item_list(&self) -> Result<Vec<ItemRow>> {
         self.items_where("", &[])
     }
 
     /// Re-wraps all domain keys under a new KEK and replaces every item's metadata MAC atomically.
-    pub fn rekey_domain_keys(
+    fn rekey_domain_keys(
         &self,
         expected_version: i64,
         new_kek_id: [u8; 16],
@@ -294,7 +262,7 @@ impl SqliteStore {
     }
 
     /// Replaces one domain key and the given re-encrypted fields atomically.
-    pub fn replace_domain(
+    fn replace_domain(
         &self,
         expected_version: i64,
         dk: &DomainKeyRow,
@@ -322,12 +290,15 @@ impl SqliteStore {
         Ok(())
     }
 
-    pub fn vault_version(&self) -> Result<i64> {
+    fn vault_version(&self) -> Result<i64> {
         Ok(self
             .conn
             .query_row("SELECT version FROM vault", [], |row| row.get(0))?)
     }
+}
 
+#[cfg(test)]
+impl SqliteStore {
     #[cfg(test)]
     fn count_rows(&self, table: &str) -> Result<i64> {
         Ok(self

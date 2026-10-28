@@ -2,12 +2,13 @@
 
 use crate::{control, paths, supervisor};
 use anyhow::{Context, Result, bail};
+use keyharbor_domain::ports::*;
 use keyharbor_domain::{
     RequestId, SessionId, State,
     audit::{AuditEvent, AuditKind},
     vault::Origin,
 };
-use keyharbor_sqlite::{SessionRow, SqliteStore};
+use keyharbor_sqlite::SqliteStore;
 use serde_json::json;
 use std::{
     path::Path,

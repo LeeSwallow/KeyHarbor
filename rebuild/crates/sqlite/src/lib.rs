@@ -1,10 +1,10 @@
 mod audit_repo;
 mod policy_repo;
 mod session_repo;
+#[cfg(feature = "test-support")]
+mod testing;
 mod vault_repo;
 pub use audit_repo::AUDIT_ENABLED;
-pub use session_repo::SessionRow;
-pub use vault_repo::*;
 
 use anyhow::{Result, bail};
 use rusqlite::Connection;
@@ -58,6 +58,7 @@ impl SqliteStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use keyharbor_domain::ports::SessionStore;
     use keyharbor_domain::{Generation, SessionName, State};
     #[test]
     fn sessions_persist_and_duplicate_names_fail() {

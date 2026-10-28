@@ -10,12 +10,11 @@ aho-corasick.workspace = true
 age.workspace = true
 anyhow.workspace = true
 keyharbor-domain = { path = "../domain" }
-keyharbor-sqlite = { path = "../sqlite" }
 keyharbor-vault = { path = "../vault" }
 serde.workspace = true
 serde_json.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+keyharbor-sqlite = { path = "../sqlite", features = ["test-support"] }
 tempfile.workspace = true
-rusqlite.workspace = true

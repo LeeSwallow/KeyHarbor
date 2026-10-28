@@ -11,11 +11,12 @@ use keyharbor_broker::{
     paths, supervisor,
 };
 use keyharbor_core::policy::{Action, Decision, decide};
+use keyharbor_domain::ports::*;
 use keyharbor_domain::{
     RequestId, SessionId, SessionName, State,
     vault::{Domain, ItemKind},
 };
-use keyharbor_sqlite::{SessionRow, SqliteStore};
+use keyharbor_sqlite::SqliteStore;
 use rmcp::{
     ServerHandler, ServiceExt,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},

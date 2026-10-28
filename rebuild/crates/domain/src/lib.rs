@@ -272,4 +272,6 @@ mod tests {
 }
 pub mod audit;
 pub mod policy;
+pub mod ports;
+pub mod secret;
 pub mod vault;

@@ -3,9 +3,10 @@
 use crate::SqliteStore;
 use anyhow::{Context, Result};
 use keyharbor_domain::audit::{AuditEvent, AuditKind, AuditRecord};
+use keyharbor_domain::ports::{AuditStore, SettingsStore};
 use rusqlite::{Connection, OptionalExtension, params};
 
-pub const AUDIT_ENABLED: &str = "audit_enabled";
+pub use keyharbor_domain::ports::AUDIT_ENABLED;
 
 pub(crate) fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch(
@@ -15,10 +16,10 @@ pub(crate) fn migrate(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-impl SqliteStore {
+impl AuditStore for SqliteStore {
     /// Appends the event unless `audit_enabled` is `false` (then nothing at all is kept, J-23).
     /// Returns whether it was written.
-    pub fn record(&self, event: &AuditEvent) -> Result<bool> {
+    fn record(&self, event: &AuditEvent) -> Result<bool> {
         Ok(self.conn.execute(
             "INSERT INTO audit (at, agent, session_id, kind, item_name, origin, result) SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now'), ?1, ?2, ?3, ?4, ?5, ?6 WHERE coalesce((SELECT value FROM settings WHERE key='audit_enabled'), 'true') = 'true'",
             params![
@@ -33,7 +34,7 @@ impl SqliteStore {
     }
 
     /// The most recent `limit` events (all when `None`), oldest first.
-    pub fn list_audit(&self, limit: Option<usize>) -> Result<Vec<AuditRecord>> {
+    fn list_audit(&self, limit: Option<usize>) -> Result<Vec<AuditRecord>> {
         let limit = limit.map_or(-1, |n| i64::try_from(n).unwrap_or(i64::MAX));
         let mut query = self.conn.prepare(
             "SELECT seq, at, agent, session_id, kind, item_name, origin, result FROM (SELECT * FROM audit ORDER BY seq DESC LIMIT ?1) ORDER BY seq",
@@ -67,8 +68,10 @@ impl SqliteStore {
         })
         .collect()
     }
+}
 
-    pub fn setting_get(&self, key: &str) -> Result<Option<String>> {
+impl SettingsStore for SqliteStore {
+    fn setting_get(&self, key: &str) -> Result<Option<String>> {
         Ok(self
             .conn
             .query_row("SELECT value FROM settings WHERE key=?1", [key], |row| {
@@ -77,7 +80,7 @@ impl SqliteStore {
             .optional()?)
     }
 
-    pub fn setting_set(&self, key: &str, value: &str) -> Result<()> {
+    fn setting_set(&self, key: &str, value: &str) -> Result<()> {
         self.conn.execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             params![key, value],
@@ -90,6 +93,7 @@ impl SqliteStore {
 mod tests {
     use crate::SqliteStore;
     use keyharbor_domain::audit::{AuditEvent, AuditKind};
+    use keyharbor_domain::ports::{AuditStore, SettingsStore};
 
     fn store() -> (tempfile::TempDir, SqliteStore) {
         let tmp = tempfile::tempdir().unwrap();
