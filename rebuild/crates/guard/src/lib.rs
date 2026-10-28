@@ -6,6 +6,7 @@
 //!   value in outgoing text back into its placeholder.
 //! - [`audit`] — what the guard records (never a value).
 //! - [`run`] — the checks, substitution and masker of `keyharbor run`.
+//! - [`describe`] — descriptions must not hold vault values.
 //! - [`GuardedBrowser`] — a `BrowserPort` decorator: input goes through `substitute`, every
 //!   result and error through `mask`. The supervisor hands control requests only to it.
 //!
@@ -14,6 +15,7 @@
 
 pub mod audit;
 mod browser;
+pub mod describe;
 mod guard;
 pub mod pdp;
 pub mod pep;

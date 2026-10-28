@@ -4,10 +4,15 @@
 
 use super::{
     mappers::{
-        domain_key_model, domain_key_row, field_model, field_row, item_model, item_row, vault_row,
+        ItemChildren, domain_key_model, domain_key_row, field_model, field_row, item_model,
+        item_row, vault_row,
     },
-    models::{DomainKeyModel, FieldModel, ItemModel, NewOrigin, NewVault, VaultModel},
-    schema::{domain_keys, item_origins, vault, vault_fields, vault_items},
+    models::{
+        DomainKeyModel, FieldModel, ItemModel, NewFieldDescription, NewOrigin, NewVault, VaultModel,
+    },
+    schema::{
+        domain_keys, item_field_descriptions, item_origins, vault, vault_fields, vault_items,
+    },
 };
 use crate::SqliteStore;
 use anyhow::{Context, Result, bail};
@@ -67,6 +72,15 @@ fn write_children(conn: &mut SqliteConnection, item: &ItemRow, fields: &[FieldRo
             })
             .execute(conn)?;
     }
+    for (field, description) in &item.field_descriptions {
+        diesel::insert_into(item_field_descriptions::table)
+            .values(NewFieldDescription {
+                item_id: &item.id,
+                field,
+                description,
+            })
+            .execute(conn)?;
+    }
     Ok(())
 }
 
@@ -78,12 +92,26 @@ fn origins_of(conn: &mut SqliteConnection, id: &[u8]) -> Result<Vec<String>> {
         .load(conn)?)
 }
 
-fn with_origins(conn: &mut SqliteConnection, models: Vec<ItemModel>) -> Result<Vec<ItemRow>> {
+fn children_of(conn: &mut SqliteConnection, id: &[u8]) -> Result<ItemChildren> {
+    Ok(ItemChildren {
+        origins: origins_of(conn, id)?,
+        field_descriptions: item_field_descriptions::table
+            .filter(item_field_descriptions::item_id.eq(id))
+            .select((
+                item_field_descriptions::field,
+                item_field_descriptions::description,
+            ))
+            .order(item_field_descriptions::field)
+            .load(conn)?,
+    })
+}
+
+fn with_children(conn: &mut SqliteConnection, models: Vec<ItemModel>) -> Result<Vec<ItemRow>> {
     models
         .into_iter()
         .map(|model| {
-            let origins = origins_of(conn, &model.id)?;
-            item_row(model, origins)
+            let children = children_of(conn, &model.id)?;
+            item_row(model, children)
         })
         .collect()
 }
@@ -177,6 +205,11 @@ impl VaultStore for SqliteStore {
                 .execute(conn)?;
             diesel::delete(item_origins::table.filter(item_origins::item_id.eq(&item.id[..])))
                 .execute(conn)?;
+            diesel::delete(
+                item_field_descriptions::table
+                    .filter(item_field_descriptions::item_id.eq(&item.id[..])),
+            )
+            .execute(conn)?;
             write_children(conn, item, fields)?;
             bump(conn)
         })
@@ -212,8 +245,8 @@ impl VaultStore for SqliteStore {
                 .into_iter()
                 .map(field_row)
                 .collect();
-            let origins = origins_of(conn, &model.id)?;
-            Ok(Some((item_row(model, origins)?, fields)))
+            let children = children_of(conn, &model.id)?;
+            Ok(Some((item_row(model, children)?, fields)))
         })
     }
 
@@ -223,7 +256,7 @@ impl VaultStore for SqliteStore {
                 .select(ItemModel::as_select())
                 .order(vault_items::name)
                 .load(conn)?;
-            with_origins(conn, models)
+            with_children(conn, models)
         })
     }
 
@@ -394,6 +427,8 @@ mod tests {
             origin_binding: true,
             run_allowed: false,
             expires_at: None,
+            description: None,
+            field_descriptions: vec![],
             status: "active".into(),
             source: "user".into(),
             meta_mac: vec![id; 32],

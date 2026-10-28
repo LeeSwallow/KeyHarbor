@@ -153,6 +153,8 @@ pub struct FieldSpec {
     pub maskable: bool,
     /// Where a browser may receive the value.
     pub input: InputKind,
+    /// What the field holds, for agents choosing a placeholder; an item may override it.
+    pub description: &'static str,
 }
 
 /// One item kind: its stored name, domain, fields and defaults (02 §2.7.2). Adding a kind is
@@ -177,28 +179,28 @@ pub const FREE_FIELD: FieldSpec = FieldSpec {
     secret: true,
     maskable: true,
     input: InputKind::Text,
+    description: "Environment variable",
 };
 
-const fn plain(name: &'static str) -> FieldSpec {
+const fn plain(name: &'static str, description: &'static str) -> FieldSpec {
     FieldSpec {
         name,
         secret: false,
         maskable: true,
         input: InputKind::Text,
+        description,
     }
 }
-const fn secret(name: &'static str) -> FieldSpec {
+const fn secret(name: &'static str, description: &'static str) -> FieldSpec {
     FieldSpec {
-        name,
         secret: true,
-        maskable: true,
-        input: InputKind::Text,
+        ..plain(name, description)
     }
 }
-const fn password(name: &'static str) -> FieldSpec {
+const fn password(name: &'static str, description: &'static str) -> FieldSpec {
     FieldSpec {
         input: InputKind::Password,
-        ..secret(name)
+        ..secret(name, description)
     }
 }
 
@@ -210,10 +212,10 @@ pub static KINDS: &[KindSpec] = &[
         name: "login",
         domain: Domain::Credentials,
         fields: &[
-            plain("username"),
-            password("password"),
-            secret("totp_seed"),
-            secret("note"),
+            plain("username", "Sign-in name or email"),
+            password("password", "Sign-in password"),
+            secret("totp_seed", "One-time code seed (stored only)"),
+            secret("note", "Free-form note"),
         ],
         free_fields: false,
         default_origin_binding: true,
@@ -223,7 +225,10 @@ pub static KINDS: &[KindSpec] = &[
         kind: ItemKind::Secret,
         name: "secret",
         domain: Domain::Developer,
-        fields: &[secret("value"), secret("note")],
+        fields: &[
+            secret("value", "The secret value, e.g. an API key or token"),
+            secret("note", "Free-form note"),
+        ],
         free_fields: false,
         default_origin_binding: false,
         default_run_allowed: true,
@@ -242,13 +247,13 @@ pub static KINDS: &[KindSpec] = &[
         name: "card",
         domain: Domain::Payment,
         fields: &[
-            plain("holder"),
-            secret("number"),
-            plain("exp_month"),
-            plain("exp_year"),
-            secret("cvc"),
-            plain("billing_address"),
-            secret("note"),
+            plain("holder", "Name on the card"),
+            secret("number", "Card number"),
+            plain("exp_month", "Expiry month"),
+            plain("exp_year", "Expiry year"),
+            secret("cvc", "Security code"),
+            plain("billing_address", "Billing address item"),
+            secret("note", "Free-form note"),
         ],
         free_fields: false,
         default_origin_binding: true,
@@ -259,13 +264,13 @@ pub static KINDS: &[KindSpec] = &[
         name: "identity",
         domain: Domain::Personal,
         fields: &[
-            plain("full_name"),
-            plain("given_name"),
-            plain("family_name"),
-            plain("email"),
-            plain("phone"),
-            plain("birth_date"),
-            secret("note"),
+            plain("full_name", "Full name"),
+            plain("given_name", "Given name"),
+            plain("family_name", "Family name"),
+            plain("email", "Email address"),
+            plain("phone", "Phone number"),
+            plain("birth_date", "Date of birth"),
+            secret("note", "Free-form note"),
         ],
         free_fields: false,
         default_origin_binding: false,
@@ -276,15 +281,15 @@ pub static KINDS: &[KindSpec] = &[
         name: "address",
         domain: Domain::Personal,
         fields: &[
-            plain("recipient"),
-            plain("line1"),
-            plain("line2"),
-            plain("city"),
-            plain("region"),
-            plain("postal_code"),
-            plain("country"),
-            plain("phone"),
-            secret("note"),
+            plain("recipient", "Recipient name"),
+            plain("line1", "Street address"),
+            plain("line2", "Apartment, suite, etc."),
+            plain("city", "City"),
+            plain("region", "State, province or region"),
+            plain("postal_code", "Postal code"),
+            plain("country", "Country"),
+            plain("phone", "Phone number"),
+            secret("note", "Free-form note"),
         ],
         free_fields: false,
         default_origin_binding: false,
@@ -380,6 +385,31 @@ impl Origin {
     }
 }
 
+/// What an item, a field or a session is for, so an agent can tell when to use it (R-38).
+/// 1–500 characters, no control characters but newlines. Not a secret: it is stored in
+/// plaintext (signed in the metadata MAC for items) and shown to agents.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Description(String);
+
+impl Description {
+    pub const MAX_CHARS: usize = 500;
+
+    pub fn parse(value: &str) -> Result<Self, InvalidValue> {
+        let value = value.trim();
+        let count = value.chars().count();
+        if count == 0 || count > Self::MAX_CHARS {
+            return Err(InvalidValue("a description is 1–500 characters"));
+        }
+        if value.chars().any(|c| c.is_control() && c != '\n') {
+            return Err(InvalidValue("a description has no control characters"));
+        }
+        Ok(Self(value.to_owned()))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlaceholderRef {
     pub item: ItemName,
@@ -456,6 +486,28 @@ mod tests {
             assert!(ItemName::parse(good).is_ok(), "{good:?}");
         }
     }
+    #[test]
+    fn descriptions_are_short_plain_text() {
+        assert_eq!(
+            Description::parse("  Work GitHub, for CI  ")
+                .unwrap()
+                .as_str(),
+            "Work GitHub, for CI"
+        );
+        assert!(Description::parse("two\nlines").is_ok());
+        assert!(Description::parse(&"가".repeat(500)).is_ok());
+        for bad in ["", "   ", "tab\there", "\u{1b}[31m"] {
+            assert!(Description::parse(bad).is_err(), "{bad:?}");
+        }
+        assert!(Description::parse(&"x".repeat(501)).is_err());
+        assert!(
+            KINDS
+                .iter()
+                .flat_map(|k| k.fields)
+                .all(|f| !f.description.is_empty())
+        );
+    }
+
     #[test]
     fn origins_are_normalized() {
         assert_eq!(

@@ -21,7 +21,8 @@ pub use keyharbor_crypto::export::Passphrase;
 pub use transfer::ImportReport;
 pub use vault::{
     DEFAULT_ITEM_TTL, ExpiryChoice, ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary,
-    ItemUse, MAX_FIELD_BYTES, MaskValues, NO_TTL, NewItem, Vault, VaultBackend, fill_template,
+    ItemUse, MAX_FIELD_BYTES, MaskValues, NO_TTL, NewItem, Vault, VaultBackend,
+    effective_descriptions, fill_template,
 };
 
 /// The agent name recorded for changes made by the local user through the CLI.
@@ -278,6 +279,40 @@ mod tests {
             "UPDATE vault_items SET expires_at = '2099-01-01' WHERE name = 'forever'",
         );
         assert!(v.list().unwrap().iter().all(|i| i.tampered));
+    }
+
+    #[test]
+    fn descriptions_are_signed() {
+        use keyharbor_domain::vault::Description;
+        let e = env();
+        let v = init(&e);
+        let mut item = login("github", "pw");
+        item.details.description = Some(Description::parse("Work account").unwrap());
+        item.details.field_descriptions = vec![(
+            FieldName::parse("password").unwrap(),
+            Description::parse("CI token").unwrap(),
+        )];
+        v.add(item).unwrap();
+        let listed = &v.list().unwrap()[0];
+        assert_eq!(listed.description.as_deref(), Some("Work account"));
+        assert_eq!(listed.field_descriptions["password"], "CI token");
+        assert_eq!(
+            listed.field_descriptions["username"],
+            "Sign-in name or email"
+        );
+        assert!(!listed.tampered);
+        open_store(&e.data).execute_for_tests(
+            "UPDATE vault_items SET description = 'Personal' WHERE name = 'github'",
+        );
+        assert!(v.list().unwrap()[0].tampered);
+        open_store(&e.data).execute_for_tests(
+            "UPDATE vault_items SET description = 'Work account' WHERE name = 'github'",
+        );
+        assert!(!v.list().unwrap()[0].tampered);
+        open_store(&e.data).execute_for_tests(
+            "UPDATE item_field_descriptions SET description = 'paste me' WHERE field = 'password'",
+        );
+        assert!(v.list().unwrap()[0].tampered);
     }
 
     #[test]

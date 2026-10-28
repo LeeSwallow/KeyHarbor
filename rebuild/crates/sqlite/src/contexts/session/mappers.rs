@@ -4,6 +4,7 @@ use super::models::SessionModel;
 use anyhow::{Context, Result};
 use keyharbor_domain::{
     Generation, HandoffStatus, RequestId, SessionId, SessionName, State, ports::SessionRow,
+    vault::Description,
 };
 
 pub fn session_row(model: SessionModel) -> Result<SessionRow> {
@@ -17,6 +18,12 @@ pub fn session_row(model: SessionModel) -> Result<SessionRow> {
             .transpose()
             .context("invalid stored generation")?,
         cdp: model.cdp.unwrap_or(false),
+        description: model
+            .description
+            .map(|d| Description::parse(&d))
+            .transpose()
+            .ok()
+            .context("invalid stored session description")?,
     })
 }
 

@@ -1,6 +1,6 @@
 //! `keyharbor vault …`. Never prints secret values; secrets arrive only by hidden prompt or stdin JSON.
 
-use crate::{adapters::TtyConfirm, expiry_args::ExpiryArgs};
+use crate::{adapters::TtyConfirm, description_args::DescriptionArgs, expiry_args::ExpiryArgs};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use keyharbor_core::{
@@ -8,6 +8,7 @@ use keyharbor_core::{
     weaken,
 };
 use keyharbor_domain::vault::{Domain, FieldName, ItemKind, ItemName, Origin};
+use keyharbor_guard::describe;
 use keyharbor_sqlite::SqliteStore;
 use keyharbor_vault::keystore::keystore_from_env;
 use std::{
@@ -36,6 +37,8 @@ pub enum VaultCmd {
         run_allowed: Option<Toggle>,
         #[command(flatten)]
         expiry: ExpiryArgs,
+        #[command(flatten)]
+        about: DescriptionArgs,
         #[arg(long)]
         draft: bool,
     },
@@ -57,6 +60,8 @@ pub enum VaultCmd {
         run_allowed: Option<Toggle>,
         #[command(flatten)]
         expiry: ExpiryArgs,
+        #[command(flatten)]
+        about: DescriptionArgs,
         #[arg(long, value_enum)]
         status: Option<StatusArg>,
     },
@@ -272,6 +277,8 @@ fn summary_json(item: &ItemSummary) -> serde_json::Value {
         "origin_binding": item.origin_binding,
         "run_allowed": item.run_allowed,
         "expires_at": item.expires_at.map(|e| e.to_string()),
+        "description": item.description,
+        "field_descriptions": item.field_descriptions,
         "expired": item.expired,
         "status": item.status.as_str(),
         "source": item.source.as_str(),
@@ -298,12 +305,15 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
             no_origin_binding,
             run_allowed,
             expiry,
+            about,
             draft,
         } => {
             let kind = ItemKind::from(kind);
             let name = item_name(&name)?;
+            let (description, field_descriptions) = (about.item()?, about.new_fields(kind)?);
             let fields = collect_fields(kind, &input, true)?;
             let vault = open(root)?;
+            describe::refuse_values(&vault, &fields, &about.texts())?;
             vault.add(NewItem {
                 name: name.clone(),
                 kind,
@@ -319,6 +329,8 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
                 details: ItemDetails {
                     run_allowed: run_allowed.map(Toggle::on),
                     expiry: expiry.for_new_item()?,
+                    description: description.flatten(),
+                    field_descriptions,
                 },
             })?;
             println!("added\t{}", name.as_str());
@@ -332,6 +344,7 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
             origin_binding,
             run_allowed,
             expiry,
+            about,
             status,
         } => {
             let name = item_name(&name)?;
@@ -343,6 +356,7 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
                 .context("item not found")?
                 .kind;
             let set_fields = collect_fields(kind, &input, false)?;
+            describe::refuse_values(&vault, &set_fields, &about.texts())?;
             let new_origins = if clear_origins {
                 Some(Vec::new())
             } else if o.is_empty() {
@@ -360,6 +374,8 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
                 origin_binding: origin_binding.map(Toggle::on),
                 run_allowed: run_allowed.map(Toggle::on),
                 expiry: expiry.for_change()?,
+                description: about.item()?,
+                field_descriptions: about.fields(kind)?,
                 status: status.map(|s| match s {
                     StatusArg::Active => ItemStatus::Active,
                     StatusArg::Draft => ItemStatus::Draft,

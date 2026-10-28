@@ -10,13 +10,13 @@ mod resolve;
 mod summary;
 
 pub use resolve::fill_template;
-pub use summary::ItemUse;
+pub use summary::{ItemUse, effective_descriptions};
 
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
     date::Expiry,
     ports::{AuditStore, FieldRow, ItemRow, KeyGuard, KeyStore, SettingsStore, VaultStore},
-    vault::{Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
+    vault::{Description, Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
 };
 use keyharbor_vault::{
     VaultError,
@@ -102,6 +102,9 @@ pub struct ItemDetails {
     /// `None` uses the kind's default (secret and env items yes, the others no; R-36).
     pub run_allowed: Option<bool>,
     pub expiry: ExpiryChoice,
+    pub description: Option<Description>,
+    /// Overrides of the kind's field descriptions; each names a field the item has.
+    pub field_descriptions: Vec<(FieldName, Description)>,
 }
 
 /// The expiry a new item gets (R-37).
@@ -123,6 +126,10 @@ pub struct ItemChange {
     pub run_allowed: Option<bool>,
     /// `Some(None)` removes the expiry.
     pub expiry: Option<Option<Expiry>>,
+    /// `Some(None)` removes the description.
+    pub description: Option<Option<Description>>,
+    /// Sets (`Some`) or removes (`None`, back to the kind's default) a field's description.
+    pub field_descriptions: Vec<(FieldName, Option<Description>)>,
     pub status: Option<ItemStatus>,
 }
 
@@ -139,6 +146,9 @@ pub struct ItemSummary {
     pub expires_at: Option<Expiry>,
     /// The expiry date has passed: agents may not use the item.
     pub expired: bool,
+    pub description: Option<String>,
+    /// Every field's description: the item's own or the kind's default.
+    pub field_descriptions: BTreeMap<String, String>,
     pub status: ItemStatus,
     pub source: ItemSource,
     pub updated_at: String,
@@ -275,8 +285,8 @@ impl Vault {
             updated_at: &row.updated_at,
             run_allowed: row.run_allowed,
             expires_at: row.expires_at.as_deref(),
-            description: None,
-            field_descriptions: &[],
+            description: row.description.as_deref(),
+            field_descriptions: &row.field_descriptions,
         }
     }
 

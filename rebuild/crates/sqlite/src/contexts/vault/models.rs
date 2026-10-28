@@ -1,6 +1,8 @@
 //! Rows of the vault context as Diesel reads and writes them.
 
-use super::schema::{domain_keys, item_origins, vault, vault_fields, vault_items};
+use super::schema::{
+    domain_keys, item_field_descriptions, item_origins, vault, vault_fields, vault_items,
+};
 use diesel::prelude::*;
 
 #[derive(Queryable, Selectable)]
@@ -27,8 +29,10 @@ pub struct DomainKeyModel {
     pub wrapped: Vec<u8>,
 }
 
+/// `treat_none_as_null`: an update writes every column, so clearing an optional one (an
+/// expiry, a description) clears it instead of leaving the old value.
 #[derive(Queryable, Selectable, Insertable, AsChangeset)]
-#[diesel(table_name = vault_items, check_for_backend(diesel::sqlite::Sqlite))]
+#[diesel(table_name = vault_items, check_for_backend(diesel::sqlite::Sqlite), treat_none_as_null = true)]
 pub struct ItemModel {
     pub id: Vec<u8>,
     pub name: String,
@@ -41,6 +45,7 @@ pub struct ItemModel {
     pub updated_at: String,
     pub run_allowed: bool,
     pub expires_at: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Queryable, Selectable, Insertable)]
@@ -49,6 +54,14 @@ pub struct FieldModel {
     pub item_id: Vec<u8>,
     pub field: String,
     pub sealed: Vec<u8>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = item_field_descriptions)]
+pub struct NewFieldDescription<'a> {
+    pub item_id: &'a [u8],
+    pub field: &'a str,
+    pub description: &'a str,
 }
 
 #[derive(Insertable)]

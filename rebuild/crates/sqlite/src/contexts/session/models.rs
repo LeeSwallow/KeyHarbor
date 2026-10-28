@@ -19,6 +19,7 @@ pub struct SessionModel {
     pub state: String,
     pub generation: Option<String>,
     pub cdp: Option<bool>,
+    pub description: Option<String>,
 }
 
 #[derive(Insertable)]

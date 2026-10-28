@@ -13,7 +13,7 @@ use diesel::{dsl::exists, prelude::*, upsert::excluded};
 use keyharbor_domain::{
     Generation, HandoffStatus, RequestId, Session, SessionId, SessionName, State,
     ports::{SessionRow, SessionStore},
-    vault::Origin,
+    vault::{Description, Origin},
 };
 
 /// The session's run is still `generation`.
@@ -48,6 +48,7 @@ fn load_rows(conn: &mut SqliteConnection, id: Option<&str>) -> Result<Vec<Sessio
             sessions::state,
             generations::generation.nullable(),
             generations::cdp.nullable(),
+            sessions::description,
         ))
         .order(sessions::name)
         .into_boxed();
@@ -78,6 +79,16 @@ impl SessionStore for SqliteStore {
             id,
             name,
             state: State::Stopped,
+        })
+    }
+
+    fn set_description(&self, id: SessionId, description: Option<&Description>) -> Result<bool> {
+        let id = id.to_string();
+        self.write(|conn| {
+            Ok(diesel::update(sessions::table.find(&id))
+                .set(sessions::description.eq(description.map(Description::as_str)))
+                .execute(conn)?
+                == 1)
         })
     }
 

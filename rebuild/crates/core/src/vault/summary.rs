@@ -9,6 +9,7 @@ use keyharbor_domain::{
     ports::ItemRow,
     vault::{Domain, ItemKind, ItemName, Origin},
 };
+use std::collections::BTreeMap;
 
 /// Verified, value-free facts about an item.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,6 +24,26 @@ pub struct ItemUse {
     pub origins: Vec<Origin>,
     pub status: ItemStatus,
     pub fields: Vec<String>,
+}
+
+/// Each field's description: the item's own, or its kind's default.
+pub fn effective_descriptions(
+    kind: ItemKind,
+    fields: &[String],
+    own: &[(String, String)],
+) -> BTreeMap<String, String> {
+    fields
+        .iter()
+        .map(|field| {
+            let text = own
+                .iter()
+                .find(|(f, _)| f == field)
+                .map(|(_, d)| d.as_str())
+                .or_else(|| kind.field(field).map(|spec| spec.description))
+                .unwrap_or_default();
+            (field.clone(), text.to_owned())
+        })
+        .collect()
 }
 
 fn expiry(row: &ItemRow) -> Result<Option<Expiry>> {
@@ -44,11 +65,12 @@ impl Vault {
             let tampered = self.verified(&row).is_err();
             let (expires_at, expired) = (expiry(&row)?, is_expired(&row)?);
             let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
-            let fields = self
+            let fields: Vec<String> = self
                 .store
                 .item_get(&row.name)?
                 .map(|(_, f)| f.into_iter().map(|f| f.field).collect())
                 .unwrap_or_default();
+            let field_descriptions = effective_descriptions(kind, &fields, &row.field_descriptions);
             out.push(ItemSummary {
                 name: row.name,
                 kind,
@@ -59,6 +81,8 @@ impl Vault {
                 run_allowed: row.run_allowed,
                 expires_at,
                 expired,
+                description: row.description,
+                field_descriptions,
                 status: ItemStatus::parse(&row.status).context("unknown status in database")?,
                 source: ItemSource::parse(&row.source).context("unknown source in database")?,
                 updated_at: row.updated_at,

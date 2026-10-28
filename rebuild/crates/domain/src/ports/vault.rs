@@ -26,6 +26,10 @@ pub struct ItemRow {
     pub run_allowed: bool,
     /// The last day of use, `YYYY-MM-DD` (signed in the metadata MAC); `None` never expires.
     pub expires_at: Option<String>,
+    /// What the item is for (plaintext, signed).
+    pub description: Option<String>,
+    /// Per-field overrides of the kind's field descriptions, `(field, text)` sorted by field.
+    pub field_descriptions: Vec<(String, String)>,
     pub status: String,
     pub source: String,
     pub meta_mac: Vec<u8>,

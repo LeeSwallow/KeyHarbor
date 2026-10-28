@@ -6,6 +6,7 @@ use keyharbor_core::session::{self as lifecycle, OpenOptions};
 use keyharbor_domain::{
     RequestId, SessionName, State,
     ports::{SessionRow, SessionRuntime, SessionStore},
+    vault::Description,
 };
 use keyharbor_guard::pdp::Action;
 use keyharbor_sqlite::SqliteStore;
@@ -20,6 +21,8 @@ use std::time::Duration;
 struct Name {
     /// Stored locally in plain text; must not contain secrets.
     name: String,
+    /// What the session is for (at most 500 characters); plain text, never a secret.
+    description: Option<String>,
 }
 #[derive(Deserialize, schemars::JsonSchema)]
 struct Id {
@@ -60,6 +63,7 @@ fn row_json(runtime: &ProcessRuntime, row: &SessionRow) -> Value {
         "name": row.name.as_str(),
         "state": lifecycle::display_state(runtime, row),
         "cdp": row.cdp,
+        "description": row.description.as_ref().map(|d| d.as_str()),
     })
 }
 
@@ -84,7 +88,10 @@ impl Server {
     }
 
     #[tool(description = "Create a stopped browser session with its own browser profile.")]
-    async fn session_create(&self, Parameters(Name { name }): Parameters<Name>) -> CallToolResult {
+    async fn session_create(
+        &self,
+        Parameters(Name { name, description }): Parameters<Name>,
+    ) -> CallToolResult {
         if self.inner.scope.is_some() {
             return fail("session creation is disabled for this scoped server");
         }
@@ -92,7 +99,14 @@ impl Server {
             self.blocking(move |inner| {
                 inner.allow(&Action::CreateSession)?;
                 let name = SessionName::parse(&name)?;
-                let session = SqliteStore::open(&inner.data)?.create(name)?;
+                let description = description
+                    .as_deref()
+                    .map(Description::parse)
+                    .transpose()
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let store = SqliteStore::open(&inner.data)?;
+                let session = store.create(name)?;
+                store.set_description(session.id, description.as_ref())?;
                 Ok(json!({"id": session.id.to_string(), "name": session.name.as_str(), "state": session.state.as_str()}))
             })
             .await,

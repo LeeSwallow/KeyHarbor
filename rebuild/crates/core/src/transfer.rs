@@ -3,7 +3,7 @@
 use crate::{ItemSource, ItemStatus, NewItem, PlaintextAccess, Vault};
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_crypto::export::{Passphrase, decrypt_age, encrypt_age};
-use keyharbor_domain::vault::{FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
+use keyharbor_domain::vault::{Description, FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, io::Write, path::Path};
 use zeroize::Zeroizing;
@@ -30,6 +30,8 @@ struct ItemOut<'a> {
     origin_binding: bool,
     run_allowed: bool,
     expires_at: Option<String>,
+    description: Option<&'a str>,
+    field_descriptions: BTreeMap<&'a str, &'a str>,
     status: &'static str,
     source: &'static str,
     fields: BTreeMap<&'a str, &'a str>,
@@ -50,6 +52,11 @@ struct ItemIn {
     run_allowed: Option<bool>,
     #[serde(default)]
     expires_at: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    /// Only the item's own descriptions (not the kind's defaults).
+    #[serde(default)]
+    field_descriptions: BTreeMap<String, String>,
     status: String,
     fields: BTreeMap<String, String>,
 }
@@ -106,6 +113,17 @@ impl Vault {
                     origin_binding: s.origin_binding,
                     run_allowed: s.run_allowed,
                     expires_at: s.expires_at.map(|e| e.to_string()),
+                    description: s.description.as_deref(),
+                    field_descriptions: s
+                        .field_descriptions
+                        .iter()
+                        .filter(|(f, d)| {
+                            s.kind
+                                .field(f)
+                                .is_none_or(|spec| spec.description != d.as_str())
+                        })
+                        .map(|(f, d)| (f.as_str(), d.as_str()))
+                        .collect(),
                     status: s.status.as_str(),
                     source: s.source.as_str(),
                     fields: fields
@@ -183,6 +201,22 @@ impl Vault {
                         ),
                         None => crate::ExpiryChoice::Never,
                     },
+                    description: item
+                        .description
+                        .as_deref()
+                        .map(Description::parse)
+                        .transpose()
+                        .map_err(|e| anyhow!("{e}"))?,
+                    field_descriptions: item
+                        .field_descriptions
+                        .iter()
+                        .map(|(f, d)| {
+                            Ok((
+                                FieldName::parse(f).map_err(|e| anyhow!("{e}"))?,
+                                Description::parse(d).map_err(|e| anyhow!("{e}"))?,
+                            ))
+                        })
+                        .collect::<Result<_>>()?,
                 },
             })?;
             report.added += 1;

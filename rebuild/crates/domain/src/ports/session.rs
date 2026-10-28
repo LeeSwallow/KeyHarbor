@@ -3,7 +3,10 @@
 //! Every state change is conditional on the session's current generation (compare-and-swap),
 //! so a writer from an older run cannot move a newer one.
 
-use crate::{Generation, HandoffStatus, RequestId, Session, SessionId, SessionName, State};
+use crate::{
+    Generation, HandoffStatus, RequestId, Session, SessionId, SessionName, State,
+    vault::Description,
+};
 use anyhow::Result;
 
 /// A session as stored, with the generation of its current run (if any).
@@ -15,10 +18,14 @@ pub struct SessionRow {
     pub generation: Option<Generation>,
     /// Raw CDP was requested for the current run.
     pub cdp: bool,
+    /// What the session is for (R-38).
+    pub description: Option<Description>,
 }
 
 pub trait SessionStore {
     fn create(&self, name: SessionName) -> Result<Session>;
+    /// Sets or clears the session's description. False if there is no such session.
+    fn set_description(&self, id: SessionId, description: Option<&Description>) -> Result<bool>;
     /// Every session, ordered by name.
     fn list(&self) -> Result<Vec<SessionRow>>;
     fn get(&self, id: SessionId) -> Result<Option<SessionRow>>;
