@@ -1197,12 +1197,14 @@ name = "keyharbor-broker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "keyharbor-domain",
  "keyharbor-sqlite",
  "libc",
  "serde_json",
  "tempfile",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]

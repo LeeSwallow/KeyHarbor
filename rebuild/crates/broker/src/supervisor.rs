@@ -50,6 +50,7 @@ pub fn is_alive(data: &Path, id: &SessionId) -> bool {
 
 /// What the supervisor shares with its control connections.
 pub(crate) struct Shared {
+    pub data: PathBuf,
     pub id: SessionId,
     pub generation: Generation,
     pub store: Mutex<SqliteStore>,
@@ -247,15 +248,17 @@ async fn supervise(
             };
         }
     }
-    let _ = data;
+    let cdp = Arc::new(Cdp::new(sender, receiver));
     let shared = Arc::new(Shared {
+        data: data.to_path_buf(),
         id,
         generation,
         store: Mutex::new(store),
-        ops: tokio::sync::Mutex::new(Ops::new(Cdp::new(sender, receiver))),
+        ops: tokio::sync::Mutex::new(Ops::new(cdp.clone())),
         close: tokio::sync::Notify::new(),
         close_requested: false.into(),
     });
+    tokio::spawn(close_when_last_tab_closes(cdp, shared.clone()));
     let status = serve(&shared, &listener, &mut child).await;
     drop(listener);
     let _ = fs::remove_file(&socket);
@@ -302,6 +305,44 @@ async fn serve(
                 let _ = child.start_kill();
                 kill_at = Some(Instant::now() + Duration::from_secs(3600));
             }
+        }
+    }
+}
+
+/// On macOS Chrome keeps running with no windows; treat closing the last tab as closing the browser.
+async fn close_when_last_tab_closes(cdp: Arc<Cdp>, shared: Arc<Shared>) {
+    let mut events = cdp.events();
+    if cdp
+        .call(
+            "Target.setDiscoverTargets",
+            serde_json::json!({"discover": true}),
+            None,
+        )
+        .await
+        .is_err()
+    {
+        return;
+    }
+    loop {
+        match events.recv().await {
+            Ok(event) if event["method"] == "Target.targetDestroyed" => {
+                let Ok(targets) = cdp
+                    .call("Target.getTargets", serde_json::json!({}), None)
+                    .await
+                else {
+                    return;
+                };
+                let pages = targets["targetInfos"]
+                    .as_array()
+                    .is_some_and(|t| t.iter().any(|t| t["type"] == "page"));
+                if !pages {
+                    cdp.send_and_close("Browser.close", serde_json::json!({}));
+                    shared.request_close();
+                    return;
+                }
+            }
+            Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => (),
+            Err(_) => return,
         }
     }
 }
