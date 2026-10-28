@@ -3,17 +3,17 @@
 
 use crate::server::{Server, lock};
 use anyhow::{Context, Result, bail};
-use keyharbor_broker::{paths, supervisor};
 use keyharbor_domain::SessionId;
 use keyharbor_guard::SharedStore;
+use keyharbor_supervisor::lock_mcp_scope;
 use std::{fs::File, path::Path};
 
 /// Checks the session exists and takes its scoped-server lock.
 pub(crate) fn claim(store: &SharedStore, data: &Path, id: &str) -> Result<(SessionId, File)> {
     let id = SessionId::parse(id).context("invalid session id")?;
     keyharbor_core::session::session(&**lock(store)?, id)?;
-    let lock = supervisor::acquire_lock(&paths::mcp_lock_path(data, &id))
-        .context("another scoped MCP server already owns this session")?;
+    let lock =
+        lock_mcp_scope(data, &id).context("another scoped MCP server already owns this session")?;
     Ok((id, lock))
 }
 

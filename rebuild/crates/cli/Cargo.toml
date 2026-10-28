@@ -9,11 +9,11 @@ publish = false
 anyhow.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
 keyharbor-domain = { path = "../domain" }
-keyharbor-broker = { path = "../broker" }
 keyharbor-core = { path = "../core" }
 keyharbor-guard = { path = "../guard" }
 keyharbor-mcp = { path = "../mcp" }
 keyharbor-sqlite = { path = "../sqlite" }
+keyharbor-supervisor = { path = "../supervisor" }
 keyharbor-vault = { path = "../vault" }
 libc.workspace = true
 rpassword.workspace = true

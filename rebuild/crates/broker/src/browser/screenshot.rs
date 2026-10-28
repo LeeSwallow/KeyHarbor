@@ -1,7 +1,7 @@
-//! `screenshot`: a PNG of the active tab, saved privately under `run/shots/`.
+//! `screenshot`: a PNG of the active tab, saved 0600 in the private shots directory the
+//! supervisor prepared.
 
 use super::CdpBrowser;
-use crate::paths;
 use anyhow::{Context, Result};
 use base64::Engine;
 use serde_json::{Value, json};
@@ -19,11 +19,8 @@ impl CdpBrowser {
                     .context("screenshot returned no data")?,
             )
             .context("screenshot data is not base64")?;
-        let dir = paths::shots_dir(&self.data);
-        paths::private_dir(dir.parent().context("invalid shots path")?)?;
-        paths::private_dir(&dir)?;
         for n in 1.. {
-            let path = dir.join(format!("{}-{n}.png", self.session));
+            let path = self.shots.join(format!("{}-{n}.png", self.shot_prefix));
             let mut options = std::fs::OpenOptions::new();
             options.write(true).create_new(true);
             #[cfg(unix)]

@@ -5,8 +5,8 @@
 mod common;
 
 use common::{chrome, serve_site};
-use keyharbor_broker::client;
 use keyharbor_domain::SessionId;
+use keyharbor_supervisor::control::client;
 use serde_json::{Value, json};
 use std::{
     fs,

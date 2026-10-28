@@ -1,7 +1,7 @@
 //! The raw browser adapter: `BrowserPort`, `PageInput` and `FrameInspector` over CDP.
 //!
-//! Crate-private. It types exactly the text it is given and returns results unmasked; the
-//! supervisor only ever reaches it through `keyharbor_guard::GuardedBrowser`.
+//! It types exactly the text it is given and returns results unmasked; the supervisor only
+//! ever reaches it through `keyharbor_guard::GuardedBrowser`.
 
 mod frames;
 mod input;
@@ -16,7 +16,6 @@ mod wait;
 use crate::cdp::Cdp;
 use anyhow::{Context, Result};
 use keyharbor_domain::{
-    SessionId,
     ports::{
         BrowserPort, FrameInspector, PageInput,
         browser::{Element, Focus, LoginFields, Page, WaitFor},
@@ -35,15 +34,16 @@ pub(crate) const LOAD_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const WAIT_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const POLL: Duration = Duration::from_millis(100);
 
-pub(crate) struct CdpBrowser {
+/// Built with [`crate::chrome::CdpLink::browser`].
+pub struct CdpBrowser {
     cdp: Arc<Cdp>,
     /// Target the page ops act on.
     active: Option<String>,
     /// targetId → flattened CDP sessionId.
     attached: HashMap<String, String>,
-    /// The data directory and session, for screenshot files.
-    data: PathBuf,
-    session: SessionId,
+    /// The private directory screenshots go to, and their file name prefix.
+    shots: PathBuf,
+    shot_prefix: String,
     /// Navigation state per attached page, kept current from CDP events (I4).
     navigations: navigation::Navigations,
     /// When the last click or key press was sent.
@@ -58,15 +58,15 @@ struct Tab {
 
 impl CdpBrowser {
     /// Must be called inside a Tokio runtime (it starts the navigation tracker).
-    pub fn new(cdp: Arc<Cdp>, data: PathBuf, session: SessionId) -> Self {
+    pub(crate) fn new(cdp: Arc<Cdp>, shots: PathBuf, shot_prefix: String) -> Self {
         let navigations = navigation::Navigations::default();
         tokio::spawn(navigation::track(cdp.events(), navigations.clone()));
         Self {
             cdp,
             active: None,
             attached: HashMap::new(),
-            data,
-            session,
+            shots,
+            shot_prefix,
             navigations,
             last_input: std::sync::Mutex::new(None),
         }

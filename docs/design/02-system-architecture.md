@@ -87,7 +87,8 @@ flowchart TB
     app["keyharbor-app (5단계, Tauri)"]
   end
   subgraph adapters["adapters"]
-    broker["keyharbor-broker<br/>CDP · 감독자 · 제어 socket<br/>BrowserPort · PageInput · FrameInspector · SessionRuntime 구현"]
+    supervisor["keyharbor-supervisor<br/>감독자 프로세스 · 제어 socket(wire)<br/>Guard 조립 · SessionRuntime 구현"]
+    broker["keyharbor-broker<br/>Chrome 실행 · CDP pipe<br/>BrowserPort · PageInput · FrameInspector 구현"]
     sqlite["keyharbor-sqlite<br/>Diesel · 컨텍스트별 repo<br/>저장소 포트 구현"]
     vault["keyharbor-vault<br/>AEAD · 레코드 v1 · 메타 MAC<br/>KeyStore 구현(Keychain)"]
   end
@@ -100,9 +101,9 @@ flowchart TB
   subgraph domain["domain + ports (I/O 없음)"]
     dom["keyharbor-domain<br/>엔티티 · 값 객체 · KINDS 레지스트리<br/>ports: VaultStore · SessionStore · PolicyStore<br/>AuditStore · SettingsStore · KeyStore<br/>BrowserPort · PageInput · FrameInspector<br/>SessionRuntime · StoreFactory"]
   end
-  cli --> mcp & broker & sqlite & vault & guard & core
-  mcp --> broker & guard & core
-  broker --> guard
+  cli --> mcp & supervisor & sqlite & vault & guard & core
+  mcp --> supervisor & guard & core
+  supervisor --> broker & guard & core
   guard --> core
   core --> vault
   broker & sqlite & vault & guard & core --> dom
@@ -115,11 +116,12 @@ flowchart TB
 | `keyharbor-core` | application | domain, vault(레코드 함수만) | `Vault` 유스케이스(`vault/{open, items, summary, resolve}`, 에이전트용 `catalog`), `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `PlaintextAccess` |
 | `keyharbor-guard` | security | domain, core | `pdp::decide`, `pep::substitute`, `pep::mask::Masker`, `pep::origin`, `audit`, `run`, `items`(항목 add/edit 순서), `session`(세션 작업 → 정책 Action 표), `Guard`, `GuardedBrowser` |
 | `keyharbor-sqlite` | adapter | domain | `SqliteStore`(저장소 포트 전부), `SqliteStores`(`StoreFactory`), 컨텍스트 레지스트리 |
-| `keyharbor-broker` | adapter | domain, guard | `CdpBrowser`(crate 내부), `supervisor`, `control`, `ProcessRuntime`(`SessionRuntime`) |
-| `keyharbor-mcp` | interface | domain, core, guard, broker | `server`, `scope`, `tools/{session, browser, vault}`. 저장소·금고 opener·런타임은 생성자로 받는다(`Deps`) |
-| `keyharbor` (CLI) | interface | crypto를 뺀 전부 | `compose`(composition root), clap 명령, 감독자 조립(`__supervise`) |
+| `keyharbor-broker` | adapter (Chrome) | domain | `chrome`(Chrome 실행, CDP pipe `CdpLink`, `DevToolsActivePort` 해석), `CdpBrowser`(`BrowserPort`·`PageInput`·`FrameInspector`). supervisor만 의존한다(규칙 B) |
+| `keyharbor-supervisor` | adapter (프로세스) | domain, core, guard, broker | `run`(감독자 프로세스: 잠금, 준비, `CdpBrowser`를 `GuardedBrowser`로 감싸 제어 socket 처리), `control::{wire, client}`(제어 프로토콜 한 곳, 규칙 K), `SuperviseArgs`(`__supervise` argv 계약), `ProcessRuntime`(`SessionRuntime`), `lock_mcp_scope` |
+| `keyharbor-mcp` | interface | domain, core, guard, supervisor | `server`, `scope`, `tools/{session, browser, vault}`. 저장소·금고 opener·런타임은 생성자로 받는다(`Deps`) |
+| `keyharbor` (CLI) | interface | crypto·broker를 뺀 전부 | `compose`(composition root), clap 명령, 감독자 조립(`__supervise`) |
 
-`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 crypto만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음, 표면(CLI `*_cmd`·MCP)은 저장소를 열거나 저장소 포트를 부르지 않음(규칙 A), 세션 수준 `Action`은 guard의 표만 고름(규칙 J), placeholder 문법은 domain에만(규칙 H), 요청자 이름 `*` 금지는 domain `AgentName`에만(규칙 I). `scripts/test-scripts.sh`가 규칙마다 위반을 심은 사본(`CHECK_LAYERS_ROOT`)으로 검사가 실패하는지 확인한다.
+`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 crypto만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음, 표면(CLI `*_cmd`·MCP)은 저장소를 열거나 저장소 포트를 부르지 않음(규칙 A), 세션 수준 `Action`은 guard의 표만 고름(규칙 J), placeholder 문법은 domain에만(규칙 H), 요청자 이름 `*` 금지는 domain `AgentName`에만(규칙 I), broker는 domain에만 의존하고 supervisor만 broker에 의존(규칙 B), 제어 요청의 `"op"`은 `supervisor::control::wire`에만(규칙 K). `scripts/test-scripts.sh`가 규칙마다 위반을 심은 사본(`CHECK_LAYERS_ROOT`)으로 검사가 실패하는지 확인한다.
 
 ### 2.4.0 표면과 composition root
 
@@ -142,7 +144,7 @@ CLI와 MCP는 같은 유스케이스를 부르는 두 얼굴이다. 바이너리
 
 ```mermaid
 flowchart LR
-  req["control 요청<br/>(MCP · CLI → socket)"] --> ops["broker::ops<br/>요청 → Command"]
+  req["control 요청<br/>(MCP · CLI → socket)<br/>`ControlEnvelope`"] --> ops["supervisor::ops<br/>wire → Command"]
   ops --> gb["GuardedBrowser<br/>(BrowserPort 데코레이터)"]
   subgraph guard["keyharbor-guard"]
     gb --> sub["PEP substitute<br/>항목 · 상태 · 정책 · origin 확인"]
@@ -153,25 +155,27 @@ flowchart LR
     mask -->|"PlaintextAccess"| mv["core Vault::mask_values"]
     sub -.->|"거부·사용"| aud["audit (값 없음)"]
   end
-  gb --> raw["CdpBrowser (broker 내부)<br/>BrowserPort · PageInput · FrameInspector"]
+  gb --> raw["broker::CdpBrowser<br/>BrowserPort · PageInput · FrameInspector"]
   raw --> chrome["Chrome (CDP pipe)"]
 ```
 
 - **데코레이터**: `GuardedBrowser<'a, B: BrowserPort + PageInput + FrameInspector>`는 그 자신이 `BrowserPort`다. placeholder가 있는 `fill`·`type_text`는 `PageInput` 단계(포커스 → 검사 → 비우기 → 포커스 재확인 → 입력)를 직접 밟고, 나머지는 raw 어댑터에 위임한 뒤 결과와 오류 메시지를 마스킹한다. 요청마다 `Guard::browser(&mut raw, agent)`로 만든다. [J-44, J-45]
-- broker는 `browser`·`cdp` 모듈을 crate 밖에 공개하지 않는다. 그래서 MCP·CLI가 브라우저에 닿는 길은 제어 socket → `ops` → `GuardedBrowser` 하나뿐이다.
+- broker는 `CdpBrowser`만 공개하고 `cdp`·`browser` 모듈은 숨긴다. broker에 의존하는 crate는 supervisor 하나이고(규칙 B) supervisor는 `CdpBrowser`를 `ops`에서 `GuardedBrowser`로만 쓴다. 그래서 MCP·CLI가 브라우저에 닿는 길은 제어 socket → `ops` → `GuardedBrowser` 하나뿐이다.
 - `keyharbor run`은 같은 PDP·origin 규칙을 `guard::run`에서 쓰고, 프로세스 실행과 출력 펌프만 CLI에 남는다.
 
 ### 2.4.2 세션 유스케이스와 런타임 포트
 
-broker는 core에 의존할 수 없으므로, 세션 열기·멈추기·인계·복구·endpoint의 순서와 오류 메시지는 `keyharbor-core::session`에 있고 프로세스·OS 잠금·socket·`DevToolsActivePort` 파일은 `SessionRuntime` 포트 뒤(broker의 `ProcessRuntime`)에 있다. 감독자 프로세스는 `StoreFactory`(SQLite 어댑터)와 금고 opener를 인터페이스에게서 받는다(`supervisor::Adapters`). [J-47]
+세션 열기·멈추기·인계·복구·endpoint의 순서와 오류 메시지는 `keyharbor-core::session`에 있고 프로세스·OS 잠금·socket·`DevToolsActivePort` 파일은 `SessionRuntime` 포트 뒤(`keyharbor-supervisor`의 `ProcessRuntime`)에 있다. 감독자가 자기 실행에 기록하는 상태(예약 확인, `starting → running/failed`, 브라우저 종료 뒤 `stopped/failed`)의 규칙은 `core::session::supervision`에 있고 감독자는 그것을 부른다. 감독자 프로세스는 `StoreFactory`(SQLite 어댑터), 금고 opener, headless 여부를 composition root에게서 받는다(`keyharbor_supervisor::Adapters`). 감독자 argv는 `SuperviseArgs` 하나가 쓰고 읽는다. [J-47, J-74]
 
 ```mermaid
 flowchart LR
   cli["CLI · MCP"] -->|"compose가 만든 Store + SessionRuntime"| uc["core::session<br/>open · stop · wait_auth · resume · recover · endpoint"]
   uc -->|"SessionStore · AuditStore"| st["sqlite"]
-  uc -->|"SessionRuntime"| rt["broker::ProcessRuntime<br/>lock · start(__supervise) · close · endpoint"]
-  rt --> sup["감독자 프로세스<br/>supervisor::run(Adapters)"]
+  uc -->|"SessionRuntime"| rt["supervisor::ProcessRuntime<br/>lock · start(SuperviseArgs) · close · endpoint"]
+  rt -->|"control::wire"| sup["감독자 프로세스<br/>supervisor::run(Adapters)"]
+  sup --> sv["core::session::supervision<br/>상태 기록"]
   sup --> guardbox["Guard + GuardedBrowser"]
+  guardbox --> cdp["broker::CdpBrowser"]
 ```
 
 ## 2.5 런타임 뷰
