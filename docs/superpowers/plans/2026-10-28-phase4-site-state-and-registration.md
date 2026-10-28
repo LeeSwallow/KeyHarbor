@@ -27,3 +27,8 @@
 4. 포착: 감독자가 각 페이지에 `Page.addScriptToEvaluateOnNewDocument {worldName:"keyharbor"}` + `Runtime.addBinding {name:"__khCapture", executionContextName:"keyharbor"}`; 스크립트는 password 입력이 있는 form submit/Enter/버튼 클릭 시 `{origin, username, password}`를 binding으로 보낸다. 감독자는 08 §8.2 ② 규칙대로 draft 저장 + 사용 기록 `credential_captured`. 설정 `capture_enabled`(기본 true). 실제 Chrome 테스트(Review Focus 1). 커밋 `feat(broker): capture logins typed by the user as drafts`
 5. draft 확정·폐기: `site_state_set(logged_in)` 자동 확정, CLI `keyharbor vault confirm <name>`, `discard <name>`, `prune-drafts`. 테스트 → 커밋 `feat: confirm drafts on login success`
 6. 문서(README·rebuild/README·05·ROADMAP·.sticky) + 전체 검증 → 커밋 `docs: phase 4 site state and registration`
+
+## 추가 (2026-10-29): 사이트 넘기기와 grant
+설계: [사이트 넘기기와 grant](../specs/2026-10-29-site-handoff-and-grants-design.md) (R-42, R-43).
+7. grant 모델: access 컨텍스트에 `grants(id, subject_kind, subject, scope_kind, scope, until, created_by, reason, created_at, revoked_at)` 새 마이그레이션. guard PDP가 세션의 Origins grant로 최상위·frame 탐색을 제한(`denied: navigation (out-of-grant)`), 만료·회수 시 해당 쿠키 삭제. CLI `keyharbor grant list|add|revoke`(add는 약화 작업). 실제 Chrome 테스트: grant 밖 탐색 거부, 하위 리소스는 허용, 만료 후 쿠키 없음. 커밋 `feat: grants scope sessions to origins`
+8. 사이트 넘기기: `integrations/chrome-extension/`(MV3, 압축 해제 설치, 권한 `cookies`, `nativeMessaging`, `activeTab`), native host `keyharbor browser host`(stdin/stdout 길이 접두 JSON), 등록 `keyharbor browser install-host`(매니페스트를 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`에, `allowed_origins`는 확장 ID 하나). 감독자 control 명령 `receive_site {origin, cookies, local_storage?, ttl}` → `Network.setCookies` + grant + 사용 기록 `site_handed_off`. 쿠키 값은 응답·로그·DB에 없음(누출 테스트). 커밋 `feat: hand a site's login from your Chrome to an agent session`
