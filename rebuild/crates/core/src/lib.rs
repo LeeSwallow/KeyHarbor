@@ -1,7 +1,12 @@
 //! Vault use cases shared by the CLI, MCP server and admin app.
 //! Plaintext leaves this crate only through `Vault::resolve`, which the CLI never calls.
 
+mod dotenv;
 mod rotate;
+mod transfer;
+
+pub use dotenv::parse_dotenv;
+pub use transfer::ImportReport;
 
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::vault::{Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
