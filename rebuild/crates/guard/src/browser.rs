@@ -5,13 +5,16 @@
 //! frame that holds the focused element (03 §3.8, J-35); everything that comes back — values
 //! and error messages alike — is masked exactly once. Error messages never include input text.
 
-use crate::{Guard, pep::substitute::Prepared};
+use crate::{
+    Guard,
+    pep::substitute::{Destination, Prepared},
+};
 use anyhow::{Context, Result, anyhow};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     ports::{
         BrowserPort, FrameInspector, PageInput,
-        browser::{Focus, Page, WaitFor},
+        browser::{Element, Focus, Page, WaitFor},
     },
     vault::{Origin, parse_placeholders},
 };
@@ -36,14 +39,14 @@ impl<'a, B> GuardedBrowser<'a, B> {
 }
 
 impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
-    /// The focused element and its frame's origin, refusing (and recording) when the focus
-    /// cannot be located or, for `fill`, is not on the target element.
+    /// The focused element, what it is and its frame's origin, refusing (and recording) when
+    /// the focus cannot be located or, for `fill`, is not on the target element.
     async fn checked_focus(
         &mut self,
         page: &Page,
         template: &str,
         expected: Option<u64>,
-    ) -> Result<(Focus, Option<Origin>)> {
+    ) -> Result<(Focus, Element, Option<Origin>)> {
         let refs = parse_placeholders(template).map_err(|e| anyhow!("{e}"))?;
         let first = &refs.first().context("no placeholder")?.item;
         let focus = match self.inner.focus(page).await {
@@ -59,7 +62,18 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
                 "focus",
             ));
         }
-        Ok((focus, origin))
+        let element = match self.inner.element(page, focus.node).await {
+            Ok(element) => element,
+            Err(_) => {
+                return Err(self.guard.denied(
+                    self.agent,
+                    first,
+                    origin.as_ref().map(Origin::as_str),
+                    "focus",
+                ));
+            }
+        };
+        Ok((focus, element, origin))
     }
 
     /// Types resolved text, then re-checks the frame's origin (detection only: the text is
@@ -71,6 +85,8 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         origin: Option<Origin>,
         prepared: Prepared,
     ) -> Result<Value> {
+        // From here on the element may hold a value: snapshots redact it for the session.
+        self.guard.taint(focus.node);
         let inserted = self.inner.insert_text(page, &prepared.text).await;
         drop(prepared.text);
         inserted?;
@@ -108,10 +124,15 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         }
         let page = self.inner.page().await?;
         let node = self.inner.focus_element(&page, target).await?;
-        let (focus, origin) = self.checked_focus(&page, template, Some(node)).await?;
-        let prepared = self
-            .guard
-            .prepare_text(self.agent, template, origin.as_ref())?;
+        let (focus, element, origin) = self.checked_focus(&page, template, Some(node)).await?;
+        let prepared = self.guard.prepare_text(
+            self.agent,
+            template,
+            Destination {
+                frame: origin.as_ref(),
+                element: Some(&element),
+            },
+        )?;
         self.inner.clear_element(&page, node).await?;
         // Clearing ran page code; the text must still go where it was checked.
         if self.inner.focus(&page).await.ok().as_ref() != Some(&focus) {
@@ -131,10 +152,15 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
             return self.inner.type_text(template).await;
         }
         let page = self.inner.page().await?;
-        let (focus, origin) = self.checked_focus(&page, template, None).await?;
-        let prepared = self
-            .guard
-            .prepare_text(self.agent, template, origin.as_ref())?;
+        let (focus, element, origin) = self.checked_focus(&page, template, None).await?;
+        let prepared = self.guard.prepare_text(
+            self.agent,
+            template,
+            Destination {
+                frame: origin.as_ref(),
+                element: Some(&element),
+            },
+        )?;
         self.insert_prepared(&page, &focus, origin, prepared).await
     }
 }
@@ -145,7 +171,8 @@ impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser
         self.guard.redact_outcome(outcome)
     }
     async fn snapshot(&mut self) -> Result<Value> {
-        let outcome = self.inner.snapshot().await;
+        let hidden = self.guard.tainted();
+        let outcome = self.inner.redacted_snapshot(&hidden).await;
         self.guard.redact_outcome(outcome)
     }
     async fn screenshot(&mut self) -> Result<Value> {
@@ -204,13 +231,33 @@ mod tests {
         ports::{PolicyStore, Store},
     };
     use keyharbor_sqlite::SqliteStore;
-    use std::sync::{Arc, Mutex};
+    use std::{
+        collections::BTreeSet,
+        sync::{Arc, Mutex},
+    };
 
-    /// A browser whose page is `https://github.com` with one focused input (node 7).
-    #[derive(Default)]
+    /// A browser whose page is `https://github.com` with one focused input (node 7), a
+    /// password input unless a test changes `element`.
     struct Fake {
         typed: Vec<String>,
         echo: String,
+        element: Element,
+        /// What the last redacted snapshot was asked to hide.
+        hidden: BTreeSet<u64>,
+    }
+    impl Default for Fake {
+        fn default() -> Self {
+            Self {
+                typed: Vec::new(),
+                echo: String::new(),
+                element: Element {
+                    local_name: "input".into(),
+                    input_type: Some("password".into()),
+                    ..Element::default()
+                },
+                hidden: BTreeSet::new(),
+            }
+        }
     }
     impl BrowserPort for Fake {
         async fn navigate(&mut self, _: &str) -> Result<Value> {
@@ -266,6 +313,10 @@ mod tests {
             self.typed.push(text.to_owned());
             Ok(())
         }
+        async fn redacted_snapshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
+            self.hidden = hidden.clone();
+            self.snapshot().await
+        }
     }
     impl FrameInspector for Fake {
         async fn focus(&mut self, _: &Page) -> Result<Focus> {
@@ -276,6 +327,9 @@ mod tests {
         }
         async fn frame_origin(&mut self, _: &Page, _: &str) -> Option<Origin> {
             Origin::parse("https://github.com").ok()
+        }
+        async fn element(&mut self, _: &Page, _: u64) -> Result<Element> {
+            Ok(self.element.clone())
         }
     }
 
@@ -391,5 +445,87 @@ mod tests {
         // Text without placeholders passes through untouched.
         block(guard.browser(&mut fake, "codex").type_text("hello")).unwrap();
         assert_eq!(fake.typed, vec!["hello".to_owned()]);
+    }
+
+    #[test]
+    fn password_fields_go_only_into_password_inputs() {
+        let e = env();
+        init(&e).add(login("github", "KH-SYNTH-pw-79")).unwrap();
+        let (guard, probe) = guard(&e);
+        let mut fake = Fake {
+            element: Element {
+                local_name: "input".into(),
+                input_type: Some("text".into()),
+                ..Element::default()
+            },
+            ..Fake::default()
+        };
+        let target = json!({"ref": 7});
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .fill(&target, "{{secret:github.password}}"),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "denied: github (field-kind)");
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .type_text("{{secret:github.password}}"),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "denied: github (field-kind)");
+        assert!(fake.typed.is_empty());
+        assert_eq!(
+            probe.kinds(),
+            vec![
+                (AuditKind::SecretDenied, "field-kind".into()),
+                (AuditKind::SecretDenied, "field-kind".into())
+            ]
+        );
+        // The username may go into a text input; a text input that declares itself a
+        // password field takes the password.
+        block(
+            guard
+                .browser(&mut fake, "claude")
+                .fill(&target, "{{secret:github.username}}"),
+        )
+        .unwrap();
+        fake.element.autocomplete = vec!["current-password".into()];
+        block(
+            guard
+                .browser(&mut fake, "claude")
+                .fill(&target, "{{secret:github.password}}"),
+        )
+        .unwrap();
+        assert_eq!(fake.typed, vec!["me@x.com", "KH-SYNTH-pw-79"]);
+    }
+
+    #[test]
+    fn substituted_elements_stay_redacted_in_snapshots() {
+        let e = env();
+        init(&e).add(login("github", "KH-SYNTH-pw-80")).unwrap();
+        let (guard, _) = guard(&e);
+        let mut fake = Fake::default();
+        block(guard.browser(&mut fake, "claude").snapshot()).unwrap();
+        assert!(fake.hidden.is_empty());
+        // Plain text taints nothing; a substitution taints the element for the session,
+        // whatever later happens to its value.
+        block(
+            guard
+                .browser(&mut fake, "claude")
+                .fill(&json!({"ref": 7}), "plain"),
+        )
+        .unwrap();
+        block(guard.browser(&mut fake, "claude").snapshot()).unwrap();
+        assert!(fake.hidden.is_empty());
+        block(
+            guard
+                .browser(&mut fake, "claude")
+                .fill(&json!({"ref": 7}), "{{secret:github.password}}"),
+        )
+        .unwrap();
+        block(guard.browser(&mut fake, "codex").snapshot()).unwrap();
+        assert_eq!(fake.hidden, BTreeSet::from([7]));
     }
 }

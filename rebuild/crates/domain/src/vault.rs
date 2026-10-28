@@ -110,6 +110,15 @@ impl ItemKind {
     }
 }
 
+/// Which elements a field's value may be typed into (03 §3.8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputKind {
+    /// Any element that takes text.
+    Text,
+    /// Only password inputs (`type=password`, or `autocomplete` current-/new-password).
+    Password,
+}
+
 /// One field of an item kind.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FieldSpec {
@@ -119,6 +128,8 @@ pub struct FieldSpec {
     pub secret: bool,
     /// Replaced by its placeholder in responses (03 §3.7). Values under 4 characters never are.
     pub maskable: bool,
+    /// Where a browser may receive the value.
+    pub input: InputKind,
 }
 
 /// One item kind: its stored name, domain, fields and defaults (02 §2.7.2). Adding a kind is
@@ -139,6 +150,7 @@ pub const FREE_FIELD: FieldSpec = FieldSpec {
     name: "*",
     secret: true,
     maskable: true,
+    input: InputKind::Text,
 };
 
 const fn plain(name: &'static str) -> FieldSpec {
@@ -146,6 +158,7 @@ const fn plain(name: &'static str) -> FieldSpec {
         name,
         secret: false,
         maskable: true,
+        input: InputKind::Text,
     }
 }
 const fn secret(name: &'static str) -> FieldSpec {
@@ -153,6 +166,13 @@ const fn secret(name: &'static str) -> FieldSpec {
         name,
         secret: true,
         maskable: true,
+        input: InputKind::Text,
+    }
+}
+const fn password(name: &'static str) -> FieldSpec {
+    FieldSpec {
+        input: InputKind::Password,
+        ..secret(name)
     }
 }
 
@@ -165,7 +185,7 @@ pub static KINDS: &[KindSpec] = &[
         domain: Domain::Credentials,
         fields: &[
             plain("username"),
-            secret("password"),
+            password("password"),
             secret("totp_seed"),
             secret("note"),
         ],
@@ -455,6 +475,18 @@ mod tests {
         assert!(ItemKind::Env.is_secret_field("API_KEY"));
         assert!(ItemKind::Card.field("number").unwrap().maskable);
         assert!(ItemKind::Card.field("password").is_none());
+        assert_eq!(
+            ItemKind::Login.field("password").unwrap().input,
+            InputKind::Password
+        );
+        assert_eq!(
+            ItemKind::Login.field("username").unwrap().input,
+            InputKind::Text
+        );
+        assert_eq!(
+            ItemKind::Env.field("API_KEY").unwrap().input,
+            InputKind::Text
+        );
     }
     #[test]
     fn schemas_cover_every_kind() {

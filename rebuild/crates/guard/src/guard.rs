@@ -5,7 +5,7 @@ use crate::{
     GuardedBrowser, audit,
     pep::{
         mask::{Masker, masker},
-        substitute::{Prepared, references, resolve_checked},
+        substitute::{Destination, Prepared, Request, references, resolve_checked},
     },
 };
 use anyhow::{Result, anyhow, bail};
@@ -17,7 +17,10 @@ use keyharbor_domain::{
     vault::{ItemName, Origin},
 };
 use serde_json::Value;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, Mutex},
+};
 use zeroize::Zeroizing;
 
 /// The store a supervisor shares between its control connections and the guard.
@@ -39,6 +42,9 @@ pub struct Guard {
     open_vault: VaultOpener,
     /// Opened on first use, reopened when the vault version moves (so rotations are seen).
     vault: Mutex<Option<Loaded>>,
+    /// Backend node ids of every element that received substituted text in this session.
+    /// Snapshots show them as `[redacted]` whatever their value becomes (03 §3.7, C1).
+    tainted: Mutex<BTreeSet<u64>>,
 }
 
 impl Guard {
@@ -48,6 +54,7 @@ impl Guard {
             store,
             open_vault,
             vault: Mutex::new(None),
+            tainted: Mutex::new(BTreeSet::new()),
         }
     }
 
@@ -112,15 +119,29 @@ impl Guard {
         self.session
     }
 
+    /// Remembers that `node` received substituted text.
+    pub(crate) fn taint(&self, node: u64) {
+        if let Ok(mut tainted) = self.tainted.lock() {
+            tainted.insert(node);
+        }
+    }
+
+    /// The elements snapshots must redact.
+    pub(crate) fn tainted(&self) -> BTreeSet<u64> {
+        self.tainted.lock().map(|t| t.clone()).unwrap_or_default()
+    }
+
     /// Every text that will be typed into the page. Without placeholders it is used as is.
-    /// Otherwise every item must exist, be allowed for `agent`, and — if origin-bound — list
-    /// `origin` (the frame the text goes into). Any refusal is recorded and nothing resolves.
+    /// Otherwise every item must exist, be allowed for `agent`, — if origin-bound — list the
+    /// origin of the frame the text goes into, and each field must suit the element. Any
+    /// refusal is recorded and nothing resolves.
     pub fn prepare_text(
         &self,
         agent: &str,
         template: &str,
-        origin: Option<&Origin>,
+        to: Destination<'_>,
     ) -> Result<Prepared> {
+        let origin = to.frame;
         let (refs, items) = references(template)?;
         let Some(first) = items.first().cloned() else {
             return Ok(Prepared {
@@ -139,11 +160,13 @@ impl Guard {
             resolve_checked(
                 loaded.map(|l| &l.vault),
                 &rules,
-                agent,
-                template,
-                &refs,
-                &items,
-                origin,
+                &Request {
+                    agent,
+                    template,
+                    refs: &refs,
+                    items: &items,
+                },
+                to,
                 &deny,
             )
         });

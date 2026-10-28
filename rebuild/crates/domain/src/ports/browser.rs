@@ -8,7 +8,7 @@
 use crate::vault::Origin;
 use anyhow::Result;
 use serde_json::Value;
-use std::future::Future;
+use std::{collections::BTreeSet, future::Future};
 
 /// What `wait` waits for.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,6 +49,53 @@ pub struct Focus {
     pub node: u64,
 }
 
+/// An element as the browser's DOM (not page script) describes it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Element {
+    /// Lowercase tag name, e.g. `input`.
+    pub local_name: String,
+    /// The `type` attribute, lowercased and trimmed.
+    pub input_type: Option<String>,
+    /// The `autocomplete` attribute's tokens, lowercased.
+    pub autocomplete: Vec<String>,
+    /// Has a `contenteditable` attribute other than `false`.
+    pub content_editable: bool,
+}
+impl Element {
+    /// `<input type=password>`, or an input that declares itself a password field through
+    /// `autocomplete` (`current-password` or `new-password`).
+    pub fn is_password(&self) -> bool {
+        self.local_name == "input"
+            && (self.input_type.as_deref() == Some("password")
+                || self
+                    .autocomplete
+                    .iter()
+                    .any(|t| t == "current-password" || t == "new-password"))
+    }
+    /// An element that takes typed text: a text-like `input`, a `textarea` or an editing host.
+    pub fn takes_text(&self) -> bool {
+        match self.local_name.as_str() {
+            "input" => !matches!(
+                self.input_type.as_deref(),
+                Some(
+                    "hidden"
+                        | "checkbox"
+                        | "radio"
+                        | "file"
+                        | "submit"
+                        | "button"
+                        | "image"
+                        | "reset"
+                        | "range"
+                        | "color"
+                )
+            ),
+            "textarea" => true,
+            _ => self.content_editable,
+        }
+    }
+}
+
 /// The steps `fill` and `type_text` are made of, so an enforcement point can check the focus
 /// and frame between them. Not a `BrowserPort`: nothing outside the guard calls them.
 pub trait PageInput: Send {
@@ -63,12 +110,22 @@ pub trait PageInput: Send {
     /// Empties the element's value (this runs page code).
     fn clear_element(&mut self, page: &Page, node: u64) -> impl Future<Output = Result<()>> + Send;
     fn insert_text(&mut self, page: &Page, text: &str) -> impl Future<Output = Result<()>> + Send;
+    /// A snapshot like `BrowserPort::snapshot` in which the elements in `hidden` (and their
+    /// descendants) show `[redacted]` instead of their value and text.
+    fn redacted_snapshot(
+        &mut self,
+        hidden: &BTreeSet<u64>,
+    ) -> impl Future<Output = Result<Value>> + Send;
 }
 
 /// Where keyboard input would land, as the browser (not the page) reports it.
 pub trait FrameInspector: Send {
-    /// Follows `document.activeElement` down through same-process frames.
+    /// Follows `document.activeElement` down through open shadow roots and into every
+    /// element that hosts a document (iframe, frame, object, embed, fencedframe), as the
+    /// browser reports it. Fails if a hosted document cannot be entered.
     fn focus(&mut self, page: &Page) -> impl Future<Output = Result<Focus>> + Send;
+    /// What the DOM says about the element `node` of `page`.
+    fn element(&mut self, page: &Page, node: u64) -> impl Future<Output = Result<Element>> + Send;
     /// The security origin of `frame`, if it is one an item can be bound to.
     fn frame_origin(
         &mut self,

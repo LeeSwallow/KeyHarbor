@@ -3,8 +3,11 @@
 
 use super::CdpBrowser;
 use anyhow::{Context, Result, bail};
-use keyharbor_domain::{ports::browser::Focus, vault::Origin};
-use serde_json::json;
+use keyharbor_domain::{
+    ports::browser::{Element, Focus},
+    vault::Origin,
+};
+use serde_json::{Value, json};
 
 /// Iframes nested deeper than this are refused for substitution.
 const MAX_FRAME_DEPTH: usize = 16;
@@ -69,6 +72,15 @@ impl CdpBrowser {
         bail!("frames are nested too deeply")
     }
 
+    /// The element's tag and attributes as the DOM agent reports them (page script cannot
+    /// change what this returns, only the attributes themselves).
+    pub(super) async fn describe_element(&self, session: &str, node: u64) -> Result<Element> {
+        let described = self
+            .call("DOM.describeNode", json!({"backendNodeId": node}), session)
+            .await?;
+        Ok(element_of(&described["node"]))
+    }
+
     /// The security origin the browser reports for `frame`, if it is an origin KeyHarbor can
     /// bind items to (HTTPS, or HTTP on localhost).
     pub(super) async fn origin_of(&self, session: &str, frame: &str) -> Option<Origin> {
@@ -86,5 +98,60 @@ impl CdpBrowser {
             }
         }
         None
+    }
+}
+
+/// An `Element` from a `DOM.Node`.
+pub(super) fn element_of(node: &Value) -> Element {
+    let attributes = node["attributes"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let attribute = |name: &str| {
+        attributes
+            .chunks(2)
+            .find(|pair| {
+                pair[0]
+                    .as_str()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+            .map(|pair| pair.get(1).and_then(Value::as_str).unwrap_or_default())
+    };
+    Element {
+        local_name: node["localName"]
+            .as_str()
+            .unwrap_or_default()
+            .to_ascii_lowercase(),
+        input_type: attribute("type").map(|t| t.trim().to_ascii_lowercase()),
+        autocomplete: attribute("autocomplete")
+            .map(|a| {
+                a.split_ascii_whitespace()
+                    .map(str::to_ascii_lowercase)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        content_editable: attribute("contenteditable")
+            .is_some_and(|v| !v.trim().eq_ignore_ascii_case("false")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn elements_are_read_from_dom_attributes() {
+        let node = json!({"localName": "input", "attributes": ["id", "pw", "TYPE", " Password ", "autocomplete", "section-a Current-Password"]});
+        let element = element_of(&node);
+        assert_eq!(element.input_type.as_deref(), Some("password"));
+        assert_eq!(element.autocomplete, vec!["section-a", "current-password"]);
+        assert!(element.is_password() && element.takes_text());
+        let div = element_of(&json!({"localName": "div", "attributes": ["contenteditable", ""]}));
+        assert!(div.content_editable && div.takes_text() && !div.is_password());
+        let off =
+            element_of(&json!({"localName": "div", "attributes": ["contenteditable", "false"]}));
+        assert!(!off.takes_text());
+        let check = element_of(&json!({"localName": "input", "attributes": ["type", "checkbox"]}));
+        assert!(!check.takes_text());
+        assert!(element_of(&json!({"localName": "input"})).takes_text());
     }
 }

@@ -1,6 +1,7 @@
 //! Shared by the real-Chrome tests.
 #![allow(dead_code)]
 
+pub mod harness;
 pub mod mcp;
 
 use std::{
@@ -201,4 +202,42 @@ pub fn serve_pages() -> Site {
         }
     });
     Site { base, posted }
+}
+
+/// A tiny HTTP server answering every GET with `page(path)` as HTML. A path starting with
+/// `/slow` is answered after five seconds.
+pub fn serve_fn(page: impl Fn(&str) -> String + Send + Sync + 'static) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let page = std::sync::Arc::new(page);
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let page = page.clone();
+            thread::spawn(move || {
+                let mut reader = BufReader::new(&stream);
+                let mut request = String::new();
+                if reader.read_line(&mut request).is_err() {
+                    return;
+                }
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header == "\r\n" {
+                        break;
+                    }
+                }
+                let path = request.split(' ').nth(1).unwrap_or("/").to_owned();
+                if path.starts_with("/slow") {
+                    thread::sleep(std::time::Duration::from_secs(5));
+                }
+                let body = page(&path);
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            });
+        }
+    });
+    base
 }

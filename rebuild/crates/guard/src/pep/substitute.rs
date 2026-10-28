@@ -1,7 +1,8 @@
 //! Placeholder substitution (02 §2.5.2): `{{secret:item.field}}` in text bound for a page is
 //! replaced by the value only if every referenced item exists, is not discarded, is allowed
-//! for the agent (`pdp`), lists the frame's origin when origin-bound (`origin`), and has the
-//! field. One refusal stops everything: nothing is resolved and nothing is typed.
+//! for the agent (`pdp`), lists the frame's origin when origin-bound (`origin`), has the
+//! field, and the field may go into the element (`field-kind`: a password only into a
+//! password input). One refusal stops everything: nothing is resolved and nothing is typed.
 
 use crate::{
     pdp::{Action, decide},
@@ -11,7 +12,8 @@ use anyhow::{Result, anyhow};
 use keyharbor_core::{ItemStatus, PlaintextAccess, Vault, fill_template};
 use keyharbor_domain::{
     policy::Rule,
-    vault::{ItemName, Origin, PlaceholderRef, parse_placeholders},
+    ports::browser::Element,
+    vault::{InputKind, ItemName, Origin, PlaceholderRef, parse_placeholders},
 };
 use zeroize::Zeroizing;
 
@@ -33,19 +35,38 @@ pub fn references(template: &str) -> Result<(Vec<PlaceholderRef>, Vec<ItemName>)
     Ok((refs, items))
 }
 
+/// Where resolved text goes: the frame's origin and the element, as the browser reports them.
+#[derive(Clone, Copy, Default)]
+pub struct Destination<'a> {
+    pub frame: Option<&'a Origin>,
+    /// `None` when the caller has no element (then field kinds are not checked).
+    pub element: Option<&'a Element>,
+}
+
+/// What one input asks for: the template, its references and the items they name.
+pub struct Request<'a> {
+    pub agent: &'a str,
+    pub template: &'a str,
+    pub refs: &'a [PlaceholderRef],
+    pub items: &'a [ItemName],
+}
+
 /// Checks every item, in order, then resolves the whole template. `deny(item, reason)`
 /// records a refusal and returns the error the agent sees.
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_checked(
     vault: Option<&Vault>,
     rules: &[Rule],
-    agent: &str,
-    template: &str,
-    refs: &[PlaceholderRef],
-    items: &[ItemName],
-    frame: Option<&Origin>,
+    request: &Request<'_>,
+    to: Destination<'_>,
     deny: &dyn Fn(&ItemName, &str) -> anyhow::Error,
 ) -> Result<Zeroizing<String>> {
+    let Request {
+        agent,
+        template,
+        refs,
+        items,
+    } = *request;
+    let frame = to.frame;
     let first = &items[0];
     let Some(vault) = vault else {
         return Err(deny(first, "not_found"));
@@ -74,6 +95,16 @@ pub fn resolve_checked(
             .any(|r| &r.item == item && !info.fields.iter().any(|f| f == r.field.as_str()));
         if missing {
             return Err(deny(item, "not_found"));
+        }
+        if let Some(element) = to.element {
+            let password_only = refs.iter().filter(|r| &r.item == item).any(|r| {
+                info.kind
+                    .field(r.field.as_str())
+                    .is_some_and(|spec| spec.input == InputKind::Password)
+            });
+            if password_only && !element.is_password() {
+                return Err(deny(item, "field-kind"));
+            }
         }
     }
     // Every check passed: this is where the guard grants plaintext.

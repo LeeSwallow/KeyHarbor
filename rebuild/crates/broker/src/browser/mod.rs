@@ -17,12 +17,17 @@ use keyharbor_domain::{
     SessionId,
     ports::{
         BrowserPort, FrameInspector, PageInput,
-        browser::{Focus, Page, WaitFor},
+        browser::{Element, Focus, Page, WaitFor},
     },
     vault::Origin,
 };
 use serde_json::{Value, json};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeSet, HashMap},
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 
 pub(crate) const LOAD_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const WAIT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -136,7 +141,7 @@ impl BrowserPort for CdpBrowser {
         self.navigate_to(url).await
     }
     async fn snapshot(&mut self) -> Result<Value> {
-        self.take_snapshot().await
+        self.take_snapshot(&BTreeSet::new()).await
     }
     async fn screenshot(&mut self) -> Result<Value> {
         self.save_screenshot().await
@@ -190,6 +195,9 @@ impl PageInput for CdpBrowser {
     async fn insert_text(&mut self, page: &Page, text: &str) -> Result<()> {
         self.insert(&page.0, text).await
     }
+    async fn redacted_snapshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
+        self.take_snapshot(hidden).await
+    }
 }
 
 impl FrameInspector for CdpBrowser {
@@ -198,5 +206,8 @@ impl FrameInspector for CdpBrowser {
     }
     async fn frame_origin(&mut self, page: &Page, frame: &str) -> Option<Origin> {
         self.origin_of(&page.0, frame).await
+    }
+    async fn element(&mut self, page: &Page, node: u64) -> Result<Element> {
+        self.describe_element(&page.0, node).await
     }
 }
