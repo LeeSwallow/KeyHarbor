@@ -4,7 +4,7 @@
 |---|---|
 | 상태 | Accepted |
 | 날짜 | 2026-10-29 |
-| 관련 | [ADR-0014](0014-hexagonal-guard-layer.md)(같은 생각을 Rust 쪽에), [design/README](../../../design/README.md) |
+| 관련 | [ADR-0014](0014-hexagonal-guard-layer.md)(같은 생각을 Rust 쪽에), [design/README](../../../design/README.md), [브라우저 확장](../../../integrations/browser-extension/README.md) |
 
 ## 맥락
 

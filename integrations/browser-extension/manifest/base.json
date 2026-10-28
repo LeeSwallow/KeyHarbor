@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "KeyHarbor: hand off a site",
+  "short_name": "KeyHarbor",
+  "description": "Hands one site's login from this browser to a KeyHarbor agent session. Cookie values never leave except to the local KeyHarbor host.",
+  "permissions": ["cookies", "nativeMessaging", "activeTab", "scripting", "storage"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "action": { "default_title": "KeyHarbor", "default_popup": "popup.html" }
+}
