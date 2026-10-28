@@ -5,7 +5,7 @@
 
 mod prepare;
 
-use crate::{argv::SuperviseArgs, control, lock::acquire_lock, ops::Ops, paths};
+use crate::{argv::SuperviseArgs, control, lock::acquire_lock_within, ops::Ops, paths};
 use anyhow::{Context, Result, bail};
 use keyharbor_broker::chrome::{self, ChromeLaunch};
 use keyharbor_core::session::supervision::{self, BrowserExit};
@@ -58,6 +58,9 @@ impl Shared {
 
 /// Runs the supervisor until the browser exits. The session must be `starting` under the
 /// run's generation.
+/// How long the supervisor waits for `open` to finish handing the session lock over.
+const LOCK_HANDOFF: std::time::Duration = std::time::Duration::from_secs(2);
+
 pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
     let SuperviseArgs {
         id,
@@ -66,7 +69,7 @@ pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
         url,
         cdp,
     } = args;
-    let _lock = acquire_lock(&paths::lock_path(data, &id))
+    let _lock = acquire_lock_within(&paths::lock_path(data, &id), LOCK_HANDOFF)
         .context("another supervisor is running this session")?;
     let store = adapters.stores.open()?;
     supervision::check_reservation(&*store, id, generation)?;
