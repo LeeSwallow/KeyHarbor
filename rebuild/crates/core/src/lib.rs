@@ -1,6 +1,8 @@
 //! Vault use cases shared by the CLI, MCP server and admin app.
 //! Plaintext leaves this crate only through `Vault::resolve`, which the CLI never calls.
 
+mod rotate;
+
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::vault::{Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
 use keyharbor_sqlite::{DomainKeyRow, FieldRow, ItemRow, SqliteStore, VaultRow};
@@ -109,7 +111,6 @@ pub struct ItemSummary {
 
 pub struct Vault {
     store: SqliteStore,
-    #[allow(dead_code)] // used by key rotation in Task 7
     keystore: Box<dyn KeyStore>,
     vault_id: VaultId,
     keys: KeySet,
@@ -236,8 +237,32 @@ impl Vault {
             }
             Err(e) => return Err(vault_err(e)),
         };
+        let main = account(&vault_id);
+        let next = rotate::next_account(&main);
         let keys = KeySet::derive(&root, &vault_id);
-        let domain_keys = Self::unwrap_all(&store, &keys, &vault_id)?;
+        let (keys, domain_keys) = match Self::unwrap_all(&store, &keys, &vault_id) {
+            Ok(domain_keys) => {
+                // A parked key from an interrupted rotation that never reached the DB, or that was
+                // already promoted, is no longer needed.
+                match keystore.delete(&next) {
+                    Ok(()) | Err(VaultError::KeyNotFound) => {}
+                    Err(e) => return Err(vault_err(e)),
+                }
+                (keys, domain_keys)
+            }
+            Err(original) => {
+                // The DB was re-keyed but the new root key was not promoted yet: finish the rotation.
+                let Ok(parked) = keystore.get(&next) else {
+                    return Err(original);
+                };
+                let parked_keys = KeySet::derive(&parked, &vault_id);
+                let domain_keys =
+                    Self::unwrap_all(&store, &parked_keys, &vault_id).map_err(|_| original)?;
+                keystore.replace(&main, &parked).map_err(vault_err)?;
+                keystore.delete(&next).map_err(vault_err)?;
+                (parked_keys, domain_keys)
+            }
+        };
         Ok(Vault {
             store,
             keystore,
@@ -271,7 +296,7 @@ impl Vault {
         &self.vault_id
     }
 
-    fn mac_for(
+    pub(crate) fn mac_for(
         &self,
         row: &ItemRow,
         kind: ItemKind,
@@ -311,6 +336,14 @@ impl Vault {
 
     /// Decodes a stored row and checks its metadata MAC.
     fn verified(&self, row: &ItemRow) -> Result<(ItemKind, ItemName, Vec<Origin>)> {
+        self.verified_with(&self.keys, row)
+    }
+
+    pub(crate) fn verified_with(
+        &self,
+        keys: &KeySet,
+        row: &ItemRow,
+    ) -> Result<(ItemKind, ItemName, Vec<Origin>)> {
         let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
         let name = ItemName::parse(&row.name).map_err(|e| anyhow!(e.to_string()))?;
         let origins = row
@@ -322,7 +355,7 @@ impl Vault {
             return Err(vault_err(VaultError::Tampered));
         }
         verify_meta_mac(
-            self.keys.mac(),
+            keys.mac(),
             &ItemMeta {
                 vault: &self.vault_id,
                 item: &row.id,
