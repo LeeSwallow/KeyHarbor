@@ -549,6 +549,7 @@ dependencies = [
  "keyharbor-domain",
  "keyharbor-sqlite",
  "keyharbor-vault",
+ "rusqlite",
  "tempfile",
  "zeroize",
 ]
