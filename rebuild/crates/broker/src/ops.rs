@@ -2,12 +2,23 @@
 //!
 //! This is the single place where an op's input text and its response pass through:
 //! [`Ops::prepare_text`] for every text typed into the page and [`Ops::redact`] for every
-//! result. Phase 1 passes both through unchanged; phase 3 adds placeholder substitution and
-//! masking here. Error messages never include input text.
+//! result. Text with `{{secret:item.field}}` placeholders is checked against the agent's
+//! policy and the item's origin binding (the frame that holds the focused element, 03 §3.8)
+//! and only then resolved; a refusal types nothing. Error messages never include input text.
 
 use crate::{cdp::Cdp, paths, supervisor::Shared};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
+use keyharbor_core::{
+    ItemStatus, LOCAL_AGENT, Vault, fill_template,
+    policy::{Action, decide},
+};
+use keyharbor_domain::{
+    audit::{AuditEvent, AuditKind},
+    policy::parse_agent,
+    vault::{ItemName, Origin, parse_placeholders},
+};
+use keyharbor_sqlite::SqliteStore;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::time::Instant;
@@ -17,6 +28,8 @@ const LOAD_TIMEOUT: Duration = Duration::from_secs(15);
 const WAIT_TIMEOUT: Duration = Duration::from_secs(15);
 const POLL: Duration = Duration::from_millis(100);
 const MAX_SNAPSHOT_LINES: usize = 2000;
+/// Iframes nested deeper than this are refused for substitution.
+const MAX_FRAME_DEPTH: usize = 16;
 
 pub(crate) struct Ops {
     cdp: Arc<Cdp>,
@@ -24,6 +37,22 @@ pub(crate) struct Ops {
     active: Option<String>,
     /// targetId → flattened CDP sessionId.
     attached: HashMap<String, String>,
+    /// Opened on first use, reopened when the vault version moves (so rotations are seen).
+    /// A mutex only to make `Ops` shareable; requests already run one at a time.
+    vault: std::sync::Mutex<Option<(i64, Vault)>>,
+}
+
+/// The element that has keyboard focus and the frame whose document holds it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Focus {
+    frame: String,
+    node: u64,
+}
+
+/// Placeholder text resolved for one input, with the items it used.
+struct Prepared {
+    text: Zeroizing<String>,
+    items: Vec<ItemName>,
 }
 
 struct Tab {
@@ -38,12 +67,105 @@ impl Ops {
             cdp,
             active: None,
             attached: HashMap::new(),
+            vault: std::sync::Mutex::new(None),
         }
     }
 
-    /// Every text that will be typed into the page. Phase 3: placeholder substitution.
-    fn prepare_text(&self, text: &str) -> Result<Zeroizing<String>> {
-        Ok(Zeroizing::new(text.to_owned()))
+    /// Runs `work` with the vault at its current version, or `None` if it was never
+    /// initialized. The root key is read only here, the first time a placeholder or a response
+    /// needs it.
+    fn with_vault<T>(&self, shared: &Shared, work: impl FnOnce(Option<&Vault>) -> T) -> Result<T> {
+        let row = shared
+            .store
+            .lock()
+            .map_err(|_| anyhow!("store lock poisoned"))?
+            .vault_get()?;
+        let mut slot = self
+            .vault
+            .lock()
+            .map_err(|_| anyhow!("vault lock poisoned"))?;
+        let Some(row) = row else {
+            *slot = None;
+            return Ok(work(None));
+        };
+        if slot.as_ref().is_none_or(|(v, _)| *v != row.version) {
+            *slot = None;
+            let vault = Vault::open(
+                SqliteStore::open(&shared.data)?,
+                keyharbor_vault::keystore::keystore_from_env(),
+            )?;
+            *slot = Some((row.version, vault));
+        }
+        Ok(work(slot.as_ref().map(|(_, vault)| vault)))
+    }
+
+    /// Every text that will be typed into the page. Without placeholders it is used as is.
+    /// Otherwise every item must exist, be allowed for `agent`, and — if origin-bound — list
+    /// `origin` (the frame the text goes into). Any refusal is recorded and nothing resolves.
+    fn prepare_text(
+        &self,
+        shared: &Shared,
+        agent: &str,
+        template: &str,
+        origin: Option<&Origin>,
+    ) -> Result<Prepared> {
+        let refs = parse_placeholders(template).map_err(|e| anyhow!("{e}"))?;
+        let mut items: Vec<ItemName> = Vec::new();
+        for r in &refs {
+            if !items.contains(&r.item) {
+                items.push(r.item.clone());
+            }
+        }
+        let Some(first) = items.first().cloned() else {
+            return Ok(Prepared {
+                text: Zeroizing::new(template.to_owned()),
+                items,
+            });
+        };
+        let origin_text = origin.map(Origin::as_str);
+        let deny = |item: &ItemName, reason: &str| denied(shared, agent, item, origin_text, reason);
+        let rules = shared
+            .store
+            .lock()
+            .map_err(|_| anyhow!("store lock poisoned"))?
+            .policy_rules()?;
+        let checked = self.with_vault(shared, |vault| -> Result<Zeroizing<String>> {
+            let Some(vault) = vault else {
+                return Err(deny(&first, "not_found"));
+            };
+            for item in &items {
+                let info = match vault.item_use(item) {
+                    Ok(Some(info)) => info,
+                    Ok(None) => return Err(deny(item, "not_found")),
+                    Err(_) => return Err(deny(item, "tampered")),
+                };
+                if info.status == ItemStatus::Discarded {
+                    return Err(deny(item, "discarded"));
+                }
+                let action = Action::UseItem {
+                    item: item.clone(),
+                    domain: info.domain,
+                };
+                if !decide(&rules, agent, &action).allowed() {
+                    return Err(deny(item, "policy"));
+                }
+                if info.origin_binding && !origin.is_some_and(|o| info.origins.contains(o)) {
+                    return Err(deny(item, "origin"));
+                }
+                let missing = refs
+                    .iter()
+                    .any(|r| &r.item == item && !info.fields.iter().any(|f| f == r.field.as_str()));
+                if missing {
+                    return Err(deny(item, "not_found"));
+                }
+            }
+            fill_template(template, |r| vault.resolve(r)).map_err(|_| deny(&first, "vault"))
+        });
+        let text = match checked {
+            Ok(result) => result?,
+            Err(_) => return Err(deny(&first, "vault")),
+        };
+        Ok(Prepared { text, items })
     }
 
     /// Every result before it leaves the supervisor. Phase 3: masking.
@@ -56,20 +178,23 @@ impl Ops {
             .get("op")
             .and_then(Value::as_str)
             .context("request has no op")?;
+        let agent = match request.get("agent") {
+            None => LOCAL_AGENT.to_owned(),
+            Some(agent) => parse_agent(agent.as_str().context("agent must be a string")?)
+                .map_err(|e| anyhow!("{e}"))?,
+        };
         let result = match op {
             "navigate" => self.navigate(str_arg(request, "url")?).await?,
             "snapshot" => self.snapshot().await?,
             "screenshot" => self.screenshot(shared).await?,
             "click" => self.click(target(request)?).await?,
             "fill" => {
-                let text = self.prepare_text(str_arg(request, "text")?)?;
-                self.fill(target(request)?, &text).await?
+                self.fill(shared, &agent, target(request)?, str_arg(request, "text")?)
+                    .await?
             }
             "type" => {
-                let text = self.prepare_text(str_arg(request, "text")?)?;
-                let session = self.page().await?;
-                self.insert_text(&session, &text).await?;
-                json!({})
+                self.type_text(shared, &agent, str_arg(request, "text")?)
+                    .await?
             }
             "press" => self.press(str_arg(request, "key")?).await?,
             "tabs" => self.tabs().await?,
@@ -209,12 +334,45 @@ impl Ops {
         let tree = self
             .call("Accessibility.getFullAXTree", json!({}), &session)
             .await?;
-        let text = render_ax_tree(
+        let mut text = render_ax_tree(
             tree["nodes"]
                 .as_array()
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
         );
+        // Iframes in the page's process have their own trees; refs work across them.
+        let frames = self.call("Page.getFrameTree", json!({}), &session).await?;
+        let mut stack: Vec<&Value> = frames["frameTree"]["childFrames"]
+            .as_array()
+            .map(|c| c.iter().rev().collect())
+            .unwrap_or_default();
+        while let Some(frame) = stack.pop() {
+            let origin = frame["frame"]["securityOrigin"].as_str().unwrap_or("?");
+            text.push_str(&format!("\n[frame] {}", serde_json::to_string(origin)?));
+            match self
+                .call(
+                    "Accessibility.getFullAXTree",
+                    json!({"frameId": frame["frame"]["id"]}),
+                    &session,
+                )
+                .await
+            {
+                Ok(tree) => {
+                    let nodes = tree["nodes"]
+                        .as_array()
+                        .map(Vec::as_slice)
+                        .unwrap_or_default();
+                    for line in render_ax_tree(nodes).lines() {
+                        text.push_str("\n  ");
+                        text.push_str(line);
+                    }
+                }
+                Err(_) => text.push_str(" (not accessible)"),
+            }
+            if let Some(children) = frame["childFrames"].as_array() {
+                stack.extend(children.iter().rev());
+            }
+        }
         let (url, title) = self.page_info(&session).await?;
         Ok(json!({"url": url, "title": title, "text": text}))
     }
@@ -322,11 +480,33 @@ impl Ops {
         Ok(json!({}))
     }
 
-    async fn fill(&mut self, target: &Value, text: &str) -> Result<Value> {
+    async fn fill(
+        &mut self,
+        shared: &Shared,
+        agent: &str,
+        target: &Value,
+        template: &str,
+    ) -> Result<Value> {
         let session = self.page().await?;
         let node = self.resolve(&session, target).await?;
         self.call("DOM.focus", json!({"backendNodeId": node}), &session)
             .await?;
+        let has_placeholders = template.contains("{{secret:");
+        let checked = if has_placeholders {
+            Some(
+                self.checked_focus(shared, agent, &session, template, Some(node))
+                    .await?,
+            )
+        } else {
+            None
+        };
+        let prepared = match &checked {
+            Some((focus, origin)) => {
+                let prepared = self.prepare_text(shared, agent, template, origin.as_ref())?;
+                Some((focus.clone(), origin.clone(), prepared))
+            }
+            None => None,
+        };
         let object = self
             .call("DOM.resolveNode", json!({"backendNodeId": node}), &session)
             .await?;
@@ -342,8 +522,189 @@ impl Ops {
             &session,
         )
         .await?;
-        self.insert_text(&session, text).await?;
-        Ok(json!({}))
+        match prepared {
+            None => {
+                self.insert_text(&session, template).await?;
+                Ok(json!({}))
+            }
+            Some((focus, origin, prepared)) => {
+                // Clearing ran page code; the text must still go where it was checked.
+                if self.focus(&session).await.ok().as_ref() != Some(&focus) {
+                    let first = &prepared.items[0];
+                    return Err(denied(
+                        shared,
+                        agent,
+                        first,
+                        origin.as_ref().map(Origin::as_str),
+                        "focus",
+                    ));
+                }
+                self.insert_prepared(shared, agent, &session, &focus, origin, prepared)
+                    .await
+            }
+        }
+    }
+
+    async fn type_text(&mut self, shared: &Shared, agent: &str, template: &str) -> Result<Value> {
+        let session = self.page().await?;
+        if !template.contains("{{secret:") {
+            self.insert_text(&session, template).await?;
+            return Ok(json!({}));
+        }
+        let (focus, origin) = self
+            .checked_focus(shared, agent, &session, template, None)
+            .await?;
+        let prepared = self.prepare_text(shared, agent, template, origin.as_ref())?;
+        self.insert_prepared(shared, agent, &session, &focus, origin, prepared)
+            .await
+    }
+
+    /// The focused element and its frame's origin, refusing (and recording) when the focus
+    /// cannot be located or, for `fill`, is not on the target element.
+    async fn checked_focus(
+        &mut self,
+        shared: &Shared,
+        agent: &str,
+        session: &str,
+        template: &str,
+        expected: Option<u64>,
+    ) -> Result<(Focus, Option<Origin>)> {
+        let refs = parse_placeholders(template).map_err(|e| anyhow!("{e}"))?;
+        let first = &refs.first().context("no placeholder")?.item;
+        let focus = match self.focus(session).await {
+            Ok(focus) => focus,
+            Err(_) => return Err(denied(shared, agent, first, None, "frame")),
+        };
+        let origin = self.frame_origin(session, &focus.frame).await;
+        if expected.is_some_and(|node| node != focus.node) {
+            return Err(denied(
+                shared,
+                agent,
+                first,
+                origin.as_ref().map(Origin::as_str),
+                "focus",
+            ));
+        }
+        Ok((focus, origin))
+    }
+
+    /// Types resolved text, then re-checks the frame's origin (detection only: the text is
+    /// already in) and records the use.
+    async fn insert_prepared(
+        &mut self,
+        shared: &Shared,
+        agent: &str,
+        session: &str,
+        focus: &Focus,
+        origin: Option<Origin>,
+        prepared: Prepared,
+    ) -> Result<Value> {
+        let inserted = self.insert_text(session, &prepared.text).await;
+        drop(prepared.text);
+        inserted?;
+        let after = self.frame_origin(session, &focus.frame).await;
+        let changed = after != origin;
+        for item in &prepared.items {
+            let used = AuditEvent::new(agent, AuditKind::SecretUsed, "ok")
+                .session(shared.id)
+                .item(item.as_str())
+                .origin(origin.as_ref().map(Origin::as_str));
+            record(shared, &used);
+            if changed {
+                let moved = AuditEvent::new(
+                    agent,
+                    AuditKind::OriginChangedAfterFill,
+                    after.as_ref().map_or("unknown", Origin::as_str),
+                )
+                .session(shared.id)
+                .item(item.as_str())
+                .origin(origin.as_ref().map(Origin::as_str));
+                record(shared, &moved);
+            }
+        }
+        Ok(if changed {
+            json!({"warning": "origin_changed_after_fill"})
+        } else {
+            json!({})
+        })
+    }
+
+    /// Follows `document.activeElement` down through same-process iframes, evaluating in an
+    /// isolated world in each frame so page scripts cannot redefine what it returns.
+    async fn focus(&self, session: &str) -> Result<Focus> {
+        let tree = self.call("Page.getFrameTree", json!({}), session).await?;
+        let mut frame = tree["frameTree"]["frame"]["id"]
+            .as_str()
+            .context("page has no main frame")?
+            .to_owned();
+        for _ in 0..MAX_FRAME_DEPTH {
+            let world = self
+                .call(
+                    "Page.createIsolatedWorld",
+                    json!({"frameId": frame, "worldName": "keyharbor"}),
+                    session,
+                )
+                .await?;
+            let context = world["executionContextId"]
+                .as_i64()
+                .context("no isolated world")?;
+            let active = self
+                .call(
+                    "Runtime.evaluate",
+                    json!({"expression": "document.activeElement", "contextId": context}),
+                    session,
+                )
+                .await?;
+            let object = active["result"]["objectId"]
+                .as_str()
+                .context("no element has focus")?
+                .to_owned();
+            let described = self
+                .call("DOM.describeNode", json!({"objectId": object}), session)
+                .await;
+            let _ = self
+                .call(
+                    "Runtime.releaseObject",
+                    json!({"objectId": object}),
+                    session,
+                )
+                .await;
+            let node = described?["node"].take();
+            let local = node["localName"].as_str().unwrap_or_default();
+            match node["frameId"].as_str() {
+                Some(child) if matches!(local, "iframe" | "frame") && child != frame => {
+                    frame = child.to_owned();
+                }
+                _ => {
+                    return Ok(Focus {
+                        frame,
+                        node: node["backendNodeId"]
+                            .as_u64()
+                            .context("focused element has no backend node id")?,
+                    });
+                }
+            }
+        }
+        bail!("frames are nested too deeply")
+    }
+
+    /// The security origin the browser reports for `frame`, if it is an origin KeyHarbor can
+    /// bind items to (HTTPS, or HTTP on localhost).
+    async fn frame_origin(&self, session: &str, frame: &str) -> Option<Origin> {
+        let tree = self
+            .call("Page.getFrameTree", json!({}), session)
+            .await
+            .ok()?;
+        let mut stack = vec![&tree["frameTree"]];
+        while let Some(node) = stack.pop() {
+            if node["frame"]["id"] == frame {
+                return Origin::parse(node["frame"]["securityOrigin"].as_str()?).ok();
+            }
+            if let Some(children) = node["childFrames"].as_array() {
+                stack.extend(children);
+            }
+        }
+        None
     }
 
     async fn insert_text(&self, session: &str, text: &str) -> Result<()> {
@@ -481,6 +842,31 @@ impl Ops {
         tokio::time::sleep(Duration::from_millis(ms).min(WAIT_TIMEOUT)).await;
         Ok(json!({}))
     }
+}
+
+/// Best effort: a failed write to the usage record does not undo or block the operation.
+fn record(shared: &Shared, event: &AuditEvent) {
+    if let Ok(store) = shared.store.lock() {
+        let _ = store.record(event);
+    }
+}
+
+/// Records a refused use and returns the error the agent sees: item name and reason only.
+fn denied(
+    shared: &Shared,
+    agent: &str,
+    item: &ItemName,
+    origin: Option<&str>,
+    reason: &str,
+) -> anyhow::Error {
+    record(
+        shared,
+        &AuditEvent::new(agent, AuditKind::SecretDenied, reason)
+            .session(shared.id)
+            .item(item.as_str())
+            .origin(origin),
+    );
+    anyhow!("denied: {} ({reason})", item.as_str())
 }
 
 fn str_arg<'a>(request: &'a Value, name: &str) -> Result<&'a str> {

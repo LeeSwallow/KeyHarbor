@@ -155,7 +155,8 @@ impl Server {
             .context("task failed")?
     }
 
-    async fn browser(&self, session: &str, request: Value) -> CallToolResult {
+    async fn browser(&self, session: &str, mut request: Value) -> CallToolResult {
+        request["agent"] = json!(self.inner.agent());
         let id = match self.session(session) {
             Ok(id) => id,
             Err(error) => return fail(error.to_string()),

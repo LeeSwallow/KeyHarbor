@@ -5,9 +5,11 @@ mod dotenv;
 pub mod policy;
 mod rotate;
 mod transfer;
+mod usage;
 
 pub use dotenv::parse_dotenv;
 pub use transfer::ImportReport;
+pub use usage::{ItemUse, fill_template};
 
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{

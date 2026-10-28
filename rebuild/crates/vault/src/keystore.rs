@@ -8,7 +8,7 @@ pub const KEYCHAIN_SERVICE: &str = "io.github.leeswallow.keyharbor";
 pub const TEST_KEYSTORE_ENV: &str = "KEYHARBOR_TEST_KEYSTORE_DIR";
 
 /// Creates never overwrite; reads never create. A missing key is `KeyNotFound`.
-pub trait KeyStore {
+pub trait KeyStore: Send {
     fn create(&self, account: &str, key: &SecretKey) -> Result<(), VaultError>;
     fn get(&self, account: &str) -> Result<SecretKey, VaultError>;
     fn replace(&self, account: &str, key: &SecretKey) -> Result<(), VaultError>;
