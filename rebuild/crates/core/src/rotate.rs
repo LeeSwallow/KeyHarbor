@@ -4,7 +4,10 @@
 //! Rotations hold an exclusive lock on `<data dir>/vault.lock` and commit only if the vault
 //! version is unchanged since they read it, so concurrent writers make them abort, not corrupt.
 
-use crate::{Vault, VaultBackend, account, vault_err};
+use crate::{
+    Vault, VaultBackend,
+    vault::{account, vault_err},
+};
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::ports::{DomainKeyRow, FieldRow};
 use keyharbor_domain::vault::{Domain, FieldName};

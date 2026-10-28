@@ -61,67 +61,184 @@ impl ItemKind {
         Self::Identity,
         Self::Address,
     ];
+    /// This kind's entry in [`KINDS`].
+    pub fn spec(self) -> &'static KindSpec {
+        KINDS
+            .iter()
+            .find(|spec| spec.kind == self)
+            .expect("every kind is registered")
+    }
     pub fn domain(self) -> Domain {
-        match self {
-            Self::Login | Self::Secret | Self::Env => Domain::Credentials,
-            Self::Card => Domain::Payment,
-            Self::Identity | Self::Address => Domain::Personal,
-        }
+        self.spec().domain
     }
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Login => "login",
-            Self::Secret => "secret",
-            Self::Env => "env",
-            Self::Card => "card",
-            Self::Identity => "identity",
-            Self::Address => "address",
-        }
+        self.spec().name
     }
     pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.as_str() == value)
+        KINDS
+            .iter()
+            .find(|spec| spec.name == value)
+            .map(|spec| spec.kind)
     }
     /// Fixed field names; `None` means free-form environment variable names.
-    pub fn schema(self) -> Option<&'static [&'static str]> {
-        match self {
-            Self::Login => Some(&["username", "password", "totp_seed", "note"]),
-            Self::Secret => Some(&["value", "note"]),
-            Self::Env => None,
-            Self::Card => Some(&[
-                "holder",
-                "number",
-                "exp_month",
-                "exp_year",
-                "cvc",
-                "billing_address",
-                "note",
-            ]),
-            Self::Identity => Some(&[
-                "full_name",
-                "given_name",
-                "family_name",
-                "email",
-                "phone",
-                "birth_date",
-                "note",
-            ]),
-            Self::Address => Some(&[
-                "recipient",
-                "line1",
-                "line2",
-                "city",
-                "region",
-                "postal_code",
-                "country",
-                "phone",
-                "note",
-            ]),
-        }
+    pub fn schema(self) -> Option<Vec<&'static str>> {
+        let spec = self.spec();
+        (!spec.free_fields).then(|| spec.fields.iter().map(|f| f.name).collect())
     }
     pub fn default_origin_binding(self) -> bool {
-        matches!(self, Self::Login | Self::Card)
+        self.spec().default_origin_binding
+    }
+    /// How `field` is treated in an item of this kind: its declared spec, the free-field spec
+    /// for kinds with free-form names, or `None` if the kind has no such field.
+    pub fn field(self, field: &str) -> Option<&'static FieldSpec> {
+        let spec = self.spec();
+        spec.fields
+            .iter()
+            .find(|f| f.name == field)
+            .or(spec.free_fields.then_some(&FREE_FIELD))
+    }
+    /// Whether `field` may hold a secret, so it must never arrive on the command line. A name
+    /// this kind does not declare counts as secret if any kind declares it secret.
+    pub fn is_secret_field(self, field: &str) -> bool {
+        match self.field(field) {
+            Some(spec) => spec.secret,
+            None => KINDS
+                .iter()
+                .flat_map(|k| k.fields)
+                .any(|f| f.name == field && f.secret),
+        }
     }
 }
+
+/// One field of an item kind.
+#[derive(Debug, PartialEq, Eq)]
+pub struct FieldSpec {
+    pub name: &'static str,
+    /// May hold a secret: never accepted as a command-line argument (`--set`), only from a
+    /// hidden prompt or stdin.
+    pub secret: bool,
+    /// Replaced by its placeholder in responses (03 §3.7). Values under 4 characters never are.
+    pub maskable: bool,
+}
+
+/// One item kind: its stored name, domain, fields and defaults (02 §2.7.2). Adding a kind is
+/// one entry here plus its `ItemKind` variant.
+#[derive(Debug, PartialEq, Eq)]
+pub struct KindSpec {
+    pub kind: ItemKind,
+    pub name: &'static str,
+    pub domain: Domain,
+    pub fields: &'static [FieldSpec],
+    /// Field names are free-form (environment variable names), each treated as [`FREE_FIELD`].
+    pub free_fields: bool,
+    pub default_origin_binding: bool,
+}
+
+/// How a free-form field (an `env` variable) is treated: secret and masked.
+pub const FREE_FIELD: FieldSpec = FieldSpec {
+    name: "*",
+    secret: true,
+    maskable: true,
+};
+
+const fn plain(name: &'static str) -> FieldSpec {
+    FieldSpec {
+        name,
+        secret: false,
+        maskable: true,
+    }
+}
+const fn secret(name: &'static str) -> FieldSpec {
+    FieldSpec {
+        name,
+        secret: true,
+        maskable: true,
+    }
+}
+
+/// Every item kind. The single source for schemas, domains, origin-binding defaults, which
+/// fields are secret and which are masked.
+pub static KINDS: &[KindSpec] = &[
+    KindSpec {
+        kind: ItemKind::Login,
+        name: "login",
+        domain: Domain::Credentials,
+        fields: &[
+            plain("username"),
+            secret("password"),
+            secret("totp_seed"),
+            secret("note"),
+        ],
+        free_fields: false,
+        default_origin_binding: true,
+    },
+    KindSpec {
+        kind: ItemKind::Secret,
+        name: "secret",
+        domain: Domain::Credentials,
+        fields: &[secret("value"), secret("note")],
+        free_fields: false,
+        default_origin_binding: false,
+    },
+    KindSpec {
+        kind: ItemKind::Env,
+        name: "env",
+        domain: Domain::Credentials,
+        fields: &[],
+        free_fields: true,
+        default_origin_binding: false,
+    },
+    KindSpec {
+        kind: ItemKind::Card,
+        name: "card",
+        domain: Domain::Payment,
+        fields: &[
+            plain("holder"),
+            secret("number"),
+            plain("exp_month"),
+            plain("exp_year"),
+            secret("cvc"),
+            plain("billing_address"),
+            secret("note"),
+        ],
+        free_fields: false,
+        default_origin_binding: true,
+    },
+    KindSpec {
+        kind: ItemKind::Identity,
+        name: "identity",
+        domain: Domain::Personal,
+        fields: &[
+            plain("full_name"),
+            plain("given_name"),
+            plain("family_name"),
+            plain("email"),
+            plain("phone"),
+            plain("birth_date"),
+            secret("note"),
+        ],
+        free_fields: false,
+        default_origin_binding: false,
+    },
+    KindSpec {
+        kind: ItemKind::Address,
+        name: "address",
+        domain: Domain::Personal,
+        fields: &[
+            plain("recipient"),
+            plain("line1"),
+            plain("line2"),
+            plain("city"),
+            plain("region"),
+            plain("postal_code"),
+            plain("country"),
+            plain("phone"),
+            secret("note"),
+        ],
+        free_fields: false,
+        default_origin_binding: false,
+    },
+];
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct ItemName(String);
@@ -314,6 +431,30 @@ mod tests {
         ] {
             assert!(parse_placeholders(bad).is_err(), "{bad:?}");
         }
+    }
+    #[test]
+    fn kind_registry_is_complete_and_marks_secrets() {
+        assert_eq!(KINDS.len(), ItemKind::ALL.len());
+        for kind in ItemKind::ALL {
+            assert_eq!(kind.spec().kind, kind);
+        }
+        let secrets: Vec<&str> = KINDS
+            .iter()
+            .flat_map(|k| k.fields)
+            .filter(|f| f.secret)
+            .map(|f| f.name)
+            .collect();
+        for name in ["password", "totp_seed", "value", "number", "cvc", "note"] {
+            assert!(secrets.contains(&name), "{name}");
+        }
+        assert!(!ItemKind::Login.is_secret_field("username"));
+        assert!(
+            ItemKind::Login.is_secret_field("cvc"),
+            "secret in another kind"
+        );
+        assert!(ItemKind::Env.is_secret_field("API_KEY"));
+        assert!(ItemKind::Card.field("number").unwrap().maskable);
+        assert!(ItemKind::Card.field("password").is_none());
     }
     #[test]
     fn schemas_cover_every_kind() {

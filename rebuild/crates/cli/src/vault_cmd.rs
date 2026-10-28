@@ -13,9 +13,6 @@ use std::{
 };
 use zeroize::Zeroizing;
 
-/// Fields that may hold secrets. Every `env` field is secret as well.
-const SECRET_FIELDS: &[&str] = &["password", "totp_seed", "value", "number", "cvc", "note"];
-
 #[derive(Subcommand)]
 pub enum VaultCmd {
     /// Create the vault and store its root key in the keychain
@@ -129,8 +126,9 @@ pub enum StatusArg {
     Discarded,
 }
 
+/// Secret fields (per the kind registry, every `env` field included) never come from argv.
 fn is_secret(kind: ItemKind, field: &str) -> bool {
-    kind == ItemKind::Env || SECRET_FIELDS.contains(&field)
+    kind.is_secret_field(field)
 }
 
 fn item_name(name: &str) -> Result<ItemName> {
@@ -184,11 +182,7 @@ fn collect_fields(
         return Ok(fields);
     }
     let secret_fields: Vec<&str> = match kind.schema() {
-        Some(schema) => schema
-            .iter()
-            .copied()
-            .filter(|f| is_secret(kind, f))
-            .collect(),
+        Some(schema) => schema.into_iter().filter(|f| is_secret(kind, f)).collect(),
         None => bail!("env items take values from --stdin or `vault import-env`"),
     };
     if !std::io::stdin().is_terminal() {
