@@ -1,6 +1,7 @@
 //! The browser broker: the per-session supervisor that owns Chrome and its CDP pipe
 //! (ADR-0004), the control socket, and the session lifecycle commands built on them.
 
+pub mod cdp;
 pub mod control;
 pub mod lifecycle;
 pub(crate) mod ops;

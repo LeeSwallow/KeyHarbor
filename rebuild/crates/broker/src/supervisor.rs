@@ -1,7 +1,7 @@
 //! The per-session supervisor process: holds the OS lock, runs Chrome with the CDP pipe,
 //! serves the control socket and records the session state when the browser exits.
 
-use crate::{control, ops::Ops, paths};
+use crate::{cdp::Cdp, control, ops::Ops, paths};
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{Generation, SessionId, State};
 use keyharbor_sqlite::SqliteStore;
@@ -252,7 +252,7 @@ async fn supervise(
         id,
         generation,
         store: Mutex::new(store),
-        ops: tokio::sync::Mutex::new(Ops::new(sender, receiver)),
+        ops: tokio::sync::Mutex::new(Ops::new(Cdp::new(sender, receiver))),
         close: tokio::sync::Notify::new(),
         close_requested: false.into(),
     });
