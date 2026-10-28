@@ -106,6 +106,8 @@ cd .. && sh scripts/check-docs.sh && sh scripts/test-scripts.sh
 
 관리자가 일주일 안에 리뷰합니다. PR은 `main`에 squash되고, `v*` 태그가 `main`에서 릴리스를 만듭니다.
 
+릴리스 전에 관리자는 실제 Keychain으로 `sh scripts/smoke-test.sh`를 한 번 실행합니다. 임시 폴더에서 init·add·rotate·export·import를 돌리고, 비밀 값이 출력이나 DB에 나오지 않는지 확인한 뒤, 만든 Keychain 항목을 지웁니다.
+
 ## AI 에이전트와 함께
 
 KeyHarbor는 에이전트와 함께 쓰려고 만든 도구이고, 에이전트로 작성한 기여도 환영합니다. PR을 열기 전에 diff를 직접 읽고, 무엇을 확인했는지 PR에 적어 주세요. 에이전트가 읽는 안내는 [AGENTS.md](AGENTS.md)입니다.
