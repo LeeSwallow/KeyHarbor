@@ -122,6 +122,7 @@ pub enum DomainArg {
     Credentials,
     Payment,
     Personal,
+    Developer,
 }
 #[derive(Clone, Copy, ValueEnum)]
 pub enum Toggle {
@@ -411,6 +412,7 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
                 DomainArg::Credentials => Domain::Credentials,
                 DomainArg::Payment => Domain::Payment,
                 DomainArg::Personal => Domain::Personal,
+                DomainArg::Developer => Domain::Developer,
             };
             open(root)?.rotate_domain(domain)?;
             println!("rotated\t{}", domain.as_str());

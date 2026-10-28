@@ -37,7 +37,7 @@ keyharbor audit --limit 20                             # 누가 어떤 항목을
 
 에이전트는 MCP 도구 `browser_fill`에 `{{secret:blog.password}}`처럼 placeholder를 넘깁니다. 등록된 사이트(origin)의 입력란일 때만 값이 들어가고, 에이전트가 받는 결과에서는 값이 다시 placeholder로 바뀝니다.
 
-항목 종류는 `login`, `secret`, `env`, `card`, `identity`, `address`이고 자격 증명·결제·개인정보 세 도메인으로 나뉘어 각각 다른 키로 암호화됩니다. 전체 명령은 [`rebuild/README.md`](rebuild/README.md)에 있습니다.
+항목 종류는 `login`, `secret`, `env`, `card`, `identity`, `address`이고 자격 증명(`login`)·결제(`card`)·개인정보(`identity`·`address`)·개발자(`secret`·`env`, API 키와 환경 변수) 네 도메인으로 나뉘어 각각 다른 키로 암호화됩니다. 전체 명령은 [`rebuild/README.md`](rebuild/README.md)에 있습니다.
 
 ## 알아 둘 것
 

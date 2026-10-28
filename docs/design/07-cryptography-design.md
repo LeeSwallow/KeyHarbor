@@ -125,26 +125,29 @@ flowchart TB
     dc["DK_cred · 32B 무작위"]
     dp["DK_pay · 32B 무작위"]
     dr["DK_personal · 32B 무작위"]
+    dd["DK_dev · 32B 무작위 (R-40)"]
   end
   fields["VAULT_FIELD.sealed<br/>XChaCha20-Poly1305(DK)"]
   meta["VAULT_ITEM.meta_mac<br/>HMAC-SHA256(MK, 정규화한 메타데이터)"]
   kc --> rk
   rk --> kek & mk
-  kek -->|"XChaCha20-Poly1305 wrap"| dc & dp & dr
-  dc & dp & dr --> fields
+  kek -->|"XChaCha20-Poly1305 wrap"| dc & dp & dr & dd
+  dc & dp & dr & dd --> fields
   mk --> meta
 ```
 
 | 키 | 생성 | 저장 | 용도 | 교체 시 영향 |
 |---|---|---|---|---|
-| RK | `vault init` 때 OS CSPRNG 32B | Keychain에만 | KEK·MK 유도 | DK 3개 다시 감싸기 + 메타 MAC 다시 계산 (필드 재암호화 없음) |
+| RK | `vault init` 때 OS CSPRNG 32B | Keychain에만 | KEK·MK 유도 | DK 4개 다시 감싸기 + 메타 MAC 다시 계산 (필드 재암호화 없음) |
 | KEK | RK에서 HKDF | 저장 안 함 (필요할 때 유도) | DK 감싸기 | — |
 | MK | RK에서 HKDF | 저장 안 함 | 항목 메타데이터 MAC | — |
-| DK_* | 도메인 생성 시 CSPRNG 32B | `DOMAIN_KEY.wrapped` | 필드 암호화 | 그 도메인의 필드만 재암호화 |
+| DK_* | 도메인 생성 시 CSPRNG 32B (`DK_cred` 1 · `DK_pay` 2 · `DK_personal` 3 · `DK_dev` 4, 숫자는 AD의 domain 바이트) | `DOMAIN_KEY.wrapped` | 필드 암호화 | 그 도메인의 필드만 재암호화 |
+
+`DK_dev`(R-40)는 다른 도메인 키와 똑같이 만든다. 새 HKDF 라벨은 없다(J-54). R-40 이전 금고에는 이 키가 없으므로, 처음 여는 프로세스가 `vault.lock`을 잡고 키를 만들어 감싼 뒤, 자격 증명 도메인에 있던 `secret`·`env` 항목의 필드를 `DK_dev`(AD domain = 4)로 다시 봉인하고 메타 MAC을 다시 계산해 **새 키 행과 함께 한 트랜잭션**으로 커밋한다. 중간에 실패하면 아무것도 바뀌지 않고, 키 행이 있으면 이전은 끝난 것이다.
 
 **왜 RK를 직접 쓰지 않고 HKDF로 나누는가** — 한 키를 두 용도(감싸기, MAC)에 쓰지 않는다는 키 분리 원칙 때문이다. Bitwarden이 마스터 키를 HKDF로 암호화 키와 MAC 키로 늘리는 것과 같은 이유다.
 
-**왜 DK를 RK에서 유도하지 않고 무작위로 만들어 감싸는가** — 유도하면 RK를 바꿀 때 모든 필드를 다시 암호화해야 한다. 무작위 DK를 감싸 두면 RK 교체는 DK 3개만 다시 감싸면 된다. SOPS·Tink의 envelope와 같다.
+**왜 DK를 RK에서 유도하지 않고 무작위로 만들어 감싸는가** — 유도하면 RK를 바꿀 때 모든 필드를 다시 암호화해야 한다. 무작위 DK를 감싸 두면 RK 교체는 DK 몇 개(지금은 4개)만 다시 감싸면 된다. SOPS·Tink의 envelope와 같다.
 
 ## 7.6 레코드 형식
 
@@ -279,6 +282,7 @@ sequenceDiagram
 | RK = `11`×32, vault_id = `22`×16 → KEK | `50e57b267060479352f0371205a95d6dfc95509d4ebc436c14a6cb170f826ffc` |
 | 같은 입력 → MK | `dbbbe3429d5dcf75b555f8d134c8f28de6666f0790bff98a26f1f54fbbe06479` |
 | DK = `33`×32, dk_id = `44`×16, item = `55`×16, field = `password`, domain = credentials, nonce = `66`×24, 평문 `KH-KAT` → 필드 레코드 | `0101` ‖ `44`×16 ‖ `66`×24 ‖ `f7159b83f760b5caa17a237a12585b8564417968cbf3` |
+| 같은 키·nonce, field = `value`, domain = developer(4) → 필드 레코드 (암호문은 같고 태그만 다르다) | `0101` ‖ `44`×16 ‖ `66`×24 ‖ `f7159b83f76058b5257856d2797687e022dab9576615` |
 
 ## 7.12 출처
 

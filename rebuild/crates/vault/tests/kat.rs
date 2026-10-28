@@ -12,6 +12,7 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 const KEK_HEX: &str = "50e57b267060479352f0371205a95d6dfc95509d4ebc436c14a6cb170f826ffc";
+const DEVELOPER_RECORD_HEX: &str = "010144444444444444444444444444444444666666666666666666666666666666666666666666666666f7159b83f76058b5257856d2797687e022dab9576615";
 const MAC_HEX: &str = "dbbbe3429d5dcf75b555f8d134c8f28de6666f0790bff98a26f1f54fbbe06479";
 const FIELD_RECORD_HEX: &str = "010144444444444444444444444444444444666666666666666666666666666666666666666666666666f7159b83f760b5caa17a237a12585b8564417968cbf3";
 
@@ -23,6 +24,33 @@ fn hkdf_outputs_are_stable() {
     );
     assert_eq!(hex(keys.kek().expose()), KEK_HEX);
     assert_eq!(hex(keys.mac().expose()), MAC_HEX);
+}
+
+/// The developer domain (R-40, byte 4) seals like the others; only the AD's domain byte differs.
+#[test]
+fn developer_field_records_are_bound_to_their_domain() {
+    let vault = VaultId::from_bytes([0x22; 16]);
+    let item = [0x55; 16];
+    let dk = SecretKey::from_bytes([0x33; 32]);
+    let ad = |domain| FieldAd {
+        vault: &vault,
+        domain,
+        item: &item,
+        field: "value",
+    };
+    let record = seal_field_with_nonce(
+        &dk,
+        &KeyId::from_bytes([0x44; 16]),
+        &ad(Domain::Developer),
+        b"KH-KAT",
+        [0x66; 24],
+    );
+    assert_eq!(hex(&record), DEVELOPER_RECORD_HEX);
+    assert_eq!(
+        &*open_field(&dk, &ad(Domain::Developer), &record).unwrap(),
+        b"KH-KAT"
+    );
+    assert!(open_field(&dk, &ad(Domain::Credentials), &record).is_err());
 }
 
 #[test]

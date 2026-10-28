@@ -11,17 +11,27 @@ impl Error for InvalidValue {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum Domain {
+    /// Site sign-ins (`login`): typed only into the sites they belong to.
     Credentials,
     Payment,
     Personal,
+    /// API keys and environment variables (`secret`, `env`): injected into processes and
+    /// tools (R-40).
+    Developer,
 }
 impl Domain {
-    pub const ALL: [Domain; 3] = [Self::Credentials, Self::Payment, Self::Personal];
+    pub const ALL: [Domain; 4] = [
+        Self::Credentials,
+        Self::Payment,
+        Self::Personal,
+        Self::Developer,
+    ];
     pub fn as_byte(self) -> u8 {
         match self {
             Self::Credentials => 1,
             Self::Payment => 2,
             Self::Personal => 3,
+            Self::Developer => 4,
         }
     }
     pub fn from_byte(value: u8) -> Option<Self> {
@@ -34,6 +44,7 @@ impl Domain {
             Self::Credentials => "credentials",
             Self::Payment => "payment",
             Self::Personal => "personal",
+            Self::Developer => "developer",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {
@@ -203,7 +214,7 @@ pub static KINDS: &[KindSpec] = &[
     KindSpec {
         kind: ItemKind::Secret,
         name: "secret",
-        domain: Domain::Credentials,
+        domain: Domain::Developer,
         fields: &[secret("value"), secret("note")],
         free_fields: false,
         default_origin_binding: false,
@@ -212,7 +223,7 @@ pub static KINDS: &[KindSpec] = &[
     KindSpec {
         kind: ItemKind::Env,
         name: "env",
-        domain: Domain::Credentials,
+        domain: Domain::Developer,
         fields: &[],
         free_fields: true,
         default_origin_binding: false,
@@ -396,7 +407,19 @@ mod tests {
     #[test]
     fn kinds_map_to_domains() {
         assert_eq!(ItemKind::Login.domain(), Domain::Credentials);
-        assert_eq!(ItemKind::Env.domain(), Domain::Credentials);
+        assert_eq!(ItemKind::Env.domain(), Domain::Developer);
+        assert_eq!(ItemKind::Secret.domain(), Domain::Developer);
+        assert_eq!(Domain::Developer.as_byte(), 4);
+        assert_eq!(Domain::from_byte(4), Some(Domain::Developer));
+        assert_eq!(Domain::parse("developer"), Some(Domain::Developer));
+        // The existing domains keep their stored numbers.
+        assert_eq!(
+            Domain::ALL[..3]
+                .iter()
+                .map(|d| d.as_byte())
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
         assert_eq!(ItemKind::Card.domain(), Domain::Payment);
         assert_eq!(ItemKind::Address.domain(), Domain::Personal);
         assert_eq!(Domain::Payment.as_byte(), 2);

@@ -3,6 +3,7 @@
 //! plaintext paths ([`resolve`]) are split by use case; key rotation and export live in
 //! `rotate` and `transfer`.
 
+mod developer;
 mod items;
 mod open;
 mod resolve;
@@ -215,7 +216,11 @@ impl Vault {
                 .context("could not unwrap domain key")?;
             out.insert(domain, (dk_id, dk));
         }
-        if out.len() != Domain::ALL.len() {
+        // A vault from before R-40 has no developer key yet; `open` adds it.
+        if Domain::ALL
+            .iter()
+            .any(|d| *d != Domain::Developer && !out.contains_key(d))
+        {
             bail!("domain keys are missing");
         }
         Ok(out)
@@ -225,6 +230,33 @@ impl Vault {
         &self.vault_id
     }
 
+    /// The signed view of a stored row: its metadata in the domain the row is stored in.
+    fn meta<'a>(
+        &'a self,
+        row: &'a ItemRow,
+        domain: Domain,
+        kind: ItemKind,
+        name: &'a ItemName,
+        origins: &'a [Origin],
+    ) -> ItemMeta<'a> {
+        ItemMeta {
+            vault: &self.vault_id,
+            item: &row.id,
+            domain,
+            kind,
+            name,
+            origin_binding: row.origin_binding,
+            origins,
+            status: &row.status,
+            updated_at: &row.updated_at,
+            run_allowed: row.run_allowed,
+            expires_at: None,
+            description: None,
+            field_descriptions: &[],
+        }
+    }
+
+    /// Signs `row` for the domain it is stored in (`row.domain`).
     pub(crate) fn mac_for(
         &self,
         row: &ItemRow,
@@ -232,23 +264,10 @@ impl Vault {
         name: &ItemName,
         origins: &[Origin],
     ) -> Vec<u8> {
+        let domain = Domain::from_byte(row.domain).unwrap_or_else(|| kind.domain());
         meta_mac(
             self.keys.mac(),
-            &ItemMeta {
-                vault: &self.vault_id,
-                item: &row.id,
-                domain: kind.domain(),
-                kind,
-                name,
-                origin_binding: row.origin_binding,
-                origins,
-                status: &row.status,
-                updated_at: &row.updated_at,
-                run_allowed: row.run_allowed,
-                expires_at: None,
-                description: None,
-                field_descriptions: &[],
-            },
+            &self.meta(row, domain, kind, name, origins),
         )
         .to_vec()
     }
@@ -284,32 +303,30 @@ impl Vault {
         row: &ItemRow,
     ) -> Result<(ItemKind, ItemName, Vec<Origin>)> {
         let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
+        if kind.domain().as_byte() != row.domain {
+            return Err(vault_err(VaultError::Tampered));
+        }
+        self.verified_as_stored(keys, row)
+    }
+
+    /// Checks the MAC of `row` for the domain it is stored in, even if its kind now belongs
+    /// to another one (an item written before R-40 moved secret and env items).
+    pub(crate) fn verified_as_stored(
+        &self,
+        keys: &KeySet,
+        row: &ItemRow,
+    ) -> Result<(ItemKind, ItemName, Vec<Origin>)> {
+        let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
+        let domain = Domain::from_byte(row.domain).context("unknown domain in database")?;
         let name = ItemName::parse(&row.name).map_err(|e| anyhow!(e.to_string()))?;
         let origins = row
             .origins
             .iter()
             .map(|o| Origin::parse(o).map_err(|e| anyhow!(e.to_string())))
             .collect::<Result<Vec<_>>>()?;
-        if kind.domain().as_byte() != row.domain {
-            return Err(vault_err(VaultError::Tampered));
-        }
         verify_meta_mac(
             keys.mac(),
-            &ItemMeta {
-                vault: &self.vault_id,
-                item: &row.id,
-                domain: kind.domain(),
-                kind,
-                name: &name,
-                origin_binding: row.origin_binding,
-                origins: &origins,
-                status: &row.status,
-                updated_at: &row.updated_at,
-                run_allowed: row.run_allowed,
-                expires_at: None,
-                description: None,
-                field_descriptions: &[],
-            },
+            &self.meta(row, domain, kind, &name, &origins),
             &row.meta_mac,
         )
         .map_err(vault_err)?;

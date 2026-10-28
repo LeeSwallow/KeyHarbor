@@ -108,13 +108,15 @@ impl Vault {
             }
         };
         let kek_id = KeyId::from_bytes(store.vault_get()?.context("vault not initialized")?.kek_id);
-        Ok(Vault {
+        let mut vault = Vault {
             store,
             keystore,
             vault_id,
             kek_id,
             keys,
             domain_keys,
-        })
+        };
+        vault.ensure_developer_domain()?;
+        Ok(vault)
     }
 }

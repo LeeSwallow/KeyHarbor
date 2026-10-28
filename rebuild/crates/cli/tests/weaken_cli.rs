@@ -289,3 +289,74 @@ fn run_injects_only_items_that_allow_it() {
         assert!(!audit.contains(secret.as_str()));
     }
 }
+
+#[test]
+fn secret_and_env_items_live_in_the_developer_domain() {
+    let c = Cli::new();
+    let key = c.synth("key");
+    c.ok(
+        &["vault", "add", "openai", "--kind", "env", "--stdin"],
+        Some(&json!({"OPENAI_API_KEY": key}).to_string()),
+    );
+    c.ok(
+        &["vault", "add", "api", "--kind", "secret", "--stdin"],
+        Some(&json!({"value": c.synth("api")}).to_string()),
+    );
+    assert_eq!(c.item("openai")["domain"], "developer");
+    assert_eq!(c.item("api")["domain"], "developer");
+    // A domain rule covers them; credentials rules no longer do.
+    c.ok(
+        &[
+            "policy",
+            "deny",
+            "--agent",
+            "codex",
+            "--resource",
+            "domain",
+            "--target",
+            "credentials",
+        ],
+        None,
+    );
+    c.ok(
+        &["run", "--agent", "codex", "--env", "openai", "--", "true"],
+        None,
+    );
+    c.ok(
+        &[
+            "policy",
+            "deny",
+            "--agent",
+            "codex",
+            "--resource",
+            "domain",
+            "--target",
+            "developer",
+        ],
+        None,
+    );
+    let error = c.refused(&["run", "--agent", "codex", "--env", "openai", "--", "true"]);
+    assert!(error.contains("denied: openai (policy)"), "{error}");
+    // Its key rotates like the others and the values survive.
+    assert_eq!(
+        c.ok(&["vault", "rotate-domain", "developer"], None),
+        "rotated\tdeveloper\n"
+    );
+    // The masker still recognizes the value, so it decrypted to the same text.
+    let out = c.run(
+        &[
+            "run",
+            "--env",
+            "openai",
+            "--",
+            "sh",
+            "-c",
+            "echo \"$OPENAI_API_KEY\"",
+        ],
+        None,
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "{{secret:openai.OPENAI_API_KEY}}\n"
+    );
+}

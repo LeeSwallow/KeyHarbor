@@ -54,29 +54,32 @@ flowchart TB
     dc["<b>DK_cred</b><br/>자격 증명"]
     dp["<b>DK_pay</b><br/>결제"]
     dr["<b>DK_personal</b><br/>개인정보"]
+    dd["<b>DK_dev</b><br/>개발자 (R-40)"]
   end
-  fc["login · secret · env 필드 암호문"]
+  fc["login 필드 암호문"]
+  fd["secret · env 필드 암호문"]
   fp["card 필드 암호문"]
   fr["identity · address 필드 암호문"]
   pw["내보내기 비밀번호<br/>(사용자 입력)"]
   ek["<b>내보내기 키 EK</b><br/>Argon2id(pw, salt)"]
   exp["내보내기 파일"]
   kc -->|"generic password 항목"| vk
-  vk -->|"wrap: XChaCha20-Poly1305<br/>AD = keyharbor/dk/v1 ‖ domain"| dc & dp & dr
+  vk -->|"wrap: XChaCha20-Poly1305<br/>AD = keyharbor/dk/v1 ‖ domain"| dc & dp & dr & dd
   dc -->|"XChaCha20-Poly1305"| fc
   dp -->|"XChaCha20-Poly1305"| fp
   dr -->|"XChaCha20-Poly1305"| fr
+  dd -->|"XChaCha20-Poly1305"| fd
   pw --> ek -->|"XChaCha20-Poly1305"| exp
 ```
 
-**설계 선택 — 도메인 단위 envelope encryption.** 1Password는 볼트마다, Bitwarden은 조직·항목마다 키를 둔다. 둘 다 공유·동기화가 이유다. KeyHarbor는 공유가 없지만, 관리 대상을 세 도메인으로 나눴으므로([02 §2.7.1](02-system-architecture.md#271-도메인-분할-r-24-r-25)) **도메인마다 데이터 키(DK)**를 두고 VK는 DK를 감싸는 키(KEK)로만 쓴다. 항목마다 키를 두지는 않는다. [설계자 판단, [ADR-0011](adr/0011-domain-split.md)]
+**설계 선택 — 도메인 단위 envelope encryption.** 1Password는 볼트마다, Bitwarden은 조직·항목마다 키를 둔다. 둘 다 공유·동기화가 이유다. KeyHarbor는 공유가 없지만, 관리 대상을 네 도메인(자격 증명·결제·개인정보·개발자, R-40)으로 나눴으므로([02 §2.7.1](02-system-architecture.md#271-도메인-분할-r-24-r-25)) **도메인마다 데이터 키(DK)**를 두고 VK는 DK를 감싸는 키(KEK)로만 쓴다. 항목마다 키를 두지는 않는다. [설계자 판단, [ADR-0011](adr/0011-domain-split.md)]
 
 | 효과 | 설명 |
 |---|---|
-| VK 교체가 가볍다 | VK를 바꾸면 DK 세 개만 다시 감싼다. 필드 재암호화가 없다 |
+| VK 교체가 가볍다 | VK를 바꾸면 DK 네 개만 다시 감싼다. 필드 재암호화가 없다 |
 | 도메인 단위 교체 | 결제 정보만 의심스러우면 `DK_pay`만 교체하고 card 필드만 재암호화한다 |
 | 도메인 단위 선택지 | 이후 "결제 도메인은 인증을 통과해야 복호화" 같은 모드를 도메인 하나에만 붙일 수 있다(P2) |
-| 메모리 노출 축소 | 감독자는 그 세션에서 실제로 쓰는 도메인의 DK만 풀 수 있다. 단, 마스킹은 금고 전체 값이 필요하므로(§3.7) 기본 동작에서는 세 DK를 모두 푼다 |
+| 메모리 노출 축소 | 감독자는 그 세션에서 실제로 쓰는 도메인의 DK만 풀 수 있다. 단, 마스킹은 금고 전체 값이 필요하므로(§3.7) 기본 동작에서는 모든 DK를 푼다 |
 
 필드마다 무작위 nonce와 associated data를 쓰므로 필드 간 바꿔치기도 막힌다. 필드 레코드의 `key_id`는 해당 DK의 ID다.
 
@@ -108,7 +111,7 @@ flowchart TB
 | 데이터 | 위치 | 보호 | 민감도 |
 |---|---|---|---|
 | 모든 항목의 모든 필드 — 비밀번호, 카드번호·CVC, 신원·주소, env 변수 값, 메모 | SQLite `VAULT_FIELD.sealed` | AEAD (도메인 키 DK) | 높음 (결제·개인정보는 최고) |
-| 도메인 키 DK × 3 | SQLite `DOMAIN_KEY.wrapped` | AEAD (VK) | 최고 |
+| 도메인 키 DK × 4 | SQLite `DOMAIN_KEY.wrapped` | AEAD (VK) | 최고 |
 | env 변수 **이름** | `VAULT_FIELD.field` 평문 | 파일 권한 | 낮음–중간 (어떤 서비스 키를 갖는지 드러남) |
 | 항목 이름, 종류, origin 목록 | SQLite 평문 | 파일 권한 0600 · FileVault | 중간 (어떤 서비스를 쓰는지 드러남) |
 | 세션 이름, 상태, 인계 origin | SQLite 평문 | 동일 | 중간 |

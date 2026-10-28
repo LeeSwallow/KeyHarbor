@@ -36,7 +36,7 @@ pub struct RuleArgs {
     /// session, item, domain, create_session or raw_cdp
     #[arg(long)]
     resource: String,
-    /// Session id, item name, domain (credentials, payment, personal) or *
+    /// Session id, item name, domain (credentials, payment, personal, developer) or *
     #[arg(long, default_value = "*")]
     target: String,
 }

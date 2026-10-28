@@ -136,7 +136,7 @@ pub fn normalize_target(resource: Resource, target: &str) -> Result<String, Inva
             Domain::parse(target)
                 .map(|d| d.as_str().to_owned())
                 .ok_or(InvalidValue(
-                    "domain target must be credentials, payment, personal or *",
+                    "domain target must be credentials, payment, personal, developer or *",
                 ))
         }
         Resource::CreateSession | Resource::RawCdp => Err(InvalidValue(
@@ -160,6 +160,7 @@ mod tests {
             "codex domain payment deny"
         );
         assert!(Rule::new("codex", Resource::RawCdp, "*", Effect::Deny).is_ok());
+        assert!(Rule::new("codex", Resource::Domain, "developer", Effect::Deny).is_ok());
         for (agent, resource, target) in [
             ("", Resource::Item, "github"),
             ("a b", Resource::Item, "github"),

@@ -6,15 +6,21 @@ use anyhow::{Context, Result};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     ports::{FieldRow, ItemRow},
-    vault::ItemName,
+    vault::{Domain, ItemName},
 };
 use keyharbor_vault::keys::KeyId;
 
 impl Vault {
     pub fn add(&self, item: NewItem) -> Result<()> {
+        let domain = item.kind.domain();
+        self.add_in_domain(item, domain)
+    }
+
+    /// `add`, sealing and signing in `domain`; anything but the kind's domain only builds
+    /// vaults as earlier releases left them, for tests.
+    pub(crate) fn add_in_domain(&self, item: NewItem, domain: Domain) -> Result<()> {
         check_fields(item.kind, &item.fields)?;
         let id = *KeyId::new().as_bytes();
-        let domain = item.kind.domain();
         let mut row = ItemRow {
             id,
             name: item.name.as_str().to_owned(),

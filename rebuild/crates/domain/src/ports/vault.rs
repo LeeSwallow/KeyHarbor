@@ -78,4 +78,13 @@ pub trait VaultStore: Send {
         fields: &[([u8; 16], FieldRow)],
     ) -> Result<()>;
     fn vault_version(&self) -> Result<i64>;
+    /// Adds a domain key and moves items into it — each item's metadata row and its
+    /// re-sealed fields replaced — atomically, from an expected version. Fails, changing
+    /// nothing, if the version moved or the domain already has a key.
+    fn add_domain(
+        &self,
+        expected_version: i64,
+        dk: &DomainKeyRow,
+        items: &[(ItemRow, Vec<FieldRow>)],
+    ) -> Result<()>;
 }

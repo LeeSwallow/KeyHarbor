@@ -72,7 +72,7 @@ cargo run -p keyharbor -- list
 
 ## 로컬 금고 (2단계)
 
-세 도메인(자격 증명·결제·개인정보)의 항목을 암호화해 저장한다. 루트 키는 macOS login keychain(`io.github.leeswallow.keyharbor`)에, 나머지는 SQLite에 암호문으로 둔다. 방식은 [07 암호화 설계](../docs/design/07-cryptography-design.md)를 따른다.
+네 도메인(자격 증명·결제·개인정보·개발자)의 항목을 암호화해 저장한다. 루트 키는 macOS login keychain(`io.github.leeswallow.keyharbor`)에, 나머지는 SQLite에 암호문으로 둔다. 방식은 [07 암호화 설계](../docs/design/07-cryptography-design.md)를 따른다.
 
 | 명령 | 설명 |
 |---|---|
@@ -84,7 +84,7 @@ cargo run -p keyharbor -- list
 | `vault import-env <name> <path>` | `.env` 파일을 env 항목으로 가져온다 |
 | `vault export <path> [--passphrase-stdin]` | [age](https://age-encryption.org/v1) 형식의 암호화 백업. `age -d`로도 열린다. 기존 파일을 덮어쓰지 않는다 |
 | `vault import <path> [--passphrase-stdin]` | 같은 이름의 항목은 건너뛴다 |
-| `vault rotate-root` · `vault rotate-domain <credentials\|payment\|personal>` | 키 교체. 도중에 끊겨도 다음 실행 때 복구된다 |
+| `vault rotate-root` · `vault rotate-domain <credentials\|payment\|personal\|developer>` | 키 교체. 도중에 끊겨도 다음 실행 때 복구된다 |
 
 ```sh
 cargo run -p keyharbor -- vault init
@@ -115,7 +115,7 @@ cargo run -p keyharbor -- vault list
 | 명령 | 설명 |
 |---|---|
 | `policy list [--json]` | `agent resource target effect` |
-| `policy allow\|deny --agent A --resource R [--target T]` · `policy rm …` | R은 `session`·`item`·`domain`·`create_session`·`raw_cdp`, T는 세션 id·항목 이름·도메인(`credentials`·`payment`·`personal`) 또는 `*`(기본). A가 `*`면 모든 에이전트 |
+| `policy allow\|deny --agent A --resource R [--target T]` · `policy rm …` | R은 `session`·`item`·`domain`·`create_session`·`raw_cdp`, T는 세션 id·항목 이름·도메인(`credentials`·`payment`·`personal`·`developer`) 또는 `*`(기본). A가 `*`면 모든 에이전트 |
 | `audit [--limit N] [--json]` | 사용 기록. `seq at agent kind item origin session result`. 값은 없다 |
 | `settings get\|set audit_enabled [true\|false]` | 끄면 거부를 포함해 아무것도 기록하지 않는다 |
 | `run [--agent A] (--env ITEM \| --env-file PATH)… -- CMD ARGS…` | env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣고, 그 stdout·stderr를 줄 단위로 가려서 내보낸다. 종료 코드를 그대로 전달하고(신호면 128+번호), 자식의 core dump를 끈다 |

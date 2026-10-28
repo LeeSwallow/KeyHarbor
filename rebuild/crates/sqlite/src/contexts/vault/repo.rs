@@ -275,6 +275,37 @@ impl VaultStore for SqliteStore {
     fn vault_version(&self) -> Result<i64> {
         self.read(|conn| Ok(vault::table.select(vault::version).first(conn)?))
     }
+
+    fn add_domain(
+        &self,
+        expected_version: i64,
+        dk: &DomainKeyRow,
+        items: &[(ItemRow, Vec<FieldRow>)],
+    ) -> Result<()> {
+        self.write(|conn| {
+            bump_from(conn, expected_version)?;
+            diesel::insert_into(domain_keys::table)
+                .values(domain_key_model(dk))
+                .execute(conn)
+                .context("the domain already has a key")?;
+            for (item, fields) in items {
+                let updated = diesel::update(vault_items::table.find(&item.id[..]))
+                    .set(item_model(item))
+                    .execute(conn)?;
+                if updated != 1 {
+                    bail!("item not found while moving it to a new domain");
+                }
+                diesel::delete(vault_fields::table.filter(vault_fields::item_id.eq(&item.id[..])))
+                    .execute(conn)?;
+                for field in fields {
+                    diesel::insert_into(vault_fields::table)
+                        .values(field_model(&item.id, field))
+                        .execute(conn)?;
+                }
+            }
+            Ok(())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -569,5 +600,43 @@ mod tests {
             field: "username".into(),
             sealed: vec![4, 5]
         }));
+    }
+
+    #[test]
+    fn add_domain_moves_items_with_their_key_atomically() {
+        let (_t, s) = store();
+        with_vault(&s);
+        s.item_insert(&G, &item("api", 1), &fields()).unwrap();
+        let version = s.vault_version().unwrap();
+        let dk = DomainKeyRow {
+            domain: 4,
+            dk_id: [4; 16],
+            wrapped: vec![4; 8],
+        };
+        let mut moved = item("api", 1);
+        moved.domain = 4;
+        moved.meta_mac = vec![7; 32];
+        let sealed = vec![FieldRow {
+            field: "value".into(),
+            sealed: vec![9, 9],
+        }];
+        // A stale version changes nothing.
+        assert!(
+            s.add_domain(version - 1, &dk, &[(moved.clone(), sealed.clone())])
+                .is_err()
+        );
+        assert_eq!(s.domain_keys().unwrap().len(), 3);
+        s.add_domain(version, &dk, &[(moved.clone(), sealed.clone())])
+            .unwrap();
+        assert_eq!(s.vault_version().unwrap(), version + 1);
+        assert_eq!(s.domain_keys().unwrap()[3], dk);
+        let (row, f) = s.item_get("api").unwrap().unwrap();
+        assert_eq!((row.domain, row.meta_mac.clone()), (4, vec![7; 32]));
+        assert_eq!(row.origins, vec!["https://github.com"], "origins are kept");
+        assert_eq!(f, sealed);
+        // The domain gets one key only.
+        let version = s.vault_version().unwrap();
+        assert!(s.add_domain(version, &dk, &[]).is_err());
+        assert_eq!(s.vault_version().unwrap(), version);
     }
 }

@@ -337,7 +337,7 @@ erDiagram
   VAULT_ITEM {
     text id PK
     text name UK "평문 · placeholder 키"
-    text domain "credentials | payment | personal"
+    text domain "credentials | payment | personal | developer"
     text kind "login | secret | env | card | identity | address"
     int  origin_binding "1=켜짐"
     text status "draft | active | discarded"
@@ -390,7 +390,7 @@ erDiagram
 
 ### 2.7.1 도메인 분할 (R-24, R-25)
 
-관리 대상을 **네 개의 도메인**(bounded context)으로 나눈다. 세션은 금고 밖에 있고, 금고는 세 도메인으로 나뉜다. 분류는 Chrome 자동완성 설정의 *비밀번호 관리자 / 결제 수단 / 주소 및 기타*와, 사용자가 제안한 "기본 정보(세션·아이디·비밀번호) / 결제 정보 / 개인정보" 구분을 따른다. [사용자 결정 R-25, 세부는 설계자 판단]
+관리 대상을 **다섯 개의 도메인**(bounded context)으로 나눈다. 세션은 금고 밖에 있고, 금고는 네 도메인으로 나뉜다. 분류는 Chrome 자동완성 설정의 *비밀번호 관리자 / 결제 수단 / 주소 및 기타*와, 사용자가 제안한 "기본 정보(세션·아이디·비밀번호) / 결제 정보 / 개인정보" 구분을 따른다. [사용자 결정 R-25, 세부는 설계자 판단] API 키와 환경 변수(`secret`·`env`)는 처음에 자격 증명에 있었지만, 사이트 입력칸이 아니라 프로세스·도구로 주입되는 값이라 개발자 도메인으로 나눴다. [사용자 결정 R-40, J-54]
 
 ```mermaid
 flowchart TB
@@ -400,10 +400,12 @@ flowchart TB
     s3["사이트별 로그인 상태"]
   end
   subgraph VAULT["금고"]
-    subgraph CRED["② 자격 증명 도메인 Credentials<br/>'서비스에 나임을 증명하는 것'"]
+    subgraph CRED["② 자격 증명 도메인 Credentials<br/>'사이트에 나임을 증명하는 것'"]
       c1["login: 아이디 · 비밀번호 · totp_seed"]
-      c2["secret: API 키 · 토큰"]
-      c3["env: .env 변수 묶음"]
+    end
+    subgraph DEV["⑤ 개발자 도메인 Developer<br/>'도구가 서비스를 부르는 열쇠'"]
+      d1["secret: API 키 · 토큰"]
+      d2["env: .env 변수 묶음"]
     end
     subgraph PAY["③ 결제 도메인 Payment<br/>'돈이 나가는 것'"]
       p1["card: 번호 · 유효기간 · CVC · 명의자"]
@@ -416,23 +418,23 @@ flowchart TB
   POL["정책 · 사용 기록<br/>(도메인을 가로지르는 지원 도메인)"]
   s3 -.->|"연결된 login 항목"| c1
   p1 -.->|"청구 주소 참조"| r2
-  POL --- SES & CRED & PAY & PER
+  POL --- SES & CRED & PAY & PER & DEV
 ```
 
 **왜 나누는가**
 
-| 관점 | 자격 증명 | 결제 | 개인정보 |
-|---|---|---|---|
-| 유출 시 피해 | 계정 탈취 | **금전 손실** | 신원 도용 · 프라이버시 |
-| 쓰는 곳 | 특정 서비스 한두 곳 | 상점 + 결제사 iframe | 여러 사이트의 가입·주문 폼 |
-| origin 바인딩 기본 | 켜짐 (`env`는 해당 없음) | 켜짐 (상점 + 결제사 origin) | 꺼짐 |
-| 마스킹 특이점 | — | 번호 공백·하이픈 변형 | 짧은 값(우편번호 등) 오탐 주의 |
-| 도메인 키 | `DK_cred` | `DK_pay` | `DK_personal` |
-| 관리 앱 화면 | 비밀번호 · API 키 · 환경 변수 | 결제 수단 | 개인정보 · 주소 |
+| 관점 | 자격 증명 | 결제 | 개인정보 | 개발자 |
+|---|---|---|---|---|
+| 유출 시 피해 | 계정 탈취 | **금전 손실** | 신원 도용 · 프라이버시 | 외부 서비스 과금 · 데이터 접근 |
+| 쓰는 곳 | 특정 서비스 한두 곳 | 상점 + 결제사 iframe | 여러 사이트의 가입·주문 폼 | 프로세스·도구 주입 (`keyharbor run`) |
+| origin 바인딩 기본 | 켜짐 | 켜짐 (상점 + 결제사 origin) | 꺼짐 | `secret` 꺼짐 → 브라우저 입력은 origin 목록이 있어야 함(R-36) · `env` 해당 없음 |
+| 마스킹 특이점 | — | 번호 공백·하이픈 변형 | 짧은 값(우편번호 등) 오탐 주의 | — |
+| 도메인 키 | `DK_cred` | `DK_pay` | `DK_personal` | `DK_dev` |
+| 관리 앱 화면 | 비밀번호 | 결제 수단 | 개인정보 · 주소 | API 키 · 환경 변수 |
 
-- **정책의 단위가 된다.** 규칙의 target으로 항목 이름뿐 아니라 도메인 전체(`payment:*`, `personal:*`)를 쓸 수 있다. 예를 들어 "codex는 결제 도메인 거부"를 규칙 하나로 건다. 기본값은 여전히 모두 허용이다(P2).
+- **정책의 단위가 된다.** 규칙의 target으로 항목 이름뿐 아니라 도메인 전체(`--resource domain --target payment`, `… developer`)를 쓸 수 있다. 예를 들어 "codex는 결제 도메인 거부"를 규칙 하나로 건다. 기본값은 여전히 모두 허용이다(P2).
 - **키의 단위가 된다.** 도메인마다 별도 키를 둔다([03 §3.3](03-security-whitepaper.md#33-키-계층)). 이후 "결제 도메인 평문 보기는 인증 필요" 같은 선택지를 도메인 단위로 붙일 수 있다.
-- **코드의 단위가 된다.** `kh-domain` 안에 `session`, `credentials`, `payment`, `personal`, `policy`, `audit` 모듈을 둔다. 도메인 사이 참조는 ID로만 한다(예: 카드의 `billing_address` = address 항목 ID).
+- **코드의 단위가 된다.** `kh-domain` 안에 `session`, `credentials`, `payment`, `personal`, `developer`, `policy`, `audit` 모듈을 둔다. 도메인 사이 참조는 ID로만 한다(예: 카드의 `billing_address` = address 항목 ID).
 - 독립 `note` 종류는 두지 않는다. 모든 항목에 `note` 필드가 있다. [설계자 판단]
 - placeholder 형식은 도메인과 상관없이 `{{secret:<항목 이름>.<필드>}}` 하나다. 항목 이름은 금고 전체에서 유일하다. [설계자 판단]
 
@@ -441,8 +443,8 @@ flowchart TB
 | 도메인 | 종류 | 필드 | 주 사용처 | origin 바인딩 기본 |
 |---|---|---|---|---|
 | 자격 증명 | `login` | `username`, `password`, `totp_seed`(선택, 저장만), `note` | 로그인 폼 | 켜짐 |
-| 자격 증명 | `secret` | `value`, `note` | API 키 등 단일 값 | 꺼짐 |
-| 자격 증명 | `env` | 사용자가 정한 변수 이름들 (`DATABASE_URL`, `OPENAI_API_KEY` …), `note` | `keyharbor run` | 해당 없음 |
+| 개발자 | `secret` | `value`, `note` | API 키 등 단일 값 | 꺼짐 (브라우저 입력은 origin 목록 필요, R-36) |
+| 개발자 | `env` | 사용자가 정한 변수 이름들 (`DATABASE_URL`, `OPENAI_API_KEY` …), `note` | `keyharbor run` | 해당 없음 |
 | 결제 | `card` | `holder`, `number`, `exp_month`, `exp_year`, `cvc`, `billing_address`(address ID), `note` | 결제 폼 (대개 결제사 iframe) | 켜짐 — 결제사 origin을 함께 등록 |
 | 개인정보 | `identity` | `full_name`, `given_name`, `family_name`, `email`, `phone`, `birth_date`, `note` | 가입·주문 폼 | 꺼짐 |
 | 개인정보 | `address` | `recipient`, `line1`, `line2`, `city`, `region`, `postal_code`, `country`, `phone`, `note` | 배송·청구 주소 | 꺼짐 |
