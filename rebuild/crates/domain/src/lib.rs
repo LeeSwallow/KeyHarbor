@@ -138,3 +138,4 @@ mod tests {
         assert!(!State::Failed.permits(State::Starting));
     }
 }
+pub mod vault;
