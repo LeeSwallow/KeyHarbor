@@ -1,0 +1,5 @@
+/* tabs — children: button (is-on). */
+.kh-tabs { display: flex; gap: var(--space-4); border-bottom: 1px solid var(--c-line); }
+.kh-tabs button { padding: var(--space-2) 0; border: 0; background: none; color: var(--c-ink-3); font: var(--text-body-strong); cursor: pointer;
+  border-bottom: var(--stroke-strong) solid transparent; margin-bottom: calc(-1 * var(--stroke-hairline)); display: inline-flex; gap: var(--gap-tight); align-items: center; }
+.kh-tabs button.is-on { color: var(--c-ink); border-bottom-color: var(--c-accent); }

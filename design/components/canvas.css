@@ -1,0 +1,3 @@
+/* canvas — the patterned background. Put panels on it, not text straight on lines. */
+.kh-canvas { background-color: var(--c-bg); background-image: var(--pattern); background-size: var(--pattern-size);
+  background-position: calc(-1 * var(--stroke-hairline)) calc(-1 * var(--stroke-hairline)); }

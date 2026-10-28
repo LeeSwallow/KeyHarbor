@@ -1,0 +1,9 @@
+/* badge — a state, always with a word. Modifiers: active · draft · expiring · expired · denied · tampered · neutral. */
+.kh-badge { display: inline-flex; align-items: center; gap: var(--space-1); height: var(--size-badge); padding: 0 var(--gap-tight); border-radius: var(--radius-xs);
+  font: var(--text-label); letter-spacing: var(--tracking-label); text-transform: uppercase; }
+.kh-badge.active   { background: var(--c-ok-wash); color: var(--c-ok); }
+.kh-badge.draft    { background: var(--c-info-wash); color: var(--c-info); }
+.kh-badge.expiring { background: var(--c-warn-wash); color: var(--c-warn); }
+.kh-badge.expired, .kh-badge.denied { background: var(--c-danger-wash); color: var(--c-danger); }
+.kh-badge.tampered { background: var(--c-danger); color: var(--c-danger-text); }
+.kh-badge.neutral  { background: var(--c-surface-2); color: var(--c-ink-3); }

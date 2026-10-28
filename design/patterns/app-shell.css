@@ -1,0 +1,16 @@
+/* app-shell — the admin app: sidebar · list · detail inside a kh-window.
+ * Elements: .side (.nav is-on, .group), .list, .detail, .kv. Layout sizes live here; colours come from tokens. */
+.kh-shell { display: grid; grid-template-columns: 190px 280px 1fr; height: 460px; }
+.kh-shell .side { background: var(--c-surface-2); border-right: 1px solid var(--c-line); padding: var(--space-3) var(--space-2); display: grid; align-content: start; gap: var(--space-half); }
+.kh-shell .nav { display: flex; align-items: center; gap: var(--space-2); height: var(--size-menu-item); padding: 0 var(--space-2); border-radius: var(--radius-sm); color: var(--c-ink-2); }
+.kh-shell .nav.is-on { background: var(--c-surface); color: var(--c-ink); font-weight: 600; box-shadow: var(--shadow-1); }
+.kh-shell .nav .kh-count { margin-left: auto; }
+.kh-shell .group { font: var(--text-label); color: var(--c-ink-4); text-transform: uppercase; letter-spacing: var(--tracking-label); padding: var(--space-3) var(--space-2) var(--space-1); }
+.kh-shell .list { background: var(--c-surface); border-right: 1px solid var(--c-line); padding: var(--space-2); display: grid; align-content: start; gap: var(--space-half); overflow: hidden; }
+.kh-shell .detail { padding: var(--space-5); display: grid; align-content: start; gap: var(--space-4); overflow: hidden; }
+.kh-shell .kv { display: grid; grid-template-columns: 96px 1fr; gap: var(--space-3); align-items: center; }
+.kh-shell .kv > span { font: var(--text-small); color: var(--c-ink-3); }
+@media (max-width: 860px) {
+  .kh-shell { grid-template-columns: 1fr; height: auto; }
+  .kh-shell .side, .kh-shell .list { border-right: 0; border-bottom: 1px solid var(--c-line); }
+}

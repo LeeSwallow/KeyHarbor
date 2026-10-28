@@ -1,0 +1,7 @@
+/* icon-button — a square button holding one icon. Modifier: danger. State: is-pressed. */
+.kh-ibtn { display: inline-grid; place-items: center; width: var(--control-h); height: var(--control-h); border-radius: var(--radius-sm);
+  border: 0; background: transparent; color: var(--c-ink-3); cursor: pointer; transition: background var(--dur-short), color var(--dur-short); }
+.kh-ibtn:hover, .kh-ibtn.is-hover { background: var(--c-surface-3); color: var(--c-ink); }
+.kh-ibtn.is-pressed { background: var(--c-accent-wash); color: var(--c-accent-strong); }
+.kh-ibtn.danger:hover, .kh-ibtn.danger.is-hover { background: var(--c-danger-wash); color: var(--c-danger); }
+.kh-ibtn[disabled] { opacity: var(--opacity-disabled); cursor: not-allowed; }

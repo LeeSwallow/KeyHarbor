@@ -1,0 +1,8 @@
+/* menu — Elements: .item (danger, is-hover, is-disabled), hr. */
+.kh-menu { min-width: var(--width-menu); padding: var(--space-1); border-radius: var(--radius-md); background: var(--c-surface); border: 1px solid var(--c-line); box-shadow: var(--shadow-3); }
+.kh-menu .item { display: flex; align-items: center; gap: var(--space-2); height: var(--size-menu-item); padding: 0 var(--space-2); border-radius: var(--radius-sm); color: var(--c-ink); cursor: pointer; }
+.kh-menu .item:hover, .kh-menu .item.is-hover { background: var(--c-surface-3); }
+.kh-menu .item .kh-kbd { margin-left: auto; }
+.kh-menu .item.danger { color: var(--c-danger); }
+.kh-menu .item.is-disabled { color: var(--c-ink-4); cursor: default; }
+.kh-menu hr { border: 0; border-top: 1px solid var(--c-line); margin: var(--space-1) 0; }

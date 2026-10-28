@@ -1,0 +1,6 @@
+/* origins — where a secret (or a handed-off login) may go. Elements: .site, .state. State: is-off. */
+.kh-origins { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
+  background: var(--c-surface-2); border: 1px solid var(--c-line); }
+.kh-origins .site { display: inline-flex; align-items: center; gap: var(--gap-tight); font: var(--text-mono-sm); color: var(--c-ink); }
+.kh-origins .state { margin-left: auto; display: inline-flex; gap: var(--gap-tight); align-items: center; font: var(--text-small); font-weight: 600; color: var(--c-ok); }
+.kh-origins.is-off .state { color: var(--c-warn); }

@@ -1,0 +1,8 @@
+/* toast — a short notice. Modifiers: ok · warn · danger. Elements: .lead, .msg, .act. */
+.kh-toast { display: flex; align-items: center; gap: var(--space-3); min-width: var(--width-toast); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  background: var(--c-surface); border: 1px solid var(--c-line); box-shadow: var(--shadow-2); }
+.kh-toast .msg { flex: 1; }
+.kh-toast.ok .lead { color: var(--c-ok); }
+.kh-toast.warn .lead { color: var(--c-warn); }
+.kh-toast.danger .lead { color: var(--c-danger); }
+.kh-toast .act { color: var(--c-accent-strong); background: none; border: 0; cursor: pointer; font: var(--text-body-strong); }

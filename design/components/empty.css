@@ -1,0 +1,4 @@
+/* empty — nothing here yet. Elements: .art, h4. */
+.kh-empty { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-9) var(--space-6); text-align: center; color: var(--c-ink-3); }
+.kh-empty .art { width: var(--size-art); height: var(--size-art); border-radius: var(--radius-art); display: grid; place-items: center; background: var(--c-accent-wash); color: var(--c-accent-strong); }
+.kh-empty h4 { margin: 0; font: var(--text-heading); color: var(--c-ink); }

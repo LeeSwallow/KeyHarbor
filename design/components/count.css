@@ -1,0 +1,4 @@
+/* count — a number on a nav entry. Modifier: muted. */
+.kh-count { display: inline-grid; place-items: center; min-width: var(--size-badge); height: var(--size-badge); padding: 0 var(--pad-count); border-radius: var(--radius-pill);
+  background: var(--c-accent-fill); color: var(--c-accent-text); font: var(--text-label); }
+.kh-count.muted { background: var(--c-surface-3); color: var(--c-ink-2); }

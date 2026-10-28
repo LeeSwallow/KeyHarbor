@@ -1,0 +1,219 @@
+/* Layer 2 — semantic tokens. What a value is for, not what it looks like.
+ * Colours here are always var(--primitive); no literal colour appears in this file.
+ * Themes: [data-theme="light"|"dark"] on <html>, or the system setting when absent.
+ * Density: [data-density="comfortable"|"compact"]. Pattern: [data-pattern="graph"|"grid"|"dots"|"none"].
+ * Rules: one accent (harbor teal); domain colours mark what kind of secret a thing is;
+ * status colours mark what state it is in. Never use colour alone — pair with an icon or a word.
+ */
+
+:root {
+  /* ---- Type ---- */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, "D2Coding", monospace;
+  --text-display: 600 26px/32px var(--font-ui);
+  --text-title: 600 20px/26px var(--font-ui);
+  --text-heading: 600 15px/20px var(--font-ui);
+  --text-body: 400 13px/20px var(--font-ui);
+  --text-body-strong: 600 13px/20px var(--font-ui);
+  --text-small: 400 12px/16px var(--font-ui);
+  --text-label: 600 11px/14px var(--font-ui);
+  --text-mono: 400 12px/18px var(--font-mono);
+  --text-mono-sm: 400 11px/16px var(--font-mono);
+  --tracking-label: .04em;
+  --tracking-sealed: .12em;
+
+  /* ---- Space (4px grid, plus two half steps for tight inline parts) ---- */
+  --space-half: 2px; --gap-tight: 6px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px;
+  --space-6: 24px; --space-7: 32px; --space-8: 40px; --space-9: 48px; --space-10: 64px;
+
+  /* ---- Radius · stroke ---- */
+  --radius-xs: 4px;   /* chips, kbd */
+  --radius-sm: 6px;   /* inputs, buttons */
+  --radius-glyph: 8px;
+  --radius-md: 10px;  /* cards, rows */
+  --radius-window: 12px;
+  --radius-lg: 14px;  /* panels, dialogs */
+  --radius-art: 18px;
+  --radius-pill: 999px;
+  --stroke-hairline: 1px;
+  --stroke-focus: 2px;
+  --stroke-strong: 2px;
+  --focus-offset: 2px;
+  --ring-focus: 3px;
+  --ring-secure: 4px;
+
+  /* ---- Component sizes ---- */
+  --size-icon-sm: 12px; --size-icon: 16px; --size-icon-lg: 20px; --size-icon-xl: 24px;
+  --size-dot: 6px;
+  --size-light: 11px;
+  --size-badge: 18px;
+  --size-chip: 22px;
+  --size-glyph: 30px;
+  --size-menu-item: 30px;
+  --size-titlebar: 38px;
+  --size-art: 64px;
+  --size-textarea: 72px;
+  --pad-count: 5px;
+  --inset-icon: 10px; --inset-icon-text: 32px;
+  --toggle-w: 30px; --toggle-h: 18px; --toggle-knob: 14px; --toggle-travel: 12px;
+  --audit-col-time: 52px; --audit-col-who: 88px;
+  --width-menu: 220px; --width-toast: 280px; --width-dialog: 380px; --width-popup: 360px;
+
+  /* ---- Motion ---- */
+  --dur-short: 120ms; --dur-base: 180ms; --dur-long: 260ms; --dur-spin: 800ms;
+  --ease-out: cubic-bezier(.2, .7, .2, 1);
+  --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+
+  /* ---- Layers ---- */
+  --z-base: 0; --z-sticky: 10; --z-menu: 100; --z-toast: 200; --z-scrim: 300; --z-dialog: 400; --z-secure: 500;
+
+  /* ---- Opacity ---- */
+  --opacity-disabled: .45; --opacity-muted: .7;
+
+  /* ---- Density ---- */
+  --control-h: 30px; --control-h-sm: 24px; --control-h-lg: 36px;
+  --row-h: 44px; --pad-panel: var(--space-5);
+}
+
+/* ---- Colour: light (default). Every name here is redefined in both dark blocks below. ---- */
+:root {
+  --c-accent: var(--teal-500);          /* harbor teal: focus, selection, toggles */
+  --c-accent-strong: var(--teal-700);   /* accent used as text */
+  --c-accent-fill: var(--teal-500);     /* primary button fill */
+  --c-accent-fill-hover: var(--teal-700);
+  --c-accent-text: var(--neutral-0);    /* text on accent-fill */
+  --c-accent-wash: var(--teal-50);
+  --c-focus: var(--teal-500);
+
+  --c-bg: var(--neutral-25);            /* window background */
+  --c-surface: var(--neutral-0);        /* panels, cards */
+  --c-surface-2: var(--neutral-50);     /* sunk: list, inputs */
+  --c-surface-3: var(--neutral-75);     /* hover */
+  --c-line: var(--neutral-100);
+  --c-line-strong: var(--neutral-200);
+  --c-ink: var(--neutral-850);
+  --c-ink-2: var(--neutral-700);
+  --c-ink-3: var(--neutral-500);        /* secondary text: labels, meta (≥ 3:1) */
+  --c-ink-4: var(--neutral-300);        /* placeholder, disabled (no contrast promise) */
+  --c-knob: var(--neutral-0);           /* toggle knob */
+
+  /* domains — what kind of secret */
+  --c-dom-session: var(--cyan-700);     --c-dom-session-wash: var(--cyan-50);
+  --c-dom-cred: var(--amber-700);       --c-dom-cred-wash: var(--amber-50);
+  --c-dom-pay: var(--violet-600);       --c-dom-pay-wash: var(--violet-50);
+  --c-dom-personal: var(--emerald-700); --c-dom-personal-wash: var(--emerald-50);
+  --c-dom-dev: var(--pink-700);         --c-dom-dev-wash: var(--pink-50);
+
+  /* status — what state it is in */
+  --c-ok: var(--green-700);     --c-ok-wash: var(--green-50);
+  --c-warn: var(--amber-700);   --c-warn-wash: var(--amber-50);
+  --c-danger: var(--red-700);   --c-danger-wash: var(--red-50);   --c-danger-text: var(--neutral-0);
+  --c-info: var(--blue-700);    --c-info-wash: var(--blue-50);
+
+  /* the sealed value: secrets render on this, never on plain surface */
+  --c-sealed: var(--teal-950);
+  --c-sealed-ink: var(--teal-100);
+  --c-sealed-ink-strong: var(--neutral-0);
+  --c-sealed-hover: var(--white-a08);
+
+  /* window controls */
+  --c-light-close: var(--mac-close); --c-light-minimize: var(--mac-minimize); --c-light-zoom: var(--mac-zoom);
+
+  /* background pattern lines: canvas only, never under text-dense surfaces */
+  --c-grid: var(--ink-a045);
+  --c-grid-major: var(--ink-a085);
+
+  /* elevation */
+  --shadow-1: 0 1px 0 var(--ink-a04), 0 1px 2px var(--ink-a06);
+  --shadow-2: 0 4px 12px var(--ink-a08), 0 1px 3px var(--ink-a06);
+  --shadow-3: 0 16px 40px var(--ink-a16), 0 2px 8px var(--ink-a08);
+  --scrim: var(--deep-a38);
+}
+
+/* ---- Background pattern ---- */
+:root, [data-pattern="graph"] {
+  --pattern-minor: 8px; --pattern-major: 40px;
+  --pattern:
+    linear-gradient(var(--c-grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--c-grid-major) 1px, transparent 1px),
+    linear-gradient(var(--c-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--c-grid) 1px, transparent 1px);
+  --pattern-size: var(--pattern-major) var(--pattern-major), var(--pattern-major) var(--pattern-major),
+    var(--pattern-minor) var(--pattern-minor), var(--pattern-minor) var(--pattern-minor);
+}
+[data-pattern="grid"] {
+  --pattern: linear-gradient(var(--c-grid-major) 1px, transparent 1px), linear-gradient(90deg, var(--c-grid-major) 1px, transparent 1px);
+  --pattern-size: 24px 24px, 24px 24px;
+}
+[data-pattern="dots"] {
+  --pattern: radial-gradient(circle, var(--c-grid-major) 1px, transparent 1.4px);
+  --pattern-size: 16px 16px;
+}
+[data-pattern="none"] { --pattern: none; }
+
+[data-density="compact"] {
+  --control-h: 26px; --control-h-sm: 22px; --control-h-lg: 32px;
+  --row-h: 36px; --pad-panel: var(--space-4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+
+/* ---- Colour: dark. Written twice (system and explicit) on purpose; design-check keeps them identical. ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-accent: var(--teal-400); --c-accent-strong: var(--teal-300); --c-accent-fill: var(--teal-400); --c-accent-fill-hover: var(--teal-300);
+    --c-accent-text: var(--teal-990); --c-accent-wash: var(--teal-900); --c-focus: var(--teal-350);
+    --c-bg: var(--neutral-925); --c-surface: var(--neutral-875); --c-surface-2: var(--neutral-900); --c-surface-3: var(--neutral-825);
+    --c-line: var(--neutral-800); --c-line-strong: var(--neutral-750);
+    --c-ink: var(--neutral-60); --c-ink-2: var(--neutral-250); --c-ink-3: var(--neutral-400); --c-ink-4: var(--neutral-600);
+    --c-knob: var(--neutral-0);
+    --c-dom-session: var(--sky-400); --c-dom-session-wash: var(--cyan-950);
+    --c-dom-cred: var(--amber-300); --c-dom-cred-wash: var(--amber-950);
+    --c-dom-pay: var(--violet-400); --c-dom-pay-wash: var(--violet-950);
+    --c-dom-personal: var(--emerald-400); --c-dom-personal-wash: var(--emerald-950);
+    --c-dom-dev: var(--pink-400); --c-dom-dev-wash: var(--pink-950);
+    --c-ok: var(--green-400); --c-ok-wash: var(--green-950);
+    --c-warn: var(--amber-400); --c-warn-wash: var(--amber-925);
+    --c-danger: var(--red-400); --c-danger-wash: var(--red-950); --c-danger-text: var(--red-990);
+    --c-info: var(--blue-300); --c-info-wash: var(--blue-950);
+    --c-sealed: var(--neutral-950); --c-sealed-ink: var(--teal-200); --c-sealed-ink-strong: var(--neutral-0); --c-sealed-hover: var(--white-a08);
+    --c-light-close: var(--mac-close); --c-light-minimize: var(--mac-minimize); --c-light-zoom: var(--mac-zoom);
+    --c-grid: var(--glow-a045); --c-grid-major: var(--glow-a085);
+    --shadow-1: 0 1px 0 var(--black-a30);
+    --shadow-2: 0 6px 16px var(--black-a35), 0 1px 3px var(--black-a30);
+    --shadow-3: 0 20px 48px var(--black-a50), 0 2px 8px var(--black-a35);
+    --scrim: var(--black-a55);
+  }
+}
+:root[data-theme="dark"] {
+  --c-accent: var(--teal-400); --c-accent-strong: var(--teal-300); --c-accent-fill: var(--teal-400); --c-accent-fill-hover: var(--teal-300);
+  --c-accent-text: var(--teal-990); --c-accent-wash: var(--teal-900); --c-focus: var(--teal-350);
+  --c-bg: var(--neutral-925); --c-surface: var(--neutral-875); --c-surface-2: var(--neutral-900); --c-surface-3: var(--neutral-825);
+  --c-line: var(--neutral-800); --c-line-strong: var(--neutral-750);
+  --c-ink: var(--neutral-60); --c-ink-2: var(--neutral-250); --c-ink-3: var(--neutral-400); --c-ink-4: var(--neutral-600);
+  --c-knob: var(--neutral-0);
+  --c-dom-session: var(--sky-400); --c-dom-session-wash: var(--cyan-950);
+  --c-dom-cred: var(--amber-300); --c-dom-cred-wash: var(--amber-950);
+  --c-dom-pay: var(--violet-400); --c-dom-pay-wash: var(--violet-950);
+  --c-dom-personal: var(--emerald-400); --c-dom-personal-wash: var(--emerald-950);
+  --c-dom-dev: var(--pink-400); --c-dom-dev-wash: var(--pink-950);
+  --c-ok: var(--green-400); --c-ok-wash: var(--green-950);
+  --c-warn: var(--amber-400); --c-warn-wash: var(--amber-925);
+  --c-danger: var(--red-400); --c-danger-wash: var(--red-950); --c-danger-text: var(--red-990);
+  --c-info: var(--blue-300); --c-info-wash: var(--blue-950);
+  --c-sealed: var(--neutral-950); --c-sealed-ink: var(--teal-200); --c-sealed-ink-strong: var(--neutral-0); --c-sealed-hover: var(--white-a08);
+  --c-light-close: var(--mac-close); --c-light-minimize: var(--mac-minimize); --c-light-zoom: var(--mac-zoom);
+  --c-grid: var(--glow-a045); --c-grid-major: var(--glow-a085);
+  --shadow-1: 0 1px 0 var(--black-a30);
+  --shadow-2: 0 6px 16px var(--black-a35), 0 1px 3px var(--black-a30);
+  --shadow-3: 0 20px 48px var(--black-a50), 0 2px 8px var(--black-a35);
+  --scrim: var(--black-a55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-short: 0ms; --dur-base: 0ms; --dur-long: 0ms; }
+}

@@ -1,0 +1,3 @@
+/* itemhead — the title row of an item's detail. */
+.kh-itemhead { display: flex; align-items: center; gap: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--c-line); }
+.kh-itemhead h3 { margin: 0; font: var(--text-title); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

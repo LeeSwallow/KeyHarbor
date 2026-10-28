@@ -1,0 +1,5 @@
+/* placeholder — {{secret:item.field}}, what an agent sees. Safe to copy. */
+.kh-ph { display: inline-flex; align-items: center; gap: var(--gap-tight); padding: var(--space-half) var(--space-2); border-radius: var(--radius-xs);
+  background: var(--c-accent-wash); color: var(--c-accent-strong); font: var(--text-mono-sm);
+  border: 1px dashed color-mix(in srgb, var(--c-accent) 45%, transparent); }
+.kh-ph .kh-i { --icon-size: var(--size-icon-sm); }
