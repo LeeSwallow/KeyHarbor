@@ -17,6 +17,7 @@ pub mod audit;
 mod browser;
 pub mod describe;
 mod guard;
+mod login;
 pub mod pdp;
 pub mod pep;
 pub mod run;

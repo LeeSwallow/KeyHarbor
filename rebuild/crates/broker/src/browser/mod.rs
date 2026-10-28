@@ -5,6 +5,7 @@
 
 mod frames;
 mod input;
+mod login;
 mod navigate;
 mod navigation;
 mod screenshot;
@@ -18,7 +19,7 @@ use keyharbor_domain::{
     SessionId,
     ports::{
         BrowserPort, FrameInspector, PageInput,
-        browser::{Element, Focus, Page, WaitFor},
+        browser::{Element, Focus, LoginFields, Page, WaitFor},
     },
     vault::Origin,
 };
@@ -207,6 +208,12 @@ impl PageInput for CdpBrowser {
     }
     async fn redacted_snapshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
         self.take_snapshot(hidden).await
+    }
+    async fn login_fields(&mut self, page: &Page) -> Result<LoginFields> {
+        self.find_login_fields(&page.0).await
+    }
+    async fn location(&mut self, page: &Page) -> Result<String> {
+        Ok(self.page_info(&page.0).await?.0)
     }
 }
 

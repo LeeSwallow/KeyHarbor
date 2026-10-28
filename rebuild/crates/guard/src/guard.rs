@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use anyhow::{Result, anyhow, bail};
-use keyharbor_core::Vault;
+use keyharbor_core::{ItemUse, Vault};
 use keyharbor_domain::{
     SessionId,
     audit::{AuditEvent, AuditKind},
@@ -205,6 +205,18 @@ impl Guard {
 
     pub(crate) fn session(&self) -> SessionId {
         self.session
+    }
+
+    /// What the vault says about `item` for `agent`'s request, refusing (and recording) a
+    /// missing or tampered one.
+    pub(crate) fn item_use(&self, agent: &str, item: &ItemName) -> Result<ItemUse> {
+        let found = self.with_vault(|loaded| loaded.map(|l| l.vault.item_use(item)));
+        match found {
+            Ok(Some(Ok(Some(info)))) => Ok(info),
+            Ok(Some(Err(_))) => Err(self.denied(agent, item, None, DenialReason::Tampered)),
+            Ok(_) => Err(self.denied(agent, item, None, DenialReason::NotFound)),
+            Err(_) => Err(self.denied(agent, item, None, DenialReason::Vault)),
+        }
     }
 
     /// Records `first_use_origin` the first time a personal item goes into `origin` (R-36).

@@ -326,3 +326,79 @@ fn api_keys_reach_a_page_only_at_their_listed_origins() {
     assert!(audit.to_string().contains("\"result\":\"no-origin\""));
     h.assert_absent(&[&key, &email]);
 }
+
+#[test]
+fn browser_login_signs_in_only_where_the_item_belongs() {
+    let Some(browser) = chrome() else { return };
+    let shop = common::serve_pages();
+    let other = common::serve_pages();
+    let h = Harness::new();
+    let (user, password) = (h.synth("user"), h.synth("password"));
+    h.add(
+        "site",
+        "login",
+        &[&shop.base],
+        json!({"username": user, "password": password}),
+    );
+    let mut mcp = common::mcp::Mcp::start(
+        &h.data,
+        h.tmp.path(),
+        &["--browser", browser.to_str().unwrap(), "--agent", "claude"],
+    );
+    let mut transcript = String::new();
+    let id = mcp.ok("session_create", json!({"name": "login"}))["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    mcp.ok("session_open", json!({"id": id}));
+
+    // A page without a password input: nothing typed.
+    mcp.ok(
+        "browser_navigate",
+        json!({"session": id, "url": format!("{}/find", shop.base)}),
+    );
+    let error = mcp.err("browser_login", json!({"session": id, "item": "site"}));
+    assert_eq!(error, "not found: password field");
+    transcript.push_str(&error);
+
+    // Another origin's login form: refused like browser_fill.
+    mcp.ok(
+        "browser_navigate",
+        json!({"session": id, "url": format!("{}/", other.base)}),
+    );
+    let error = mcp.err("browser_login", json!({"session": id, "item": "site"}));
+    assert_eq!(error, "denied: site (origin)");
+    assert!(other.posted.lock().unwrap().is_empty());
+
+    // The item's own form, wherever the focus is: both fields, submitted.
+    mcp.ok(
+        "browser_navigate",
+        json!({"session": id, "url": format!("{}/", shop.base)}),
+    );
+    let (failed, text) = mcp.call("browser_login", json!({"session": id, "item": "site"}));
+    assert!(!failed, "{text}");
+    transcript.push_str(&text);
+    let result: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(result["filled"], json!(["username", "password"]));
+    assert_eq!(result["submitted"], true);
+    mcp.ok("browser_wait", json!({"session": id, "selector": "#done"}));
+    {
+        let posted = shop.posted.lock().unwrap();
+        assert!(
+            posted.contains(&("user".into(), user.clone())),
+            "user not typed"
+        );
+        assert!(
+            posted.contains(&("pw".into(), password.clone())),
+            "password not typed"
+        );
+    }
+    let (_, snapshot) = mcp.call("browser_snapshot", json!({"session": id}));
+    transcript.push_str(&snapshot);
+    mcp.ok("session_stop", json!({"id": id}));
+    mcp.finish();
+    for secret in [&user, &password] {
+        assert!(!transcript.contains(secret.as_str()), "{transcript}");
+    }
+    h.assert_absent(&[&user, &password]);
+}

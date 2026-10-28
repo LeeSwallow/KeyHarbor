@@ -96,6 +96,13 @@ impl Element {
     }
 }
 
+/// The sign-in inputs of a page (R-39), as backend node ids.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LoginFields {
+    pub username: Option<u64>,
+    pub password: Option<u64>,
+}
+
 /// The steps `fill` and `type_text` are made of, so an enforcement point can check the focus
 /// and frame between them. Not a `BrowserPort`: nothing outside the guard calls them.
 pub trait PageInput: Send {
@@ -116,6 +123,12 @@ pub trait PageInput: Send {
         &mut self,
         hidden: &BTreeSet<u64>,
     ) -> impl Future<Output = Result<Value>> + Send;
+    /// The username and password inputs of the page's top document or a same-origin frame:
+    /// username by `autocomplete=username`, then `type=email`, then a name or id with
+    /// user/email/login; password as [`Element::is_password`].
+    fn login_fields(&mut self, page: &Page) -> impl Future<Output = Result<LoginFields>> + Send;
+    /// The URL of the page's top document.
+    fn location(&mut self, page: &Page) -> impl Future<Output = Result<String>> + Send;
 }
 
 /// Where keyboard input would land, as the browser (not the page) reports it.

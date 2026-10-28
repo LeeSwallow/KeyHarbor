@@ -43,6 +43,14 @@ struct Text {
     text: String,
 }
 #[derive(Deserialize, schemars::JsonSchema)]
+struct Login {
+    session: String,
+    /// A login item from vault_list.
+    item: String,
+    /// Press Enter in the password input afterwards (default true).
+    submit: Option<bool>,
+}
+#[derive(Deserialize, schemars::JsonSchema)]
 struct Key {
     session: String,
     /// Enter, Tab, Escape, Backspace, Delete, Space, ArrowUp/Down/Left/Right, Home, End, PageUp or PageDown.
@@ -159,6 +167,24 @@ impl Server {
     ) -> CallToolResult {
         self.browser(&session, json!({"op": "type", "text": text}))
             .await
+    }
+
+    #[tool(
+        description = "Sign in with a login item: finds the username and password inputs of the page (top document or same-origin frames) wherever the focus is, fills the item's values under the same checks as browser_fill (origin, policy, expiry, password only into a password input), and presses Enter unless submit is false. Fails without typing anything if a field is not found. Returns which fields were filled and the URL after; never a value."
+    )]
+    async fn browser_login(
+        &self,
+        Parameters(Login {
+            session,
+            item,
+            submit,
+        }): Parameters<Login>,
+    ) -> CallToolResult {
+        self.browser(
+            &session,
+            json!({"op": "login", "item": item, "submit": submit.unwrap_or(true)}),
+        )
+        .await
     }
 
     #[tool(description = "Press a key in the active tab, e.g. Enter or Tab.")]

@@ -24,9 +24,9 @@ use serde_json::{Value, json};
 const PLACEHOLDER: &str = "{{secret:";
 
 pub struct GuardedBrowser<'a, B> {
-    inner: &'a mut B,
-    guard: &'a Guard,
-    agent: &'a str,
+    pub(crate) inner: &'a mut B,
+    pub(crate) guard: &'a Guard,
+    pub(crate) agent: &'a str,
 }
 
 impl<'a, B> GuardedBrowser<'a, B> {
@@ -168,7 +168,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         ))
     }
 
-    async fn fill_checked(&mut self, target: &Value, template: &str) -> Result<Value> {
+    pub(crate) async fn fill_checked(&mut self, target: &Value, template: &str) -> Result<Value> {
         if !template.contains(PLACEHOLDER) {
             return self.inner.fill(target, template).await;
         }
@@ -322,6 +322,7 @@ mod tests {
         policy::{Effect, Resource, Rule},
         ports::{PolicyStore, Store},
     };
+    use keyharbor_domain::{ports::browser::LoginFields, vault::ItemName};
     use keyharbor_sqlite::SqliteStore;
     use std::{
         collections::BTreeSet,
@@ -344,6 +345,9 @@ mod tests {
         settled: bool,
         epoch: u64,
         navigate_on_clear: u64,
+        /// The sign-in inputs `login_fields` reports.
+        login: LoginFields,
+        pressed: Vec<String>,
     }
     impl Default for Fake {
         fn default() -> Self {
@@ -361,6 +365,11 @@ mod tests {
                 settled: true,
                 epoch: 0,
                 navigate_on_clear: 0,
+                login: LoginFields {
+                    username: Some(7),
+                    password: Some(7),
+                },
+                pressed: Vec::new(),
             }
         }
     }
@@ -385,7 +394,8 @@ mod tests {
             self.typed.push(text.to_owned());
             Ok(json!({}))
         }
-        async fn press(&mut self, _: &str) -> Result<Value> {
+        async fn press(&mut self, key: &str) -> Result<Value> {
+            self.pressed.push(key.to_owned());
             Ok(json!({}))
         }
         async fn tabs(&mut self) -> Result<Value> {
@@ -425,6 +435,12 @@ mod tests {
         async fn redacted_snapshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
             self.hidden = hidden.clone();
             self.snapshot().await
+        }
+        async fn login_fields(&mut self, _: &Page) -> Result<LoginFields> {
+            Ok(self.login.clone())
+        }
+        async fn location(&mut self, _: &Page) -> Result<String> {
+            Ok(format!("https://github.com/{}", self.echo))
         }
     }
     impl FrameInspector for Fake {
@@ -973,5 +989,78 @@ mod tests {
             probe.kinds(),
             vec![(AuditKind::SecretDenied, "expired".into())]
         );
+    }
+
+    #[test]
+    fn login_fills_both_fields_through_the_checked_path_or_nothing() {
+        let e = env();
+        let v = init(&e);
+        v.add(login("github", "KH-SYNTH-pw-91")).unwrap();
+        let mut card = login("visa", "");
+        card.kind = keyharbor_domain::vault::ItemKind::Card;
+        card.fields = vec![crate::test_support::field("number", "4242424242424242")];
+        v.add(card).unwrap();
+        let (guard, probe) = guard(&e);
+        let github = ItemName::parse("github").unwrap();
+        // A page with no password input gets nothing.
+        let mut fake = Fake {
+            login: LoginFields {
+                username: Some(7),
+                password: None,
+            },
+            ..Fake::default()
+        };
+        let err = block(guard.browser(&mut fake, "claude").login(&github, true)).unwrap_err();
+        assert_eq!(err.to_string(), "not found: password field");
+        let mut fake = Fake {
+            login: LoginFields {
+                username: None,
+                password: Some(7),
+            },
+            ..Fake::default()
+        };
+        let err = block(guard.browser(&mut fake, "claude").login(&github, true)).unwrap_err();
+        assert_eq!(err.to_string(), "not found: username field");
+        assert!(fake.typed.is_empty());
+        // Only login items, and the same checks as fill.
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .login(&ItemName::parse("visa").unwrap(), true),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "visa is not a login item");
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .login(&ItemName::parse("nope").unwrap(), true),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "denied: nope (not_found)");
+        let mut fake = Fake::default();
+        let out = block(guard.browser(&mut fake, "claude").login(&github, true)).unwrap();
+        assert_eq!(
+            out,
+            json!({"filled": ["username", "password"], "submitted": true, "url": "https://github.com/"})
+        );
+        assert_eq!(fake.typed, vec!["me@x.com", "KH-SYNTH-pw-91"]);
+        assert_eq!(fake.pressed, vec!["Enter"]);
+        let used = probe
+            .kinds()
+            .into_iter()
+            .filter(|(k, _)| *k == AuditKind::SecretUsed)
+            .count();
+        assert_eq!(used, 2);
+        // The result is masked like any other.
+        let mut fake = Fake {
+            echo: "?pw=KH-SYNTH-pw-91".into(),
+            ..Fake::default()
+        };
+        let out = block(guard.browser(&mut fake, "claude").login(&github, false)).unwrap();
+        assert_eq!(
+            out["url"],
+            "https://github.com/?pw={{secret:github.password}}"
+        );
+        assert!(fake.pressed.is_empty());
     }
 }

@@ -8,6 +8,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
     policy::{ANY, LOCAL_AGENT, parse_agent},
     ports::{BrowserPort, browser::WaitFor},
+    vault::ItemName,
 };
 use serde_json::{Value, json};
 
@@ -24,6 +25,11 @@ enum Command {
     NewTab(Option<String>),
     SwitchTab(String),
     Wait(WaitFor),
+    /// Fill a login item into the page's sign-in form (R-39).
+    Login {
+        item: ItemName,
+        submit: bool,
+    },
     Close,
     Status,
 }
@@ -86,6 +92,13 @@ fn parse(request: &Value) -> Result<(String, Command)> {
                     .context("wait needs ms or selector")?,
             ),
         }),
+        "login" => Command::Login {
+            item: ItemName::parse(&str_arg(request, "item")?).map_err(|e| anyhow!("{e}"))?,
+            submit: request
+                .get("submit")
+                .map_or(Some(true), Value::as_bool)
+                .context("submit must be true or false")?,
+        },
         "close" => Command::Close,
         "status" => Command::Status,
         _ => bail!("unknown operation"),
@@ -121,6 +134,7 @@ impl Ops {
             Command::NewTab(url) => browser.new_tab(url.as_deref()).await,
             Command::SwitchTab(id) => browser.switch_tab(&id).await,
             Command::Wait(until) => browser.wait(&until).await,
+            Command::Login { item, submit } => browser.login(&item, submit).await,
             Command::Close => {
                 let closed = browser.close();
                 shared.request_close();
