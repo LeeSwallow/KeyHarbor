@@ -133,6 +133,7 @@ flowchart TD
 | J-56 | 마스킹 변형은 `pep/mask/variants/`의 `trait Variant` 레지스트리다. 요청은 `expand(&[u8]) -> Vec<Vec<u8>>`였지만 값이 UTF-8 문자열이고 만든 형태를 지워야 하므로 `expand(&str) -> Vec<Zeroizing<String>>`로 했다. 최소 길이와 중복 제거는 레지스트리 함수 한 곳에서 한다 | 03 §3.7 |
 | J-57 | 사람 확인은 domain 포트 `Confirm`(답 `Yes`/`No`/`Unavailable`)이고 CLI 어댑터 `TtyConfirm`(`cli/src/adapters/`)이 stdin·stderr가 모두 터미널일 때만 `/dev/tty`에 묻는다. 무엇이 약화인지와 그 표시는 core `weaken::WeakeningOp` 한 곳이다. 계획은 C3에서 env만 기본 run 허용이라 했지만 뒤의 R-36이 secret도 허용하라고 해 `KindSpec::default_run_allowed`를 secret·env 참으로 했다. 실행 중인 브라우저 입력의 검사 상한(탐색 대기 3 초, probe 3회, 초당 거부 기록 10건)은 설정이 아니라 고정값이다: 에이전트가 바꿀 수 있으면 안 되고, 높이면 추측에 답을 더 준다 | 03 §3.12 |
 | J-58 | R-36의 "origin 목록이 있을 때만 브라우저 입력 허용"을 개발자 도메인 항목은 브라우저에서 언제나 origin에 묶인 것으로 다루는 것으로 구현했다: 목록이 비면 `no-origin`, 프레임이 목록에 없으면 `origin`. `origin_binding` 값은 `keyharbor run`(바인딩된 항목은 주입하지 않음)에만 쓰인다. identity·address의 첫 사용 origin은 access 컨텍스트 `origin_uses` 표로 판정한다(사용 기록을 끄면 기록이 남지 않아도 판정은 된다) | 03 §3.8 |
+| J-59 | 암호 원시 연산을 `keyharbor-crypto`로 모은다([ADR-0016](adr/0016-crypto-crate.md)). 요청과 다른 점: (1) `KeyPurpose`에 도메인 키(`DK_cred`·`DK_pay`·`DK_personal`·`DK_dev`)를 넣지 않았다. 도메인 키는 유도하지 않고 무작위로 만들어 KEK로 감싸기 때문이다(07 §7.5). (2) 필드·도메인 키 레코드의 AD 내용과 메타 MAC 입력은 금고의 형식이라 vault에 남기고 crypto의 `envelope`·`mac`만 부른다. 그래서 KAT도 HKDF만 crypto로 옮기고(기대값 그대로) 레코드·메타 KAT는 vault에 둔다. (3) `SecretKey`·`VaultError`는 KeyStore 포트가 쓰므로 domain에 두고 crypto가 다시 내보내며, `SecretKey::generate`는 `crypto::random::key`로 옮겼다. (4) DK_dev 커밋 뒤에 했다(요청은 가능하면 먼저) | 07 §7.12 |
 
 ## 6.4 열린 질문
 

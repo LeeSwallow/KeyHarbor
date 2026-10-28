@@ -6,12 +6,8 @@ use zeroize::Zeroizing;
 /// A 256-bit symmetric key. Never printed; zeroized on drop.
 #[derive(Clone)]
 pub struct SecretKey(Zeroizing<[u8; 32]>);
+/// New keys come from `keyharbor_crypto::random::key`, the only randomness source.
 impl SecretKey {
-    pub fn generate() -> Self {
-        let mut bytes = Zeroizing::new([0u8; 32]);
-        getrandom::fill(bytes.as_mut()).expect("OS random number generator failed");
-        Self(bytes)
-    }
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(Zeroizing::new(bytes))
     }

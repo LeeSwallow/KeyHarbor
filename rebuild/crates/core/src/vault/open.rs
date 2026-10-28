@@ -9,7 +9,7 @@ use keyharbor_domain::{
 };
 use keyharbor_vault::{
     VaultError,
-    keys::{KeyId, KeySet, SecretKey, VaultId},
+    keys::{KeyId, KeySet, VaultId},
     record::wrap_domain_key,
 };
 use std::collections::BTreeMap;
@@ -21,7 +21,7 @@ impl Vault {
             bail!("vault already initialized");
         }
         let vault_id = VaultId::new();
-        let root = SecretKey::generate();
+        let root = keyharbor_crypto::random::key();
         keystore
             .create(&account(&vault_id), &root)
             .map_err(vault_err)?;
@@ -30,7 +30,7 @@ impl Vault {
         let mut domain_keys = BTreeMap::new();
         let mut rows = Vec::new();
         for domain in Domain::ALL {
-            let (dk_id, dk) = (KeyId::new(), SecretKey::generate());
+            let (dk_id, dk) = (KeyId::new(), keyharbor_crypto::random::key());
             rows.push(DomainKeyRow {
                 domain: domain.as_byte(),
                 dk_id: *dk_id.as_bytes(),

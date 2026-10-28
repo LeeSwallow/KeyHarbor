@@ -17,6 +17,7 @@ pub mod weaken;
 
 pub use access::PlaintextAccess;
 pub use dotenv::parse_dotenv;
+pub use keyharbor_crypto::export::Passphrase;
 pub use transfer::ImportReport;
 pub use vault::{
     ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary, ItemUse, MAX_FIELD_BYTES,
@@ -318,7 +319,7 @@ mod tests {
         b.iter().map(|x| format!("{x:02x}")).collect()
     }
     fn getrandom_fill(b: &mut [u8]) {
-        let k = keyharbor_vault::keys::SecretKey::generate();
+        let k = keyharbor_crypto::random::key();
         b.copy_from_slice(&k.expose()[..b.len()]);
     }
     pub(crate) fn contains(hay: &[u8], needle: &[u8]) -> bool {

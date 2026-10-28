@@ -284,7 +284,20 @@ sequenceDiagram
 | DK = `33`×32, dk_id = `44`×16, item = `55`×16, field = `password`, domain = credentials, nonce = `66`×24, 평문 `KH-KAT` → 필드 레코드 | `0101` ‖ `44`×16 ‖ `66`×24 ‖ `f7159b83f760b5caa17a237a12585b8564417968cbf3` |
 | 같은 키·nonce, field = `value`, domain = developer(4) → 필드 레코드 (암호문은 같고 태그만 다르다) | `0101` ‖ `44`×16 ‖ `66`×24 ‖ `f7159b83f76058b5257856d2797687e022dab9576615` |
 
-## 7.12 출처
+## 7.12 구현 위치
+
+모든 원시 연산은 `keyharbor-crypto`에 있다([ADR-0016](adr/0016-crypto-crate.md)). 다른 crate는 그 API만 부른다.
+
+| 이 문서의 절 | 정의하는 곳 | 원시 연산 |
+|---|---|---|
+| §7.5 KEK·MK 유도 | `crypto::kdf` (`KeyPurpose` 라벨 표) | HKDF-SHA256 |
+| §7.6.1–§7.6.2 레코드 헤더·nonce·AD 결합 | `crypto::envelope`, suite 표 `crypto::aead` | XChaCha20-Poly1305 |
+| §7.6.1–§7.6.2 AD 내용(필드·도메인 키) | `vault::record` | — |
+| §7.6.3 메타 MAC 입력 | `vault::meta` | `crypto::mac` (HMAC-SHA256) |
+| §7.7 내보내기 | `crypto::export` | age scrypt |
+| 키·nonce 생성 | `crypto::random` | OS CSPRNG |
+
+## 7.13 출처
 
 - [1Password Security Design (agilebits.github.io)](https://agilebits.github.io/security-design/1Password_Security_Design.pdf), [Account password and Secret Key](https://agilebits.github.io/security-design/apsk.html)
 - [Bitwarden Security Whitepaper](https://bitwarden.com/help/bitwarden-security-white-paper.md), [What encryption is used](https://bitwarden.com/help/what-encryption-is-used/)

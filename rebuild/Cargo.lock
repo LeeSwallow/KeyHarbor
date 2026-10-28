@@ -1391,7 +1391,6 @@ dependencies = [
 name = "keyharbor"
 version = "0.1.0"
 dependencies = [
- "age",
  "anyhow",
  "clap",
  "keyharbor-broker",
@@ -1426,8 +1425,8 @@ dependencies = [
 name = "keyharbor-core"
 version = "0.1.0"
 dependencies = [
- "age",
  "anyhow",
+ "keyharbor-crypto",
  "keyharbor-domain",
  "keyharbor-sqlite",
  "keyharbor-vault",
@@ -1438,11 +1437,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyharbor-crypto"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "anyhow",
+ "chacha20poly1305 0.11.0",
+ "getrandom 0.4.3",
+ "hkdf 0.13.0",
+ "hmac 0.13.0",
+ "keyharbor-domain",
+ "sha2 0.11.1",
+ "zeroize",
+]
+
+[[package]]
 name = "keyharbor-domain"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "getrandom 0.4.3",
  "serde_json",
  "url",
  "uuid",
@@ -1497,13 +1510,9 @@ dependencies = [
 name = "keyharbor-vault"
 version = "0.1.0"
 dependencies = [
- "chacha20poly1305 0.11.0",
- "getrandom 0.4.3",
- "hkdf 0.13.0",
- "hmac 0.13.0",
+ "keyharbor-crypto",
  "keyharbor-domain",
  "security-framework",
- "sha2 0.11.1",
  "tempfile",
  "uuid",
  "zeroize",

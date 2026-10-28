@@ -20,10 +20,11 @@ cargo run -p keyharbor -- list
 | | `keyharbor-mcp` | stdio MCP 서버 | `server`, `scope`, `tools/{session, browser, vault}` |
 | adapters | `keyharbor-broker` | 감독자, Chrome CDP pipe, 제어 socket, `SessionRuntime` | `cdp/{client, protocol}`, `browser/{navigate, snapshot, input, tabs, screenshot, wait, frames}`(crate 내부), `supervisor/{launch, lock}`, `ops`, `runtime` |
 | | `keyharbor-sqlite` | Diesel 저장소, 저장소 포트 구현 | `connection`, `contexts/{vault, session, access, audit, config}/{schema, models, mappers, repo}` |
-| | `keyharbor-vault` | 암호 레코드·메타 MAC·키 분리, `KeyStore`(Keychain) | `record`, `meta`, `keys`, `keystore` |
-| security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser` | `pdp`, `pep/{substitute, mask, origin}`, `audit`, `run`, `guard`, `browser` |
-| application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess` | `vault/{open, items, summary, resolve}`, `session/{lifecycle, handoff}`, `rotate`, `transfer`, `dotenv` |
-| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 포트(trait) | `vault`, `policy`, `audit`, `secret`, `ports/{vault, session, access, audit, keys, browser, runtime}` |
+| | `keyharbor-vault` | 금고 레코드 형식·메타 MAC 입력·키 분리, `KeyStore`(Keychain) | `record`, `meta`, `keys`, `keystore` |
+| crypto | `keyharbor-crypto` | 모든 암호 원시 연산, I/O 없음 ([ADR-0016](../docs/design/adr/0016-crypto-crate.md)) | `aead`, `envelope`, `kdf`, `mac`, `random`, `export` |
+| security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser` | `pdp/checks/<검사>`, `pep/{substitute, mask/variants/<변형>, origin, selector}`, `audit`, `run`, `guard`, `browser` |
+| application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess`, 약화 작업 판정(`weaken`) | `vault/{open, items, summary, resolve, developer}`, `session/{lifecycle, handoff}`, `rotate`, `transfer`, `dotenv`, `weaken` |
+| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `ports/{vault, session, access, audit, keys, browser, confirm, runtime}` |
 
 - 평문 값은 `Vault::resolve`·`Vault::mask_values`에서만 나오고, 둘 다 guard가 검사 뒤 발급하는 `PlaintextAccess`를 요구한다. 브라우저 조작은 제어 socket → `ops` → `GuardedBrowser`로만 간다.
 - **스키마 확장**: 저장소는 바운디드 컨텍스트별로 나뉘어 있다. 새 컨텍스트(예: 4단계 `site_states`)는 `crates/sqlite/src/contexts/<이름>/`(schema·models·mappers·repo) + `crates/sqlite/migrations/<이름>/<timestamp>_<이름>_<설명>/up.sql` + `contexts::CONTEXTS`에 한 줄이면 된다. 버전 타임스탬프는 모든 컨텍스트에서 유일해야 한다. 원시 SQL은 마이그레이션과 테스트에만 쓴다.

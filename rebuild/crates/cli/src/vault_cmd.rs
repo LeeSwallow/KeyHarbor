@@ -1,11 +1,11 @@
 //! `keyharbor vault …`. Never prints secret values; secrets arrive only by hidden prompt or stdin JSON.
 
 use crate::adapters::TtyConfirm;
-use age::secrecy::SecretString;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use keyharbor_core::{
-    ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary, NewItem, Vault, weaken,
+    ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary, NewItem, Passphrase, Vault,
+    weaken,
 };
 use keyharbor_domain::vault::{Domain, FieldName, ItemKind, ItemName, Origin};
 use keyharbor_sqlite::SqliteStore;
@@ -212,7 +212,7 @@ fn collect_fields(
     Ok(fields)
 }
 
-fn read_passphrase(from_stdin: bool, confirm: bool) -> Result<SecretString> {
+fn read_passphrase(from_stdin: bool, confirm: bool) -> Result<Passphrase> {
     let value = if from_stdin {
         let mut line = Zeroizing::new(String::new());
         std::io::stdin().read_line(&mut line)?;
@@ -233,7 +233,7 @@ fn read_passphrase(from_stdin: bool, confirm: bool) -> Result<SecretString> {
     if value.is_empty() {
         bail!("passphrase must not be empty");
     }
-    Ok(SecretString::from(value.to_string()))
+    Ok(Passphrase::new(value.to_string()))
 }
 
 fn summary_line(item: &ItemSummary) -> String {

@@ -1,4 +1,5 @@
-//! docs/design/07-cryptography-design.md §7.6.1 v1 format KAT.
+//! docs/design/07-cryptography-design.md §7.6 record and metadata KATs (the formats this
+//! crate defines; the HKDF KAT is in keyharbor-crypto).
 //! Changing these values means existing vaults can no longer be read.
 
 use keyharbor_domain::vault::Domain;
@@ -11,22 +12,9 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-const KEK_HEX: &str = "50e57b267060479352f0371205a95d6dfc95509d4ebc436c14a6cb170f826ffc";
 const DEVELOPER_RECORD_HEX: &str = "010144444444444444444444444444444444666666666666666666666666666666666666666666666666f7159b83f76058b5257856d2797687e022dab9576615";
-const MAC_HEX: &str = "dbbbe3429d5dcf75b555f8d134c8f28de6666f0790bff98a26f1f54fbbe06479";
 const FIELD_RECORD_HEX: &str = "010144444444444444444444444444444444666666666666666666666666666666666666666666666666f7159b83f760b5caa17a237a12585b8564417968cbf3";
 
-#[test]
-fn hkdf_outputs_are_stable() {
-    let keys = KeySet::derive(
-        &SecretKey::from_bytes([0x11; 32]),
-        &VaultId::from_bytes([0x22; 16]),
-    );
-    assert_eq!(hex(keys.kek().expose()), KEK_HEX);
-    assert_eq!(hex(keys.mac().expose()), MAC_HEX);
-}
-
-/// The developer domain (R-40, byte 4) seals like the others; only the AD's domain byte differs.
 #[test]
 fn developer_field_records_are_bound_to_their_domain() {
     let vault = VaultId::from_bytes([0x22; 16]);

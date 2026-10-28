@@ -1,9 +1,5 @@
-use hkdf::Hkdf;
-use sha2::Sha256;
+use keyharbor_crypto::kdf::{KeyPurpose, derive};
 use uuid::Uuid;
-
-pub const KEK_INFO: &[u8] = b"keyharbor/kek/v1";
-pub const META_MAC_INFO: &[u8] = b"keyharbor/meta-mac/v1";
 
 /// A 256-bit symmetric key, defined with the key-store port in `keyharbor-domain`.
 pub use keyharbor_domain::secret::SecretKey;
@@ -52,18 +48,9 @@ pub struct KeySet {
 }
 impl KeySet {
     pub fn derive(root: &SecretKey, vault: &VaultId) -> Self {
-        let hkdf = Hkdf::<Sha256>::new(Some(vault.as_bytes()), root.expose());
-        let expand = |info: &[u8]| {
-            let mut out = [0u8; 32];
-            hkdf.expand(info, &mut out)
-                .expect("32 bytes is a valid HKDF-SHA256 output length");
-            let key = SecretKey::from_bytes(out);
-            zeroize::Zeroize::zeroize(&mut out);
-            key
-        };
         Self {
-            kek: expand(KEK_INFO),
-            mac: expand(META_MAC_INFO),
+            kek: derive(root, vault.as_bytes(), KeyPurpose::Kek),
+            mac: derive(root, vault.as_bytes(), KeyPurpose::MetaMac),
         }
     }
     pub fn kek(&self) -> &SecretKey {
@@ -90,8 +77,8 @@ mod tests {
     fn generated_ids_and_keys_are_distinct() {
         assert_ne!(KeyId::new(), KeyId::new());
         assert_ne!(
-            SecretKey::generate().expose(),
-            SecretKey::generate().expose()
+            keyharbor_crypto::random::key().expose(),
+            keyharbor_crypto::random::key().expose()
         );
         let v = VaultId::from_bytes([0xab; 16]);
         assert_eq!(VaultId::parse(&v.to_uuid_string()).unwrap(), v);

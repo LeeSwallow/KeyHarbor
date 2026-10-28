@@ -6,9 +6,8 @@
 //! kind's default run permission, no expiry, no descriptions); any other value needs v2.
 
 use crate::{VaultError, keys::SecretKey, keys::VaultId, record::push_lp};
-use hmac::{Hmac, KeyInit, Mac};
+use keyharbor_crypto::mac::{mac, verify_mac};
 use keyharbor_domain::vault::{Domain, ItemKind, ItemName, Origin};
-use sha2::Sha256;
 
 const META_TAG_V1: &[u8] = b"keyharbor/meta/v1";
 const META_TAG_V2: &[u8] = b"keyharbor/meta/v2";
@@ -89,27 +88,15 @@ fn input(tag: &[u8], meta: &ItemMeta) -> Vec<u8> {
     input
 }
 
-fn mac_for(mk: &SecretKey, tag: &[u8], meta: &ItemMeta) -> Hmac<Sha256> {
-    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(mk.expose())
-        .expect("HMAC accepts any key length");
-    mac.update(&input(tag, meta));
-    mac
-}
-
 /// The v2 MAC; every write signs with it.
 pub fn meta_mac(mk: &SecretKey, meta: &ItemMeta) -> [u8; 32] {
-    mac_for(mk, META_TAG_V2, meta)
-        .finalize()
-        .into_bytes()
-        .into()
+    mac(mk, &input(META_TAG_V2, meta))
 }
 
 /// Accepts a v2 MAC, or a v1 MAC when the v2 attributes hold their v1-era values.
-pub fn verify_meta_mac(mk: &SecretKey, meta: &ItemMeta, mac: &[u8]) -> Result<(), VaultError> {
-    if mac_for(mk, META_TAG_V2, meta).verify_slice(mac).is_ok() {
-        return Ok(());
-    }
-    if meta.v1_compatible() && mac_for(mk, META_TAG_V1, meta).verify_slice(mac).is_ok() {
+pub fn verify_meta_mac(mk: &SecretKey, meta: &ItemMeta, tag: &[u8]) -> Result<(), VaultError> {
+    let v2 = verify_mac(mk, &input(META_TAG_V2, meta), tag);
+    if v2 || (meta.v1_compatible() && verify_mac(mk, &input(META_TAG_V1, meta), tag)) {
         return Ok(());
     }
     Err(VaultError::Tampered)
@@ -202,7 +189,7 @@ mod tests {
         let f = fixture();
         let mk = SecretKey::from_bytes([3; 32]);
         let base = meta(&f, &f.origins);
-        let v1 = mac_for(&mk, META_TAG_V1, &base).finalize().into_bytes();
+        let v1 = mac(&mk, &input(META_TAG_V1, &base));
         assert!(
             verify_meta_mac(&mk, &base, &v1).is_ok(),
             "an item from before v2"

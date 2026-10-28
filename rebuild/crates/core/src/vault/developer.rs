@@ -13,7 +13,7 @@ use keyharbor_domain::{
     vault::{Domain, ItemKind},
 };
 use keyharbor_vault::{
-    keys::{KeyId, SecretKey},
+    keys::KeyId,
     record::{FieldAd, open_field, seal_field, wrap_domain_key},
 };
 
@@ -48,7 +48,7 @@ impl Vault {
 
     fn move_developer_items(&mut self) -> Result<()> {
         let version = self.store.vault_version()?;
-        let (dk_id, dk) = (KeyId::new(), SecretKey::generate());
+        let (dk_id, dk) = (KeyId::new(), keyharbor_crypto::random::key());
         let mut moves: Vec<(ItemRow, Vec<FieldRow>)> = Vec::new();
         for row in self.store.item_list()? {
             let Some(kind) = ItemKind::parse(&row.kind) else {

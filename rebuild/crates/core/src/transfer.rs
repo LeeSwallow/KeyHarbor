@@ -1,8 +1,8 @@
 //! Encrypted export/import in the age format (docs/design/07-cryptography-design.md §7.7).
 
 use crate::{ItemSource, ItemStatus, NewItem, PlaintextAccess, Vault};
-use age::secrecy::SecretString;
 use anyhow::{Context, Result, anyhow, bail};
+use keyharbor_crypto::export::{Passphrase, decrypt_age, encrypt_age};
 use keyharbor_domain::vault::{FieldName, ItemKind, ItemName, Origin, PlaceholderRef};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, io::Write, path::Path};
@@ -69,7 +69,7 @@ impl Vault {
     }
 
     /// Writes every item, values included, to a new age file (mode 0600). Never overwrites.
-    pub fn export_age(&self, passphrase: SecretString, out: &Path) -> Result<()> {
+    pub fn export_age(&self, passphrase: Passphrase, out: &Path) -> Result<()> {
         let summaries = self.list()?;
         if let Some(bad) = summaries.iter().find(|s| s.tampered) {
             bail!("item {} failed verification; refusing to export", bad.name);
@@ -112,8 +112,7 @@ impl Vault {
                 .collect(),
         };
         let plaintext = Zeroizing::new(serde_json::to_vec(&doc)?);
-        let encrypted = age::encrypt(&age::scrypt::Recipient::new(passphrase), &plaintext)
-            .map_err(|e| anyhow!("age encryption failed: {e}"))?;
+        let encrypted = encrypt_age(passphrase, &plaintext)?;
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -127,14 +126,12 @@ impl Vault {
     }
 
     /// Adds every item whose name is free; existing names are left untouched and reported.
-    pub fn import_age(&self, passphrase: SecretString, input: &Path) -> Result<ImportReport> {
+    pub fn import_age(&self, passphrase: Passphrase, input: &Path) -> Result<ImportReport> {
         let encrypted =
             std::fs::read(input).with_context(|| format!("cannot read {}", input.display()))?;
-        let plaintext = Zeroizing::new(
-            age::decrypt(&age::scrypt::Identity::new(passphrase), &encrypted).map_err(|_| {
-                anyhow!("could not decrypt export (wrong passphrase or not a KeyHarbor export)")
-            })?,
-        );
+        let plaintext = decrypt_age(passphrase, &encrypted).map_err(|_| {
+            anyhow!("could not decrypt export (wrong passphrase or not a KeyHarbor export)")
+        })?;
         let doc: ExportIn = serde_json::from_slice(&plaintext)
             .map_err(|_| anyhow!("export content is not valid"))?;
         if doc.format != EXPORT_FORMAT {
@@ -187,11 +184,11 @@ impl Vault {
 mod tests {
     use crate::tests::{contains, env, field, init, login, pref, reopen, uuid_like};
     use crate::{ItemSource, ItemStatus, NewItem};
-    use age::secrecy::SecretString;
+    use keyharbor_crypto::export::{Passphrase, decrypt_age};
     use keyharbor_domain::vault::{ItemKind, ItemName};
 
-    fn pass(p: &str) -> SecretString {
-        SecretString::from(p.to_owned())
+    fn pass(p: &str) -> Passphrase {
+        Passphrase::new(p.to_owned())
     }
     fn item(name: &str, kind: ItemKind, fields: &[(&str, &str)]) -> NewItem {
         NewItem {
@@ -275,7 +272,7 @@ mod tests {
         let bytes = std::fs::read(&out).unwrap();
         assert!(bytes.starts_with(b"age-encryption.org/v1\n"));
         assert!(!contains(&bytes, secret.as_bytes()));
-        let plain = age::decrypt(&age::scrypt::Identity::new(pass("pw")), &bytes).unwrap();
+        let plain = decrypt_age(pass("pw"), &bytes).unwrap();
         assert!(contains(&plain, b"\"format\":\"keyharbor-export/v1\""));
         assert!(contains(&plain, secret.as_bytes()));
         #[cfg(unix)]

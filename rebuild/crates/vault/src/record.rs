@@ -1,21 +1,16 @@
-//! Sealed record format v1 (docs/design/07-cryptography-design.md §7.6):
-//! `version ‖ suite ‖ key_id(16) ‖ nonce(24) ‖ ciphertext ‖ tag(16)`.
+//! The vault's sealed records (docs/design/07-cryptography-design.md §7.6): field values and
+//! wrapped domain keys in the `keyharbor-crypto` envelope, bound to what they belong to.
 
 use crate::{
     VaultError,
     keys::{KeyId, SecretKey, VaultId},
 };
-use chacha20poly1305::{
-    KeyInit, XChaCha20Poly1305, XNonce,
-    aead::{Aead, Payload},
-};
+use keyharbor_crypto::envelope;
 use keyharbor_domain::vault::Domain;
 use zeroize::Zeroizing;
 
-pub const VERSION: u8 = 0x01;
+pub use keyharbor_crypto::envelope::VERSION;
 pub const SUITE_XCHACHA20_POLY1305: u8 = 0x01;
-const HEADER_LEN: usize = 2 + 16 + 24;
-const TAG_LEN: usize = 16;
 const FIELD_TAG: &[u8] = b"keyharbor/field/v1";
 const DOMAIN_KEY_TAG: &[u8] = b"keyharbor/dk/v1";
 
@@ -31,14 +26,6 @@ pub(crate) fn push_lp(out: &mut Vec<u8>, bytes: &[u8]) {
     let len = u16::try_from(bytes.len()).expect("length-prefixed value exceeds 65535 bytes");
     out.extend_from_slice(&len.to_be_bytes());
     out.extend_from_slice(bytes);
-}
-
-fn header(key_id: &KeyId) -> [u8; 18] {
-    let mut out = [0u8; 18];
-    out[0] = VERSION;
-    out[1] = SUITE_XCHACHA20_POLY1305;
-    out[2..].copy_from_slice(key_id.as_bytes());
-    out
 }
 
 fn field_ad(ad: &FieldAd, header: &[u8]) -> Vec<u8> {
@@ -64,65 +51,8 @@ fn domain_key_ad(vault: &VaultId, domain: Domain, dk_id: &KeyId, header: &[u8]) 
     out
 }
 
-fn random_nonce() -> [u8; 24] {
-    let mut nonce = [0u8; 24];
-    getrandom::fill(&mut nonce).expect("OS random number generator failed");
-    nonce
-}
-
-fn seal(
-    key: &SecretKey,
-    key_id: &KeyId,
-    nonce: [u8; 24],
-    aad: impl FnOnce(&[u8]) -> Vec<u8>,
-    msg: &[u8],
-) -> Vec<u8> {
-    let header = header(key_id);
-    let aad = aad(&header);
-    let cipher = XChaCha20Poly1305::new_from_slice(key.expose()).expect("32-byte key");
-    let ciphertext = cipher
-        .encrypt(&XNonce::from(nonce), Payload { msg, aad: &aad })
-        .expect("XChaCha20-Poly1305 encryption does not fail for in-memory input");
-    let mut out = Vec::with_capacity(HEADER_LEN + ciphertext.len());
-    out.extend_from_slice(&header);
-    out.extend_from_slice(&nonce);
-    out.extend_from_slice(&ciphertext);
-    out
-}
-
-fn open(
-    key: &SecretKey,
-    record: &[u8],
-    aad: impl FnOnce(&[u8]) -> Vec<u8>,
-) -> Result<Zeroizing<Vec<u8>>, VaultError> {
-    if record.len() < HEADER_LEN + TAG_LEN {
-        return Err(VaultError::Format("record too short"));
-    }
-    if record[0] != VERSION {
-        return Err(VaultError::Format("unknown record version"));
-    }
-    if record[1] != SUITE_XCHACHA20_POLY1305 {
-        return Err(VaultError::Format("unknown cipher suite"));
-    }
-    let aad = aad(&record[..18]);
-    let nonce: [u8; 24] = record[18..HEADER_LEN]
-        .try_into()
-        .expect("slice length checked");
-    let cipher = XChaCha20Poly1305::new_from_slice(key.expose()).expect("32-byte key");
-    cipher
-        .decrypt(
-            &XNonce::from(nonce),
-            Payload {
-                msg: &record[HEADER_LEN..],
-                aad: &aad,
-            },
-        )
-        .map(Zeroizing::new)
-        .map_err(|_| VaultError::Decrypt)
-}
-
 pub fn seal_field(dk: &SecretKey, dk_id: &KeyId, ad: &FieldAd, plaintext: &[u8]) -> Vec<u8> {
-    seal_field_with_nonce(dk, dk_id, ad, plaintext, random_nonce())
+    envelope::seal(dk, dk_id.as_bytes(), |h| field_ad(ad, h), plaintext)
 }
 
 #[doc(hidden)]
@@ -133,7 +63,7 @@ pub fn seal_field_with_nonce(
     plaintext: &[u8],
     nonce: [u8; 24],
 ) -> Vec<u8> {
-    seal(dk, dk_id, nonce, |h| field_ad(ad, h), plaintext)
+    envelope::seal_with_nonce(dk, dk_id.as_bytes(), |h| field_ad(ad, h), plaintext, &nonce)
 }
 
 pub fn open_field(
@@ -141,15 +71,12 @@ pub fn open_field(
     ad: &FieldAd,
     record: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, VaultError> {
-    open(dk, record, |h| field_ad(ad, h))
+    envelope::open(dk, record, |h| field_ad(ad, h))
 }
 
 /// Reads the key id from a record header without decrypting.
 pub fn record_key_id(record: &[u8]) -> Result<KeyId, VaultError> {
-    if record.len() < 18 {
-        return Err(VaultError::Format("record too short"));
-    }
-    Ok(KeyId::from_slice(&record[2..18]).expect("slice length checked"))
+    envelope::key_id(record).map(KeyId::from_bytes)
 }
 
 pub fn wrap_domain_key(
@@ -160,10 +87,9 @@ pub fn wrap_domain_key(
     dk_id: &KeyId,
     dk: &SecretKey,
 ) -> Vec<u8> {
-    seal(
+    envelope::seal(
         kek,
-        kek_id,
-        random_nonce(),
+        kek_id.as_bytes(),
         |h| domain_key_ad(vault, domain, dk_id, h),
         dk.expose(),
     )
@@ -176,7 +102,7 @@ pub fn unwrap_domain_key(
     dk_id: &KeyId,
     record: &[u8],
 ) -> Result<SecretKey, VaultError> {
-    let bytes = open(kek, record, |h| domain_key_ad(vault, domain, dk_id, h))?;
+    let bytes = envelope::open(kek, record, |h| domain_key_ad(vault, domain, dk_id, h))?;
     let array: [u8; 32] = bytes
         .as_slice()
         .try_into()
@@ -189,7 +115,7 @@ mod tests {
     use super::*;
     use crate::{
         VaultError,
-        keys::{KeyId, SecretKey, VaultId},
+        keys::{KeyId, VaultId},
     };
     use keyharbor_domain::vault::Domain;
 
@@ -203,7 +129,11 @@ mod tests {
     }
     #[test]
     fn field_roundtrip() {
-        let (v, dk, id) = (VaultId::new(), SecretKey::generate(), KeyId::new());
+        let (v, dk, id) = (
+            VaultId::new(),
+            keyharbor_crypto::random::key(),
+            KeyId::new(),
+        );
         let item = [7u8; 16];
         let rec = seal_field(
             &dk,
@@ -221,7 +151,11 @@ mod tests {
     }
     #[test]
     fn every_ad_component_is_bound() {
-        let (v, dk, id) = (VaultId::new(), SecretKey::generate(), KeyId::new());
+        let (v, dk, id) = (
+            VaultId::new(),
+            keyharbor_crypto::random::key(),
+            KeyId::new(),
+        );
         let item = [7u8; 16];
         let rec = seal_field(
             &dk,
@@ -254,7 +188,7 @@ mod tests {
         );
         assert!(
             open_field(
-                &SecretKey::generate(),
+                &keyharbor_crypto::random::key(),
                 &ad(&v, &item, "password", Domain::Credentials),
                 &rec
             )
@@ -263,7 +197,11 @@ mod tests {
     }
     #[test]
     fn rejects_unknown_version_suite_and_short_records() {
-        let (v, dk, id) = (VaultId::new(), SecretKey::generate(), KeyId::new());
+        let (v, dk, id) = (
+            VaultId::new(),
+            keyharbor_crypto::random::key(),
+            KeyId::new(),
+        );
         let item = [0u8; 16];
         let a = ad(&v, &item, "f", Domain::Personal);
         let mut rec = seal_field(&dk, &id, &a, b"x");
@@ -285,7 +223,11 @@ mod tests {
     }
     #[test]
     fn nonces_differ_between_seals() {
-        let (v, dk, id) = (VaultId::new(), SecretKey::generate(), KeyId::new());
+        let (v, dk, id) = (
+            VaultId::new(),
+            keyharbor_crypto::random::key(),
+            KeyId::new(),
+        );
         let item = [1u8; 16];
         let a = ad(&v, &item, "f", Domain::Personal);
         assert_ne!(
@@ -297,9 +239,9 @@ mod tests {
     fn domain_key_wrap_roundtrip_and_binding() {
         let (v, kek, kek_id, dk, dk_id) = (
             VaultId::new(),
-            SecretKey::generate(),
+            keyharbor_crypto::random::key(),
             KeyId::new(),
-            SecretKey::generate(),
+            keyharbor_crypto::random::key(),
             KeyId::new(),
         );
         let w = wrap_domain_key(&kek, &kek_id, &v, Domain::Payment, &dk_id, &dk);
@@ -313,7 +255,14 @@ mod tests {
         assert!(unwrap_domain_key(&kek, &v, Domain::Personal, &dk_id, &w).is_err());
         assert!(unwrap_domain_key(&kek, &v, Domain::Payment, &KeyId::new(), &w).is_err());
         assert!(
-            unwrap_domain_key(&SecretKey::generate(), &v, Domain::Payment, &dk_id, &w).is_err()
+            unwrap_domain_key(
+                &keyharbor_crypto::random::key(),
+                &v,
+                Domain::Payment,
+                &dk_id,
+                &w
+            )
+            .is_err()
         );
     }
 }

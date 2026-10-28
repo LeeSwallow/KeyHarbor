@@ -28,14 +28,16 @@ flowchart TB
   A -->|"broker"| G
   G --> C["application: keyharbor-core (PlaintextAccess)"]
   C -->|"레코드 함수"| V["keyharbor-vault"]
+  V & C --> X["keyharbor-crypto (ADR-0016)"]
   A & G & C --> D["domain + ports: keyharbor-domain"]
 ```
 
 | crate | 정상 의존 |
 |---|---|
 | domain | 없음 |
-| vault | domain |
-| core | domain, vault |
+| crypto | domain ([ADR-0016](0016-crypto-crate.md)) |
+| vault | domain, crypto |
+| core | domain, vault, crypto |
 | guard | domain, core |
 | sqlite | domain |
 | broker | domain, guard |
