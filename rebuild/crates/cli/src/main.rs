@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
+mod policy_cmd;
 mod session_cmd;
 mod vault_cmd;
 
@@ -34,6 +35,9 @@ enum Command {
     /// Manage the local encrypted vault
     #[command(subcommand)]
     Vault(vault_cmd::VaultCmd),
+    /// Limit what each agent may use (default: everything allowed)
+    #[command(subcommand)]
+    Policy(policy_cmd::PolicyCmd),
 }
 
 /// The macOS per-user application data folder; `--data-dir` and `KEYHARBOR_HOME` override it.
@@ -51,6 +55,7 @@ fn main() -> Result<()> {
     };
     match args.command {
         Command::Vault(command) => vault_cmd::run(&root, command),
+        Command::Policy(command) => policy_cmd::run(&root, command),
         Command::Session(command) => session_cmd::run(&root, command),
         Command::Mcp {
             session,

@@ -1,3 +1,4 @@
+mod policy_repo;
 mod session_repo;
 mod vault_repo;
 pub use session_repo::SessionRow;
@@ -39,6 +40,7 @@ impl SqliteStore {
         conn.pragma_update(None, "secure_delete", "ON")?;
         session_repo::migrate(&conn)?;
         vault_repo::migrate(&conn)?;
+        policy_repo::migrate(&conn)?;
         Ok(Self {
             conn,
             root: root.to_path_buf(),

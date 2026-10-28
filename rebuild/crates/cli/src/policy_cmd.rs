@@ -1,0 +1,103 @@
+//! `keyharbor policy …`: rules that limit what each agent may use (02 §2.8).
+//! With no rules everything is allowed; `*` as the agent applies a rule to every agent.
+
+use anyhow::{Context, Result, anyhow, bail};
+use clap::{Args, Subcommand};
+use keyharbor_domain::policy::{Effect, Resource, Rule, normalize_target, parse_agent};
+use keyharbor_sqlite::SqliteStore;
+use std::path::Path;
+
+#[derive(Subcommand)]
+pub enum PolicyCmd {
+    /// List rules: agent, resource, target, effect
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Allow an agent to use a resource
+    Allow(RuleArgs),
+    /// Deny an agent the use of a resource
+    Deny(RuleArgs),
+    /// Remove a rule
+    Rm(RuleArgs),
+}
+
+#[derive(Args)]
+pub struct RuleArgs {
+    /// Agent name given to `mcp --agent` or `run --agent`, or * for every agent
+    #[arg(long)]
+    agent: String,
+    /// session, item, domain, create_session or raw_cdp
+    #[arg(long)]
+    resource: String,
+    /// Session id, item name, domain (credentials, payment, personal) or *
+    #[arg(long, default_value = "*")]
+    target: String,
+}
+
+fn resource(value: &str) -> Result<Resource> {
+    Resource::parse(value)
+        .context("resource must be session, item, domain, create_session or raw_cdp")
+}
+
+fn rule(args: &RuleArgs, effect: Effect) -> Result<Rule> {
+    Rule::new(&args.agent, resource(&args.resource)?, &args.target, effect)
+        .map_err(|e| anyhow!("{e}"))
+}
+
+pub fn run(root: &Path, command: PolicyCmd) -> Result<()> {
+    let store = SqliteStore::open(root)?;
+    match command {
+        PolicyCmd::List { json } => {
+            let rules = store.policy_rules()?;
+            if json {
+                let values: Vec<_> = rules
+                    .iter()
+                    .map(|r| {
+                        serde_json::json!({
+                            "agent": r.agent,
+                            "resource": r.resource.as_str(),
+                            "target": r.target,
+                            "effect": r.effect.as_str(),
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::Value::Array(values));
+            } else {
+                for r in &rules {
+                    println!(
+                        "{}\t{}\t{}\t{}",
+                        r.agent,
+                        r.resource.as_str(),
+                        r.target,
+                        r.effect.as_str()
+                    );
+                }
+            }
+        }
+        PolicyCmd::Allow(args) => set(&store, rule(&args, Effect::Allow)?)?,
+        PolicyCmd::Deny(args) => set(&store, rule(&args, Effect::Deny)?)?,
+        PolicyCmd::Rm(args) => {
+            let agent = parse_agent(&args.agent).map_err(|e| anyhow!("{e}"))?;
+            let resource = resource(&args.resource)?;
+            let target = normalize_target(resource, &args.target).map_err(|e| anyhow!("{e}"))?;
+            if !store.policy_remove(&agent, resource, &target)? {
+                bail!("rule not found");
+            }
+            println!("removed\t{agent}\t{}\t{target}", resource.as_str());
+        }
+    }
+    Ok(())
+}
+
+fn set(store: &SqliteStore, rule: Rule) -> Result<()> {
+    store.policy_set(&rule)?;
+    println!(
+        "{}\t{}\t{}\t{}",
+        rule.effect.as_str(),
+        rule.agent,
+        rule.resource.as_str(),
+        rule.target
+    );
+    Ok(())
+}
