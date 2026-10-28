@@ -7,7 +7,7 @@ use serde_json::Value;
 fn fixture() -> Value {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../../contracts/session-names.json"
+        "/../../contracts/session-names.json"
     );
     let text = std::fs::read_to_string(path).expect("contracts/session-names.json is readable");
     serde_json::from_str(&text).expect("contracts/session-names.json is JSON")

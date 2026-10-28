@@ -1,4 +1,4 @@
-//! The real design/ folder passes every rule. One test per rule, so a failure names it.
+//! The real design-system/ folder passes every rule. One test per rule, so a failure names it.
 
 use keyharbor_design_check::model::DesignSet;
 use keyharbor_design_check::report;
@@ -6,7 +6,7 @@ use keyharbor_design_check::rules::{self, RULES};
 use keyharbor_design_check::theme::Theme;
 
 fn design() -> DesignSet {
-    DesignSet::load(&keyharbor_design_check::repo_root()).expect("read design/")
+    DesignSet::load(&keyharbor_design_check::repo_root()).expect("read design-system/")
 }
 
 fn assert_rule_holds(name: &str) {
@@ -37,8 +37,8 @@ fn the_design_set_is_found() {
     assert!(ds.sheets.len() > 20, "{} stylesheets", ds.sheets.len());
     // The class and icon rules cover the showcase and the browser extension's popup.
     for page in [
-        "design/index.html",
-        "design/showcase/sections/components.js",
+        "design-system/index.html",
+        "design-system/showcase/sections/components.js",
         "integrations/browser-extension/src/ui/popup/popup.html",
         "integrations/browser-extension/src/ui/popup/view.ts",
     ] {

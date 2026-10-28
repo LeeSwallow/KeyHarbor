@@ -48,7 +48,7 @@ mod tests {
         let ds = DesignSet::from_parts(
             &[("components/row.css", ".kh-row .title { color: red; }")],
             &[(
-                "design/index.html",
+                "design-system/index.html",
                 "<div class=\"kh-row\"><b class=\"kh-rwo\"></b></div>",
             )],
             &[],

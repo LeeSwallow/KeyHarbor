@@ -1,5 +1,7 @@
 [workspace]
 members = ["crates/domain", "crates/crypto", "crates/sqlite", "crates/vault", "crates/keystore", "crates/core", "crates/guard", "crates/broker", "crates/supervisor", "crates/mcp", "crates/cli", "crates/design-check"]
+# prototype/ is its own workspace with its own Cargo.lock (docs/history/prototype.md).
+exclude = ["prototype"]
 resolver = "3"
 
 [workspace.package]

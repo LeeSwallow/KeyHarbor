@@ -1,5 +1,5 @@
 /* KeyHarbor design system — entry. Layer order matters: each layer uses only the ones above it.
- * tokens/primitives → tokens/semantic → components/* → patterns/*  (see design/README.md, ADR-0015) */
+ * tokens/primitives → tokens/semantic → components/* → patterns/*  (see design-system/README.md, ADR-0015) */
 
 @import url("tokens/primitives.css");
 @import url("tokens/semantic.css");

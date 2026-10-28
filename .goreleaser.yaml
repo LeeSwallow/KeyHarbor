@@ -7,12 +7,12 @@ before:
     - sh scripts/licenses.sh
 
 builds:
-  # The vault CLI lives in the rebuild/ workspace. macOS only: it links
+  # The vault CLI lives in the root workspace (crates/cli). macOS only: it links
   # Security.framework for the login keychain, so it builds on a macOS runner.
   - id: keyharbor
     builder: rust
     binary: keyharbor
-    dir: rebuild
+    dir: .
     tool: cargo
     command: build
     flags:

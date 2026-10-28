@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    # The product: rebuild/. Ubuntu keeps the non-macOS build honest; the
+    # The product: the root workspace (crates/). Ubuntu keeps the non-macOS build honest; the
     # keychain code is macOS-only and the tests use the file key store. The
     # browser tests drive the runner's real Chrome, headless.
     strategy:
@@ -18,17 +18,12 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: rebuild
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rebuild
       - name: use the runner's Chrome for the real-browser tests
         shell: bash
         run: |
@@ -47,22 +42,27 @@ jobs:
       - run: cargo test --workspace --locked
 
   prototype:
-    # The root crate: the browser-session prototype, tested with a fake browser.
+    # prototype/: the browser-session prototype, its own workspace, tested with a fake browser.
     runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: prototype
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: prototype
       - run: cargo test --locked
 
   deny:
-    # Licenses, advisories, bans and sources of every dependency: rebuild/deny.toml.
+    # Licenses, advisories, bans and sources of every dependency: deny.toml.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          manifest-path: rebuild/Cargo.toml
+          manifest-path: Cargo.toml
 
   repo-checks:
     runs-on: ubuntu-latest
@@ -114,8 +114,6 @@ jobs:
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rebuild
       - name: the release build has no test-only features
         run: sh scripts/check-release-features.sh
       - run: cargo install cargo-about --locked --features cli

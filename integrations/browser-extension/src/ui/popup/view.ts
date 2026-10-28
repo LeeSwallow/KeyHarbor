@@ -1,5 +1,5 @@
-// Renders the popup from its state, using only design-system classes (design/components,
-// design/patterns/extension-popup.css). Pure: state in, HTML out. Values are escaped.
+// Renders the popup from its state, using only design-system classes (design-system/components,
+// design-system/patterns/extension-popup.css). Pure: state in, HTML out. Values are escaped.
 
 import { TTL_CHOICES } from "../../domain/handoff.js";
 import type { ErrorCode } from "../../domain/result.js";
@@ -13,7 +13,7 @@ export type PopupState =
 const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const escape = (s: string): string => s.replace(/[&<>"']/g, (c) => ESCAPES[c] ?? c);
 
-/** An icon from design/icons (copied into the build), drawn by kh-i. */
+/** An icon from design-system/icons (copied into the build as design/icons), drawn by kh-i. */
 export const icon = (name: string, cls = ""): string => `<span class="kh-i${cls ? ` ${cls}` : ""}" style="mask-image:url(design/icons/${name}.svg)"></span>`;
 
 const head = (t: (k: MessageKey) => string) =>

@@ -74,7 +74,7 @@ mod tests {
                 ),
             ],
             &[(
-                "design/index.html",
+                "design-system/index.html",
                 "<i style=\"color:var(--c-ink2)\"></i> <b style=\"font:var(--text-${n})\"></b>",
             )],
             &[],

@@ -1,6 +1,6 @@
 # KeyHarbor: 재구현
 
-이 디렉터리는 기존 프로토타입과 별도의 데이터 경로를 쓰는 새 Rust 워크스페이스다. 아직 재구현 중이다. 지금 동작하는 것은 브라우저 세션과 조작 도구(1단계), 로컬 금고(2단계), placeholder 치환 입력·응답 마스킹·정책·사용 기록·`keyharbor run`(3단계), 이를 제공하는 CLI와 MCP 서버다. 기존 데이터를 자동으로 가져오거나 변경하지 않는다. 설계는 [`../docs/design/`](../docs/design/README.md)에 있다.
+저장소 루트의 Rust 워크스페이스(`Cargo.toml`, 이 `crates/`)는 프로토타입(`prototype/`)과 별도의 데이터 경로를 쓰는 재구현이다. 아직 재구현 중이다. 지금 동작하는 것은 브라우저 세션과 조작 도구(1단계), 로컬 금고(2단계), placeholder 치환 입력·응답 마스킹·정책·사용 기록·`keyharbor run`(3단계), 이를 제공하는 CLI와 MCP 서버다. 기존 데이터를 자동으로 가져오거나 변경하지 않는다. 설계는 [`../docs/design/`](../docs/design/README.md)에 있다.
 
 ```sh
 cargo test --workspace
@@ -27,7 +27,7 @@ cargo run -p keyharbor -- list
 | security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser`, 항목 add/edit 순서, 세션 작업 → 정책 Action 표 | `pdp/checks/<검사>`, `pep/{substitute, mask/variants/<변형>, origin, selector}`, `audit`, `run`, `items`, `session`, `guard`, `browser` |
 | application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess`, 약화 작업 판정(`weaken`) | `vault/{open, items, summary, resolve, developer}`, `session/{manage, lifecycle, handoff, supervision}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `dotenv`, `weaken` |
 | domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 설정 레지스트리 `SETTINGS`, placeholder 문법, 요청자 이름 `AgentName`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `settings`, `ports/{vault, session, access, audit, keys, browser, clock, confirm, runtime}` |
-| dev tool | `keyharbor-design-check` | `design/` 디자인 시스템 검사(계층·테마·대비·아이콘·클래스), 쇼케이스 서버 `design-serve`. 출시물에 들어가지 않고 아무도 의존하지 않는다([ADR-0015](../docs/design/adr/0015-design-system-layers.md)) | `scanner`, `model`, `layers`, `rules/*`, `color`, `theme`, `report`, `serve` |
+| dev tool | `keyharbor-design-check` | `design-system/` 디자인 시스템 검사(계층·테마·대비·아이콘·클래스), 쇼케이스 서버 `design-serve`. 출시물에 들어가지 않고 아무도 의존하지 않는다([ADR-0015](../docs/design/adr/0015-design-system-layers.md)) | `scanner`, `model`, `layers`, `rules/*`, `color`, `theme`, `report`, `serve` |
 
 - 평문 값은 `Vault::resolve`·`Vault::mask_values`에서만 나오고, 둘 다 guard가 검사 뒤 발급하는 `PlaintextAccess`를 요구한다. 브라우저 조작은 제어 socket → `ops` → `GuardedBrowser`로만 간다.
 - **스키마 확장**: 저장소는 바운디드 컨텍스트별로 나뉘어 있다. 새 컨텍스트(예: 4단계 `site_states`)는 `crates/sqlite/src/contexts/<이름>/`(schema·models·mappers·repo) + `crates/sqlite/migrations/<이름>/<timestamp>_<이름>_<설명>/up.sql` + `contexts::CONTEXTS`에 한 줄이면 된다. 버전 타임스탬프는 모든 컨텍스트에서 유일해야 한다. 원시 SQL은 마이그레이션과 테스트에만 쓴다.

@@ -18,3 +18,7 @@
 
 - 이식 비용이 든다. 기존 테스트 시나리오를 재현해 회귀를 막는다.
 - 이식 완료 후 프로토타입 정리 방식은 사용자에게 묻는다.
+
+## 이후
+
+2026-10-29 (#12): 결정은 그대로이고 자리만 옮겼다. `rebuild/`의 워크스페이스는 저장소 루트(`Cargo.toml`, [`crates/`](../../../crates/README.md))로, `rebuild/ARCHITECTURE.md`는 [`crates/ARCHITECTURE.md`](../../../crates/ARCHITECTURE.md)로, 프로토타입 `src/`·`tests/`는 `prototype/`으로 갔다. 이 문서의 `rebuild/`는 당시 이름이다.

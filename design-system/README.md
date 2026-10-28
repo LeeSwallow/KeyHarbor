@@ -53,8 +53,10 @@ flowchart BT
 ES 모듈과 CSS mask는 `file://`에서 막히므로 로컬 서버로 연다. 저장소 루트에서:
 
 ```sh
-cd rebuild && cargo run -q -p keyharbor-design-check --bin design-serve   # http://127.0.0.1:8765/design/index.html
+cargo run -q -p keyharbor-design-check --bin design-serve   # http://127.0.0.1:8765/design-system/index.html
 ```
+
+서버는 `design-system/`과 쇼케이스 머리말의 앱 아이콘(`docs/design/assets/`)만 내보내고, 심볼릭 링크는 따라가지 않는다.
 
 쿼리로 상태를 고를 수 있다: `?theme=dark&lang=en&density=compact&pattern=dots`.
 
@@ -97,4 +99,4 @@ cd rebuild && cargo run -q -p keyharbor-design-check --bin design-serve   # http
 
 ## 검사
 
-`cargo test --workspace`(또는 `sh scripts/check-design.sh`)가 `rebuild/crates/design-check`로 위 계층 규칙, 테마 짝, WCAG 대비, 아이콘, 클래스를 검사한다. 규칙 표는 [ADR-0015](../docs/design/adr/0015-design-system-layers.md)에 있다. 규칙을 더하려면 `src/rules/<규칙>.rs`에 `Rule`을 구현하고 `rules::RULES`에 한 줄, `tests/rules.rs`에 테스트 하나를 더한다. 대비를 볼 색 쌍은 `rules/contrast.rs`의 `CONTRAST_PAIRS` 표에 한 줄씩 있다. `KEYHARBOR_TEST_CHROME`을 주면 쇼케이스를 headless Chrome으로 라이트·다크 렌더링해 본다.
+`cargo test --workspace`(또는 `sh scripts/check-design.sh`)가 `crates/design-check`로 위 계층 규칙, 테마 짝, WCAG 대비, 아이콘, 클래스를 검사한다. 규칙 표는 [ADR-0015](../docs/design/adr/0015-design-system-layers.md)에 있다. 규칙을 더하려면 `src/rules/<규칙>.rs`에 `Rule`을 구현하고 `rules::RULES`에 한 줄, `tests/rules.rs`에 테스트 하나를 더한다. 대비를 볼 색 쌍은 `rules/contrast.rs`의 `CONTRAST_PAIRS` 표에 한 줄씩 있다. `KEYHARBOR_TEST_CHROME`을 주면 쇼케이스를 headless Chrome으로 라이트·다크 렌더링해 본다.

@@ -54,7 +54,10 @@ fn the_showcase_renders_every_section_in_both_themes() {
     let Some(chrome) = chrome() else { return };
     let base = serve::spawn(repo_root(), "127.0.0.1:0").unwrap();
     for theme in ["light", "dark"] {
-        let dom = dump_dom(&chrome, &format!("{base}/design/index.html?theme={theme}"));
+        let dom = dump_dom(
+            &chrome,
+            &format!("{base}/design-system/index.html?theme={theme}"),
+        );
         assert!(
             dom.contains(&format!("data-theme=\"{theme}\"")),
             "{theme}: theme switch did not run"

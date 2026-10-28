@@ -86,7 +86,7 @@ mod tests {
                 ("components/row.css", ".kh-row { color: red; }"),
                 ("components/ghost.css", ".kh-ghost { color: red; }"),
             ],
-            &[("design/index.html", "<div class=\"kh-row\"></div>")],
+            &[("design-system/index.html", "<div class=\"kh-row\"></div>")],
             &[],
         );
         let v: Vec<String> = ComponentFiles

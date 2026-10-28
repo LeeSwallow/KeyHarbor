@@ -8,7 +8,7 @@
 
 ## 맥락
 
-기존 [`architecture-proposal.md`](../../architecture-proposal.md)는 "비밀은 외부 금고(OpenKeylet 등)가 소유하고 KeyHarbor는 참조만 관리한다"로 결정했다. 사용자는 외부 솔루션 없이 모든 것을 손안에서 관리하길 원하고(R-19), 보안 처리·암호화 방식을 참고 사례를 바탕으로 직접 구현해 보길 원한다(R-15).
+기존 [`architecture-proposal.md`](../../history/architecture-proposal.md)는 "비밀은 외부 금고(OpenKeylet 등)가 소유하고 KeyHarbor는 참조만 관리한다"로 결정했다. 사용자는 외부 솔루션 없이 모든 것을 손안에서 관리하길 원하고(R-19), 보안 처리·암호화 방식을 참고 사례를 바탕으로 직접 구현해 보길 원한다(R-15).
 
 ## 결정
 

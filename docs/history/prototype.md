@@ -1,6 +1,6 @@
 # KeyHarbor 프로토타입 (루트 crate)
 
-> 이 문서는 저장소 루트의 프로토타입 crate(`src/`, `tests/`) 설명이다. 릴리스되는 제품은 [`rebuild/`](../rebuild/README.md) 워크스페이스이고, 사용법은 [README](../README.md)에 있다.
+> 이 문서는 프로토타입 crate(`prototype/`의 `src/`, `tests/`) 설명이다. 아래 명령은 `prototype/`에서 실행한다. 릴리스되는 제품은 저장소 루트 워크스페이스([`crates/`](../../crates/README.md))이고, 사용법은 [README](../../README.md)에 있다.
 
 상태: 초기 프로토타입. 아래의 구현 범위와 제한을 확인하세요.
 

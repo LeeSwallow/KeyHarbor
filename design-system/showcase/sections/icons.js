@@ -1,4 +1,4 @@
-// Every icon in design/icons. design-check keeps this list and the folder in step.
+// Every icon in design-system/icons. design-check keeps this list and the folder in step.
 import { icon, each } from "../html.js";
 
 export const ICONS = ["app-window", "bot", "braces", "check", "chevron-down", "circle-play", "circle-stop", "clock", "copy", "credit-card", "download", "eye-off", "eye", "file-pen-line", "globe", "hand", "house", "id-card", "inbox", "key-round", "key-square", "key", "life-buoy", "lock", "map-pin", "plug-zap", "plus", "refresh-ccw-dot", "scroll-text", "search", "settings", "shield-check", "shield-x", "square-terminal", "trash-2", "triangle-alert", "upload", "user-round", "wallet", "wand-sparkles", "x"];

@@ -78,7 +78,7 @@ host 이름은 `dev.keyharbor.host`. 요청 하나에 응답 하나.
 
 응답: `{"v":1,"type":"received","session":"work","cookies":3}` 또는 `{"v":1,"type":"error","code":"no_session"}`. 응답에 쿠키 값은 없다.
 
-`session`은 Rust `SessionName::parse`(`rebuild/crates/domain`)와 같은 규칙이다: 앞뒤 Unicode 공백을 지우고, 1–120 UTF-8 바이트, 제어 문자(Cc) 없음. 판정 기준은 Rust이고 확장은 같은 규칙으로 미리 검사한다(`domain/session-name.ts`). 두 쪽 테스트가 저장소 루트의 [`contracts/session-names.json`](../../contracts/session-names.json)을 함께 읽는다(`contracts/`: 언어 사이의 계약 fixture).
+`session`은 Rust `SessionName::parse`(`crates/domain`)와 같은 규칙이다: 앞뒤 Unicode 공백을 지우고, 1–120 UTF-8 바이트, 제어 문자(Cc) 없음. 판정 기준은 Rust이고 확장은 같은 규칙으로 미리 검사한다(`domain/session-name.ts`). 두 쪽 테스트가 저장소 루트의 [`contracts/session-names.json`](../../contracts/session-names.json)을 함께 읽는다(`contracts/`: 언어 사이의 계약 fixture).
 
 쿠키 변환 규칙(`adapters/wire/cdp-cookie.ts`, 어느 쿠키를 넘길지는 `domain/cookie.ts`):
 
@@ -118,7 +118,7 @@ npm run check     # lint + test (CI가 이것을 돈다)
 
 - `KEYHARBOR_TEST_CHROME`에 Chrome 실행 파일을 주면 `test/smoke/chrome.test.ts`가 빌드한 확장을 headless Chrome에 올리고(CDP `Extensions.loadUnpacked`, 정식 Chrome은 `--load-extension`을 무시한다) 팝업을 열어 본다.
 - 의존성은 정확한 버전으로 고정하고 `package-lock.json`을 커밋한다. vitest는 4.0.18이다: 4.1 이후는 npm 10.9의 peer 해석 버그(`Cannot read properties of null (reading 'edgesOut')`)로 설치가 깨진다.
-- 팝업 CSS와 아이콘은 빌드가 `design/`에서 복사한다(`scripts/design-assets.mjs`). 소스 트리에 사본을 두지 않는다. 팝업이 쓰는 `kh-*` 클래스와 아이콘은 Rust `design-check`가 디자인 시스템과 대조한다([ADR-0015](../../docs/design/adr/0015-design-system-layers.md)).
+- 팝업 CSS와 아이콘은 빌드가 `design-system/`에서 복사한다(`scripts/design-assets.mjs`). 소스 트리에 사본을 두지 않는다. 팝업이 쓰는 `kh-*` 클래스와 아이콘은 Rust `design-check`가 디자인 시스템과 대조한다([ADR-0015](../../docs/design/adr/0015-design-system-layers.md)).
 
 ## 설치 (개발용, 압축 해제)
 

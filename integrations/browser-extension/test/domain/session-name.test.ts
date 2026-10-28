@@ -1,4 +1,4 @@
-// The rule shared with Rust `SessionName::parse`: rebuild/crates/domain/tests/session_name_contract.rs
+// The rule shared with Rust `SessionName::parse`: crates/domain/tests/session_name_contract.rs
 // reads the same fixture.
 
 import { readFileSync } from "node:fs";

@@ -21,7 +21,6 @@ jobs:
       - name: the tag matches the crate version
         run: sh scripts/check-version.sh "$GITHUB_REF_NAME"
       - name: checks, once more on the tagged commit
-        working-directory: rebuild
         run: |
           cargo fmt --all --check
           cargo clippy --workspace --all-targets -- -D warnings
@@ -33,7 +32,7 @@ jobs:
       - name: dependency licenses and advisories
         run: |
           cargo install cargo-deny --locked
-          cargo deny --manifest-path rebuild/Cargo.toml check
+          cargo deny check
       - name: the release build has no test-only features
         run: sh scripts/check-release-features.sh
       - run: cargo install cargo-about --locked --features cli

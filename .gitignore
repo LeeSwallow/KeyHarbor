@@ -1,4 +1,5 @@
 /target/
+/prototype/target/
 
 .superpowers/
 .claude/settings.local.json

@@ -1,6 +1,6 @@
 // Small HTML builders shared by the section definitions. Pure: strings in, strings out.
 
-/** An icon from design/icons, drawn by the kh-i component. */
+/** An icon from design-system/icons, drawn by the kh-i component. */
 export const icon = (name, cls = "", style = "") =>
   `<span class="kh-i${cls ? " " + cls : ""}" style="mask-image:url(icons/${name}.svg)${style ? ";" + style : ""}"></span>`;
 

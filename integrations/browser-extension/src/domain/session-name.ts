@@ -1,4 +1,4 @@
-// An agent session's name. The rule is Rust's `SessionName::parse` (rebuild/crates/domain), the
+// An agent session's name. The rule is Rust's `SessionName::parse` (crates/domain), the
 // judge once the native host checks it; both sides test against contracts/session-names.json.
 
 import { type Result, err, ok } from "./result.js";

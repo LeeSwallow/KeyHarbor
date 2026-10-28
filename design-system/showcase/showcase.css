@@ -1,4 +1,4 @@
-/* Showcase page only: layout of design/index.html. Not part of the design system; nothing else imports it.
+/* Showcase page only: layout of design-system/index.html. Not part of the design system; nothing else imports it.
  * Semantic tokens only, like a pattern. */
 body { margin: 0; }
 .page { max-width: 1120px; margin: 0 auto; padding: 0 var(--space-4) var(--space-10); }

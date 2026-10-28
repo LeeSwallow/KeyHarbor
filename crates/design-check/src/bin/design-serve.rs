@@ -1,4 +1,4 @@
-//! Serves the repository on http://127.0.0.1:8765 so design/index.html can be opened in a browser
+//! Serves design-system/ (and the app icon it shows) on http://127.0.0.1:8765 so design-system/index.html can be opened in a browser
 //! (ES modules and CSS masks do not load from file://). `design-serve [port]`.
 
 use std::{env, thread};
@@ -9,7 +9,7 @@ fn main() -> std::io::Result<()> {
         keyharbor_design_check::repo_root(),
         &format!("127.0.0.1:{port}"),
     )?;
-    println!("{base}/design/index.html  (Ctrl-C to stop)");
+    println!("{base}/design-system/index.html  (Ctrl-C to stop)");
     loop {
         thread::park();
     }

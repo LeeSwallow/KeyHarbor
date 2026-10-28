@@ -12,7 +12,7 @@ pub struct Icons;
 /// The ways a page names an icon: a path, or the `icon("name")` helper of the showcase and popup.
 const REFERENCE_FORMS: &[(&str, &str)] = &[("icons/", ".svg"), ("icon(\"", "\""), ("icon('", "'")];
 /// The showcase file whose `ICONS` list must cover the folder.
-const ICON_LIST: &str = "design/showcase/sections/icons.js";
+const ICON_LIST: &str = "design-system/showcase/sections/icons.js";
 
 fn is_icon_name(s: &str) -> bool {
     !s.is_empty()
@@ -63,12 +63,12 @@ impl Rule for Icons {
         if !ds.has_icon_license {
             out.push(Violation::new(
                 self.name(),
-                "design/icons/LICENSE",
+                "design-system/icons/LICENSE",
                 "missing: the icons are Lucide (ISC) and ship with their licence",
             ));
         }
         for icon in &ds.icons {
-            let path = format!("design/icons/{}.svg", icon.name);
+            let path = format!("design-system/icons/{}.svg", icon.name);
             if !icon.svg.contains("viewBox=\"0 0 24 24\"") {
                 out.push(Violation::new(
                     self.name(),
@@ -89,7 +89,7 @@ impl Rule for Icons {
                 .blocks
                 .iter()
                 .flat_map(|b| &b.decls)
-                .map(move |d| (format!("design/{}", f.path), d.value.as_str()))
+                .map(move |d| (format!("design-system/{}", f.path), d.value.as_str()))
         });
         let texts = ds
             .consumers
@@ -102,7 +102,7 @@ impl Rule for Icons {
                     out.push(Violation::new(
                         self.name(),
                         &path,
-                        format!("icon {name} is not in design/icons/"),
+                        format!("icon {name} is not in design-system/icons/"),
                     ));
                 }
             }
@@ -149,7 +149,7 @@ mod tests {
     fn missing_icons_and_bad_svgs_fail() {
         let ds = DesignSet::from_parts(
             &[],
-            &[("design/index.html", "icons/nope.svg icons/lock.svg")],
+            &[("design-system/index.html", "icons/nope.svg icons/lock.svg")],
             &[
                 LOCK,
                 ("bad", "<svg viewBox=\"0 0 16 16\" stroke=\"red\"></svg>"),

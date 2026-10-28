@@ -1,4 +1,4 @@
-//! The layer table: which folder of design/ is which layer, and what each layer may do.
+//! The layer table: which folder of design-system/ is which layer, and what each layer may do.
 //! Rules read this table; changing what a layer may do is a change here, not in a rule.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -27,7 +27,7 @@ pub enum Defines {
 #[derive(Debug, Clone, Copy)]
 pub struct LayerSpec {
     pub layer: Layer,
-    /// Path inside design/: a file, or a folder ending in `/`.
+    /// Path inside design-system/: a file, or a folder ending in `/`.
     pub path: &'static str,
     /// Layers whose custom properties this layer may read with `var()`.
     pub may_reference: &'static [Layer],
@@ -93,7 +93,7 @@ pub const LAYERS: &[LayerSpec] = &[
 /// The entry stylesheet every page loads.
 pub const ENTRY: &str = "keyharbor.css";
 
-/// The layer of a stylesheet, by its path inside design/.
+/// The layer of a stylesheet, by its path inside design-system/.
 pub fn layer_of(path: &str) -> Option<&'static LayerSpec> {
     LAYERS.iter().find(|s| {
         if s.path.ends_with('/') {

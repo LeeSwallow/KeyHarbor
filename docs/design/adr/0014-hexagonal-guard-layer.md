@@ -8,7 +8,7 @@
 
 ## 맥락
 
-3단계까지의 `rebuild/`는 crate 수는 일곱 개였지만 경계가 흐렸다. `keyharbor-core`가 `SqliteStore`를 직접 썼고, broker의 `ops.rs`(1,000줄 남짓)에 CDP 조작·placeholder 치환·정책 판정 호출·마스킹·사용 기록이 한데 있었으며, `keyharbor run`의 같은 검사는 CLI에 따로 있었다. 평문을 꺼내는 `Vault::resolve`는 누구나 부를 수 있었다. 사용자는 기능별 모듈화와 보안 계층 분리(R-30), 아키텍처 패턴 추천(R-31), ORM이나 계층을 둔 쿼리(R-32), 확장 가능한 스키마(R-33)를 요구했다.
+3단계까지의 재구현 워크스페이스는 crate 수는 일곱 개였지만 경계가 흐렸다. `keyharbor-core`가 `SqliteStore`를 직접 썼고, broker의 `ops.rs`(1,000줄 남짓)에 CDP 조작·placeholder 치환·정책 판정 호출·마스킹·사용 기록이 한데 있었으며, `keyharbor run`의 같은 검사는 CLI에 따로 있었다. 평문을 꺼내는 `Vault::resolve`는 누구나 부를 수 있었다. 사용자는 기능별 모듈화와 보안 계층 분리(R-30), 아키텍처 패턴 추천(R-31), ORM이나 계층을 둔 쿼리(R-32), 확장 가능한 스키마(R-33)를 요구했다.
 
 ## 결정
 
@@ -19,7 +19,7 @@
 5. **영속성은 Diesel 2.3**(동기, `sqlite` + `returning_clauses_for_sqlite_3_35`, `diesel_migrations` 내장 마이그레이션, `libsqlite3-sys` bundled). rusqlite는 워크스페이스에서 없앤다(libsqlite3-sys는 하나만 링크된다). Repository/Data Mapper로 저장 형태(models)와 도메인 타입을 분리한다.
 6. **스키마는 바운디드 컨텍스트로 나눈다**(R-33): vault · session · access · audit · config. 컨텍스트마다 schema · models · mappers · repo · 마이그레이션 디렉터리를 갖고, `contexts::CONTEXTS` 레지스트리 순서대로 마이그레이션한다. 컨텍스트끼리 models·mappers·repo를 공유하지 않는다.
 7. **항목 종류는 데이터로 정의한다**(R-33): `KINDS: &[KindSpec]`(`FieldSpec { secret, maskable }`). 스키마·도메인·origin 바인딩 기본값·CLI의 비밀 필드 판정·마스킹 대상이 모두 이 표를 읽는다.
-8. **SQLite를 유지한다**(R-34). PGlite는 JS/WASM 런타임과 npm이 필요하고, 연결이 하나이며, socket 서버에 SSL이 없다([architecture-proposal](../../architecture-proposal.md) DB 선택). 나중에 Postgres 계열 어댑터가 필요하면 `domain::ports`를 구현하는 crate 하나를 더하면 된다.
+8. **SQLite를 유지한다**(R-34). PGlite는 JS/WASM 런타임과 npm이 필요하고, 연결이 하나이며, socket 서버에 SSL이 없다([architecture-proposal](../../history/architecture-proposal.md) DB 선택). 나중에 Postgres 계열 어댑터가 필요하면 `domain::ports`를 구현하는 crate 하나를 더하면 된다.
 
 ```mermaid
 flowchart TB

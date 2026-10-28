@@ -11,7 +11,7 @@ use crate::scanner::{self, Sheet};
 
 #[derive(Debug, Clone)]
 pub struct SheetFile {
-    /// Path inside design/.
+    /// Path inside design-system/.
     pub path: String,
     pub layer: Layer,
     pub sheet: Sheet,
@@ -43,21 +43,21 @@ pub struct DesignSet {
     pub consumers: Vec<TextFile>,
     pub icons: Vec<Icon>,
     pub has_icon_license: bool,
-    /// Stylesheets found under design/ that no layer claims.
+    /// Stylesheets found under design-system/ that no layer claims.
     pub unlayered: Vec<String>,
 }
 
 /// Where consumers live, from the repository root: (folder, extensions). Test files are skipped.
 const CONSUMERS: &[(&str, &[&str])] = &[
-    ("design/index.html", &[]),
-    ("design/showcase", &["js"]),
+    ("design-system/index.html", &[]),
+    ("design-system/showcase", &["js"]),
     ("integrations/browser-extension/src", &["ts", "html"]),
 ];
 
 impl DesignSet {
-    /// Reads design/ and its consumers from a repository checkout.
+    /// Reads design-system/ and its consumers from a repository checkout.
     pub fn load(repo: &Path) -> io::Result<Self> {
-        let design = repo.join("design");
+        let design = repo.join("design-system");
         let mut set = DesignSet::default();
         for path in walk(&design)? {
             let rel = relative(&design, &path);
@@ -111,7 +111,7 @@ impl DesignSet {
         Ok(set)
     }
 
-    /// Builds a set from strings, for rule tests: sheets by design/ path, consumers by repo path.
+    /// Builds a set from strings, for rule tests: sheets by design-system/ path, consumers by repo path.
     pub fn from_parts(
         sheets: &[(&str, &str)],
         consumers: &[(&str, &str)],

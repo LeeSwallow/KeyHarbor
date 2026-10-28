@@ -70,18 +70,17 @@ Rust stable(1.85 이상, edition 2024), git, macOS가 필요합니다(Keychain�
 git clone https://github.com/LeeSwallow/KeyHarbor
 cd KeyHarbor
 git config core.hooksPath .githooks       # 한 번만: 커밋 검사
-cd rebuild && cargo build && cargo test --workspace
+cargo build && cargo test --workspace
 ```
 
 CI와 같은 검사:
 
 ```sh
-cd rebuild
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked           # 테스트가 명세입니다
 cargo deny check                          # 의존성 라이선스·취약점
-cd .. && sh scripts/check-docs.sh && sh scripts/test-scripts.sh
+sh scripts/check-docs.sh && sh scripts/test-scripts.sh
 ```
 
 코드 구조와 결정의 근거는 [docs/design/](docs/design/README.md)에 있습니다. 테스트는 실제 Keychain을 쓰지 않습니다(`insecure-test-keystore` 기능으로 파일 저장소를 씁니다). 실제 Keychain 테스트는 `--ignored`이고 확인 창이 뜰 수 있습니다.
@@ -91,7 +90,7 @@ cd .. && sh scripts/check-docs.sh && sh scripts/test-scripts.sh
 - **브랜치**는 최신 `main`에서: `scripts/issue.sh 12`가 이슈 종류에 맞춰 `fix/12-short-title`을 만듭니다.
 - **커밋**은 [Conventional Commits](https://www.conventionalcommits.org/): `feat: …`, `fix: …`, `docs: …`, `refactor: …`, `chore: …`, 호환성을 깨면 `!`. 훅을 켜 두면 이슈 브랜치의 모든 커밋에 `Refs: #12`가 붙습니다.
 - **테스트**는 변경과 함께. 비밀 값이 출력·로그·DB로 나가지 않는지 확인하는 누출 테스트를 깨지 마세요.
-- **문서**: 동작이 바뀌면 README·`rebuild/README.md`·docs/design의 해당 절을 함께 고칩니다.
+- **문서**: 동작이 바뀌면 README·`crates/README.md`·docs/design의 해당 절을 함께 고칩니다.
 - **의존성**: 표준 라이브러리와 이미 쓰는 crate를 먼저. 새 의존성은 PR에 이유를 적고 `cargo deny check`를 통과해야 합니다. 암호 알고리즘을 직접 구현하지 않습니다.
 
 ## Pull request

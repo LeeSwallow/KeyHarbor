@@ -1,4 +1,4 @@
-//! Repository checks for the design system in `design/` (ADR-0015). A dev tool: nothing in the
+//! Repository checks for the design system in `design-system/` (ADR-0015). A dev tool: nothing in the
 //! workspace depends on it and it is never shipped.
 //!
 //! `scanner` reads CSS, `model` gathers everything into a `DesignSet`, `layers` is the table of
@@ -19,5 +19,5 @@ use std::path::PathBuf;
 
 /// The repository root this crate was built in.
 pub fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }

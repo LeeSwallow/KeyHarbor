@@ -40,7 +40,7 @@ flowchart LR
 
 | 범위 | 완료 조건 |
 |---|---|
-| 프로토타입 세션 수명(lease·generation·감독자·잠금·복구·인계)을 `rebuild/`로 이식 | 기존 `tests/session_lifecycle.rs`, `sqlite_contention.rs`, `mcp_stdio.rs`, `mcp_scope.rs`의 시나리오가 재구현에서 통과 ✅ |
+| 프로토타입 세션 수명(lease·generation·감독자·잠금·복구·인계)을 재구현 워크스페이스(`crates/`)로 이식 | 프로토타입 `prototype/tests/session_lifecycle.rs`, `sqlite_contention.rs`, `mcp_stdio.rs`, `mcp_scope.rs`의 시나리오가 재구현에서 통과 ✅ |
 | Chrome `--remote-debugging-pipe` 실행, 감독자의 CDP 클라이언트 | 포트 없이 navigate·snapshot 성공 ✅ |
 | 감독자 제어 socket | MCP → 감독자 명령 왕복, 감독자 소실 시 명확한 오류 ✅ (`supervisor is not running`) |
 | 브라우저 조작 MCP 도구 11종 ([02 §2.9](02-system-architecture.md#29-mcp-도구-표면)) | 로컬 테스트 페이지에서 각 도구 동작 ✅ |

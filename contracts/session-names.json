@@ -1,5 +1,5 @@
 {
-  "rule": "rebuild/crates/domain SessionName::parse: trim Unicode White_Space at both ends, then 1-120 UTF-8 bytes and no control character (Cc)",
+  "rule": "crates/domain SessionName::parse: trim Unicode White_Space at both ends, then 1-120 UTF-8 bytes and no control character (Cc)",
   "valid": [
     "work",
     "w",
