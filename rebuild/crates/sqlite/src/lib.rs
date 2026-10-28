@@ -1,3 +1,6 @@
+mod vault_repo;
+pub use vault_repo::*;
+
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{Generation, Session, SessionId, SessionName, State};
 use rusqlite::{Connection, params};
@@ -26,8 +29,11 @@ impl SqliteStore {
         let conn = Connection::open(root.join("keyharbor.sqlite3"))?;
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.pragma_update(None, "secure_delete", "ON")?;
         conn.execute_batch("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, state TEXT NOT NULL CHECK(state IN ('stopped','starting','running','awaiting_user','stopping','failed')));
         CREATE TABLE IF NOT EXISTS generations (session_id TEXT PRIMARY KEY, generation TEXT NOT NULL);")?;
+        vault_repo::migrate(&conn)?;
         Ok(Self { conn })
     }
     pub fn create(&self, name: SessionName) -> Result<Session> {
