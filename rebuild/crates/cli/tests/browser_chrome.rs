@@ -255,3 +255,17 @@ fn operations_drive_a_real_browser() {
     );
     let _ = session.tmp.path();
 }
+
+#[test]
+fn raw_cdp_endpoint_is_opt_in() {
+    let Some(browser) = chrome() else { return };
+    let plain = Session::open(&browser, &[]);
+    assert!(!plain.run(&["endpoint", &plain.id]).status.success());
+    drop(plain);
+    let cdp = Session::open(&browser, &["--cdp"]);
+    let endpoint = cdp.ok(&["endpoint", &cdp.id]);
+    assert!(endpoint.starts_with("ws://127.0.0.1:"), "{endpoint}");
+    assert!(endpoint.contains("/devtools/browser/"), "{endpoint}");
+    // The broker keeps working alongside the raw endpoint.
+    assert_eq!(cdp.ok_call(json!({"op": "status"}))["state"], "running");
+}

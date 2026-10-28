@@ -1,5 +1,5 @@
 //! Session commands: `create`, `list`, `open`, `stop`, `wait-auth`, `handoff`, `resume`,
-//! `recover`, and the hidden `__supervise` used by `open`.
+//! `recover`, `endpoint`, and the hidden `__supervise` used by `open`.
 
 use anyhow::{Context, Result, bail};
 use clap::Subcommand;
@@ -49,6 +49,8 @@ pub enum SessionCmd {
         #[arg(long)]
         confirm_browser_closed: bool,
     },
+    /// Print the raw CDP endpoint of a session opened with --cdp
+    Endpoint { id: String },
     #[command(name = "__supervise", hide = true)]
     Supervise {
         id: String,
@@ -144,6 +146,10 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
             let id = session_id(&id)?;
             lifecycle::recover(root, id)?;
             println!("{id}\tstopped");
+        }
+        SessionCmd::Endpoint { id } => {
+            let id = session_id(&id)?;
+            println!("{}", lifecycle::endpoint(root, id)?);
         }
         SessionCmd::Supervise {
             id,

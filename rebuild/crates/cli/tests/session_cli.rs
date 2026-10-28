@@ -14,6 +14,8 @@ use std::{
 const FAKE_BROWSER: &str = r#"#!/bin/sh
 printf '%s' "$PPID" > "$TEST_DIR/supervisor-pid"
 printf '%s\n' "$@" > "$TEST_DIR/args"
+for arg in "$@"; do case "$arg" in --user-data-dir=*) profile=${arg#--user-data-dir=};; --remote-debugging-port=0) cdp=1;; esac; done
+if [ "$cdp" = 1 ]; then printf '12345\n/devtools/browser/11111111-1111-4111-8111-111111111111\n' > "$profile/DevToolsActivePort"; fi
 cat <&3 >/dev/null &
 reader=$!
 while [ -d "$TEST_DIR" ] && [ ! -f "$TEST_DIR/close" ] && kill -0 "$reader" 2>/dev/null; do sleep 0.05; done
@@ -351,4 +353,43 @@ fn profile_symlinks_and_files_are_not_followed() {
         env.ok(&["recover", &id, "--confirm-browser-closed"]);
         assert_eq!(env.state(&id), "stopped");
     }
+}
+
+#[test]
+fn endpoint_only_for_cdp_sessions() {
+    let env = Env::new();
+    let id = env.create("raw");
+    env.fails(&["endpoint", &id]);
+    assert!(env.open(&id).status.success());
+    assert!(env.fails(&["endpoint", &id]).contains("--cdp"));
+    assert!(!env.ok(&["list"]).contains("\tcdp"));
+    env.ok(&["stop", &id]);
+    fs::remove_file(env.path("ended")).unwrap();
+    let out = env
+        .cmd()
+        .args(["open", &id, "--cdp", "--browser"])
+        .arg(&env.browser)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("warning"));
+    let args = fs::read_to_string(env.path("args")).unwrap();
+    assert!(
+        args.lines().any(|l| l == "--remote-debugging-port=0"),
+        "{args}"
+    );
+    assert!(args.lines().any(|l| l == "--remote-debugging-pipe"));
+    assert!(env.ok(&["list"]).contains("\trunning\tcdp"));
+    assert_eq!(
+        env.ok(&["endpoint", &id]),
+        "ws://127.0.0.1:12345/devtools/browser/11111111-1111-4111-8111-111111111111\n"
+    );
+    // Not while the user is authenticating.
+    let request = env.ok(&["wait-auth", &id]);
+    env.fails(&["endpoint", &id]);
+    let request = request.trim().split('\t').nth(2).unwrap().to_owned();
+    env.ok(&["resume", &id, &request]);
+    env.ok(&["endpoint", &id]);
+    env.ok(&["stop", &id]);
+    env.fails(&["endpoint", &id]);
 }

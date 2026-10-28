@@ -218,3 +218,63 @@ pub fn recover(data: &Path, id: SessionId) -> Result<()> {
     let _ = std::fs::remove_file(paths::socket_path(data, &id));
     Ok(())
 }
+
+/// The raw CDP WebSocket address of a running session opened with `cdp`. Withheld while the
+/// session is awaiting the user, as the prototype did.
+pub fn endpoint(data: &Path, id: SessionId) -> Result<String> {
+    let store = SqliteStore::open(data)?;
+    let row = session(&store, id)?;
+    if !row.cdp {
+        bail!("raw CDP is not enabled for this session; open it with --cdp");
+    }
+    if row.state != State::Running {
+        bail!("session is {}, not running", row.state.as_str());
+    }
+    require_supervisor(data, &id)?;
+    let file = paths::profile_dir(data, &id).join("DevToolsActivePort");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let text = loop {
+        match std::fs::symlink_metadata(&file) {
+            Ok(meta) if meta.is_file() && meta.len() <= 256 => {
+                break std::fs::read_to_string(&file)?;
+            }
+            Ok(_) => bail!("invalid DevToolsActivePort file"),
+            Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
+            Err(_) => bail!("browser debugging endpoint is not ready"),
+        }
+    };
+    let mut lines = text.lines();
+    let port: u16 = lines
+        .next()
+        .and_then(|p| p.parse().ok())
+        .filter(|p| *p != 0)
+        .context("invalid debug port")?;
+    let path = lines.next().context("missing browser endpoint")?;
+    let browser = path
+        .strip_prefix("/devtools/browser/")
+        .context("invalid browser endpoint")?;
+    uuid_like(browser)?;
+    if lines.next().is_some() {
+        bail!("invalid browser endpoint");
+    }
+    let latest = session(&store, id)?;
+    if latest.state != State::Running || latest.generation != row.generation {
+        bail!("session changed while reading the endpoint");
+    }
+    Ok(format!("ws://127.0.0.1:{port}{path}"))
+}
+
+fn uuid_like(value: &str) -> Result<()> {
+    let ok = value.len() == 36
+        && value.char_indices().all(|(i, c)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                c == '-'
+            } else {
+                c.is_ascii_hexdigit()
+            }
+        });
+    if !ok {
+        bail!("invalid browser endpoint");
+    }
+    Ok(())
+}
