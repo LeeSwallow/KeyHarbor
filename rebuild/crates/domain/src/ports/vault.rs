@@ -22,6 +22,8 @@ pub struct ItemRow {
     pub domain: u8,
     pub kind: String,
     pub origin_binding: bool,
+    /// `keyharbor run` may inject the values (signed in the metadata MAC).
+    pub run_allowed: bool,
     pub status: String,
     pub source: String,
     pub meta_mac: Vec<u8>,

@@ -53,6 +53,7 @@ pub fn login(name: &str, password: &str) -> NewItem {
         origin_binding: None,
         status: ItemStatus::Active,
         source: ItemSource::User,
+        details: Default::default(),
     }
 }
 pub fn pref(item: &str, field: &str) -> PlaceholderRef {

@@ -23,6 +23,10 @@ impl Vault {
             origin_binding: item
                 .origin_binding
                 .unwrap_or_else(|| item.kind.default_origin_binding()),
+            run_allowed: item
+                .details
+                .run_allowed
+                .unwrap_or_else(|| item.kind.default_run_allowed()),
             status: item.status.as_str().to_owned(),
             source: item.source.as_str().to_owned(),
             meta_mac: Vec::new(),
@@ -72,6 +76,9 @@ impl Vault {
         row.origins = sorted_origins(&origins);
         if let Some(binding) = change.origin_binding {
             row.origin_binding = binding;
+        }
+        if let Some(allowed) = change.run_allowed {
+            row.run_allowed = allowed;
         }
         if let Some(status) = change.status {
             row.status = status.as_str().to_owned();

@@ -1,9 +1,12 @@
 //! `keyharbor vault …`. Never prints secret values; secrets arrive only by hidden prompt or stdin JSON.
 
+use crate::confirm::Terminal;
 use age::secrecy::SecretString;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Subcommand, ValueEnum};
-use keyharbor_core::{ItemChange, ItemSource, ItemStatus, ItemSummary, NewItem, Vault};
+use keyharbor_core::{
+    ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary, NewItem, Vault, weaken,
+};
 use keyharbor_domain::vault::{Domain, FieldName, ItemKind, ItemName, Origin};
 use keyharbor_sqlite::SqliteStore;
 use keyharbor_vault::keystore::keystore_from_env;
@@ -28,6 +31,9 @@ pub enum VaultCmd {
         origins: Vec<String>,
         #[arg(long)]
         no_origin_binding: bool,
+        /// Whether `keyharbor run` may inject the item (default: on for secret and env)
+        #[arg(long, value_enum)]
+        run_allowed: Option<Toggle>,
         #[arg(long)]
         draft: bool,
     },
@@ -44,6 +50,9 @@ pub enum VaultCmd {
         clear_origins: bool,
         #[arg(long, value_enum)]
         origin_binding: Option<Toggle>,
+        /// Whether `keyharbor run` may inject the item
+        #[arg(long, value_enum)]
+        run_allowed: Option<Toggle>,
         #[arg(long, value_enum)]
         status: Option<StatusArg>,
     },
@@ -118,6 +127,11 @@ pub enum DomainArg {
 pub enum Toggle {
     On,
     Off,
+}
+impl Toggle {
+    fn on(self) -> bool {
+        matches!(self, Self::On)
+    }
 }
 #[derive(Clone, Copy, ValueEnum)]
 pub enum StatusArg {
@@ -247,6 +261,7 @@ fn summary_json(item: &ItemSummary) -> serde_json::Value {
         "fields": item.fields,
         "origins": item.origins,
         "origin_binding": item.origin_binding,
+        "run_allowed": item.run_allowed,
         "status": item.status.as_str(),
         "source": item.source.as_str(),
         "updated_at": item.updated_at,
@@ -270,6 +285,7 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
             input,
             origins: o,
             no_origin_binding,
+            run_allowed,
             draft,
         } => {
             let kind = ItemKind::from(kind);
@@ -288,6 +304,9 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
                     ItemStatus::Active
                 },
                 source: ItemSource::User,
+                details: ItemDetails {
+                    run_allowed: run_allowed.map(Toggle::on),
+                },
             })?;
             println!("added\t{}", name.as_str());
         }
@@ -298,6 +317,7 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
             origins: o,
             clear_origins,
             origin_binding,
+            run_allowed,
             status,
         } => {
             let name = item_name(&name)?;
@@ -316,23 +336,24 @@ pub fn run(root: &Path, command: VaultCmd) -> Result<()> {
             } else {
                 Some(origins(&o)?)
             };
-            vault.edit(
-                &name,
-                ItemChange {
-                    set_fields,
-                    remove_fields: unset
-                        .iter()
-                        .map(|f| field_name(kind, f))
-                        .collect::<Result<_>>()?,
-                    origins: new_origins,
-                    origin_binding: origin_binding.map(|t| matches!(t, Toggle::On)),
-                    status: status.map(|s| match s {
-                        StatusArg::Active => ItemStatus::Active,
-                        StatusArg::Draft => ItemStatus::Draft,
-                        StatusArg::Discarded => ItemStatus::Discarded,
-                    }),
-                },
-            )?;
+            let change = ItemChange {
+                set_fields,
+                remove_fields: unset
+                    .iter()
+                    .map(|f| field_name(kind, f))
+                    .collect::<Result<_>>()?,
+                origins: new_origins,
+                origin_binding: origin_binding.map(Toggle::on),
+                run_allowed: run_allowed.map(Toggle::on),
+                status: status.map(|s| match s {
+                    StatusArg::Active => ItemStatus::Active,
+                    StatusArg::Draft => ItemStatus::Draft,
+                    StatusArg::Discarded => ItemStatus::Discarded,
+                }),
+            };
+            // Widening where or how the item may be used needs a person (R-35).
+            weaken::require(&Terminal, &vault.weakenings(&name, &change)?)?;
+            vault.edit(&name, change)?;
             println!("updated\t{}", name.as_str());
         }
         VaultCmd::Rm { name } => {

@@ -73,6 +73,12 @@ impl Harness {
         );
         String::from_utf8(out.stdout).unwrap()
     }
+    /// A weakening command, confirmed by a person at a terminal.
+    pub fn confirmed(&self, args: &[&str]) {
+        let out = super::on_terminal(&self.data, &self.tmp.path().join("keys"), args, "yes");
+        self.transcript.borrow_mut().push_str(&out.output);
+        assert!(out.success, "{args:?}: {}", out.output);
+    }
     pub fn add(&self, name: &str, kind: &str, origins: &[&str], fields: Value) {
         let mut args = vec!["vault", "add", name, "--kind", kind, "--stdin"];
         for origin in origins {

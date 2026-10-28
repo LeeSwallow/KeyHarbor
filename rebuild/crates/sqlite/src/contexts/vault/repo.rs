@@ -361,6 +361,7 @@ mod tests {
             domain: 1,
             kind: "login".into(),
             origin_binding: true,
+            run_allowed: false,
             status: "active".into(),
             source: "user".into(),
             meta_mac: vec![id; 32],

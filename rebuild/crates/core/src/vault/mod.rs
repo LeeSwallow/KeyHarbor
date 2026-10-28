@@ -91,6 +91,14 @@ pub struct NewItem {
     pub origin_binding: Option<bool>,
     pub status: ItemStatus,
     pub source: ItemSource,
+    pub details: ItemDetails,
+}
+
+/// Attributes a new item may set beyond its fields and origins; each defaults sensibly.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ItemDetails {
+    /// `None` uses the kind's default (secret and env items yes, the others no; R-36).
+    pub run_allowed: Option<bool>,
 }
 
 #[derive(Default)]
@@ -99,6 +107,7 @@ pub struct ItemChange {
     pub remove_fields: Vec<FieldName>,
     pub origins: Option<Vec<Origin>>,
     pub origin_binding: Option<bool>,
+    pub run_allowed: Option<bool>,
     pub status: Option<ItemStatus>,
 }
 
@@ -111,6 +120,7 @@ pub struct ItemSummary {
     pub fields: Vec<String>,
     pub origins: Vec<String>,
     pub origin_binding: bool,
+    pub run_allowed: bool,
     pub status: ItemStatus,
     pub source: ItemSource,
     pub updated_at: String,
@@ -234,6 +244,10 @@ impl Vault {
                 origins,
                 status: &row.status,
                 updated_at: &row.updated_at,
+                run_allowed: row.run_allowed,
+                expires_at: None,
+                description: None,
+                field_descriptions: &[],
             },
         )
         .to_vec()
@@ -291,6 +305,10 @@ impl Vault {
                 origins: &origins,
                 status: &row.status,
                 updated_at: &row.updated_at,
+                run_allowed: row.run_allowed,
+                expires_at: None,
+                description: None,
+                field_descriptions: &[],
             },
             &row.meta_mac,
         )

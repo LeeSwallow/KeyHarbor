@@ -1,7 +1,9 @@
 //! `keyharbor audit` (the usage record) and `keyharbor settings`.
 
-use anyhow::{Result, bail};
+use crate::confirm::Terminal;
+use anyhow::{Result, anyhow, bail};
 use clap::{Args, Subcommand};
+use keyharbor_core::weaken;
 use keyharbor_domain::audit::AuditRecord;
 use keyharbor_domain::ports::*;
 use keyharbor_sqlite::SqliteStore;
@@ -20,7 +22,7 @@ pub struct AuditArgs {
 pub enum SettingsCmd {
     /// Print a setting
     Get { key: String },
-    /// Change a setting: audit_enabled true|false
+    /// Change a setting: audit_enabled true|false, capture_enabled true|false
     Set { key: String, value: String },
 }
 
@@ -64,26 +66,37 @@ pub fn audit(root: &Path, args: AuditArgs) -> Result<()> {
     Ok(())
 }
 
-fn check_key(key: &str) -> Result<()> {
-    if key != AUDIT_ENABLED {
-        bail!("unknown setting; known settings: {AUDIT_ENABLED}");
-    }
-    Ok(())
+/// Every setting, its default and the values it takes.
+const SETTINGS: &[(&str, &str, &[&str])] = &[
+    (AUDIT_ENABLED, "true", &["true", "false"]),
+    (weaken::CAPTURE_ENABLED, "false", &["true", "false"]),
+];
+
+fn setting(key: &str) -> Result<&'static (&'static str, &'static str, &'static [&'static str])> {
+    SETTINGS
+        .iter()
+        .find(|(name, _, _)| *name == key)
+        .ok_or_else(|| {
+            let known: Vec<&str> = SETTINGS.iter().map(|(name, _, _)| *name).collect();
+            anyhow!("unknown setting; known settings: {}", known.join(", "))
+        })
 }
 
 pub fn settings(root: &Path, command: SettingsCmd) -> Result<()> {
     let store = SqliteStore::open(root)?;
     match command {
         SettingsCmd::Get { key } => {
-            check_key(&key)?;
+            let (_, default, _) = setting(&key)?;
             let value = store.setting_get(&key)?;
-            println!("{}", value.as_deref().unwrap_or("true"));
+            println!("{}", value.as_deref().unwrap_or(default));
         }
         SettingsCmd::Set { key, value } => {
-            check_key(&key)?;
-            if !matches!(value.as_str(), "true" | "false") {
-                bail!("{AUDIT_ENABLED} must be true or false");
+            let (_, _, values) = setting(&key)?;
+            if !values.contains(&value.as_str()) {
+                bail!("{key} must be {}", values.join(" or "));
             }
+            // Turning the usage record off or changing capture needs a person (R-35).
+            weaken::require(&Terminal, weaken::setting(&key, &value).as_slice())?;
             store.setting_set(&key, &value)?;
             println!("{key}\t{value}");
         }

@@ -88,6 +88,10 @@ impl ItemKind {
     pub fn default_origin_binding(self) -> bool {
         self.spec().default_origin_binding
     }
+    /// Whether `keyharbor run` may inject a new item of this kind (R-35, R-36).
+    pub fn default_run_allowed(self) -> bool {
+        self.spec().default_run_allowed
+    }
     /// How `field` is treated in an item of this kind: its declared spec, the free-field spec
     /// for kinds with free-form names, or `None` if the kind has no such field.
     pub fn field(self, field: &str) -> Option<&'static FieldSpec> {
@@ -143,6 +147,9 @@ pub struct KindSpec {
     /// Field names are free-form (environment variable names), each treated as [`FREE_FIELD`].
     pub free_fields: bool,
     pub default_origin_binding: bool,
+    /// `keyharbor run` may inject the values unless the user turns it off: true for API keys
+    /// and environment items, false for anything a site signs in or pays with (R-36).
+    pub default_run_allowed: bool,
 }
 
 /// How a free-form field (an `env` variable) is treated: secret and masked.
@@ -191,6 +198,7 @@ pub static KINDS: &[KindSpec] = &[
         ],
         free_fields: false,
         default_origin_binding: true,
+        default_run_allowed: false,
     },
     KindSpec {
         kind: ItemKind::Secret,
@@ -199,6 +207,7 @@ pub static KINDS: &[KindSpec] = &[
         fields: &[secret("value"), secret("note")],
         free_fields: false,
         default_origin_binding: false,
+        default_run_allowed: true,
     },
     KindSpec {
         kind: ItemKind::Env,
@@ -207,6 +216,7 @@ pub static KINDS: &[KindSpec] = &[
         fields: &[],
         free_fields: true,
         default_origin_binding: false,
+        default_run_allowed: true,
     },
     KindSpec {
         kind: ItemKind::Card,
@@ -223,6 +233,7 @@ pub static KINDS: &[KindSpec] = &[
         ],
         free_fields: false,
         default_origin_binding: true,
+        default_run_allowed: false,
     },
     KindSpec {
         kind: ItemKind::Identity,
@@ -239,6 +250,7 @@ pub static KINDS: &[KindSpec] = &[
         ],
         free_fields: false,
         default_origin_binding: false,
+        default_run_allowed: false,
     },
     KindSpec {
         kind: ItemKind::Address,
@@ -257,6 +269,7 @@ pub static KINDS: &[KindSpec] = &[
         ],
         free_fields: false,
         default_origin_binding: false,
+        default_run_allowed: false,
     },
 ];
 
@@ -389,6 +402,8 @@ mod tests {
         assert_eq!(Domain::Payment.as_byte(), 2);
         assert!(ItemKind::Card.default_origin_binding());
         assert!(!ItemKind::Identity.default_origin_binding());
+        assert!(ItemKind::Env.default_run_allowed() && ItemKind::Secret.default_run_allowed());
+        assert!(!ItemKind::Login.default_run_allowed() && !ItemKind::Card.default_run_allowed());
     }
     #[test]
     fn item_names_reject_placeholder_syntax() {

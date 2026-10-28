@@ -13,13 +13,14 @@ pub mod session;
 mod test_support;
 mod transfer;
 mod vault;
+pub mod weaken;
 
 pub use access::PlaintextAccess;
 pub use dotenv::parse_dotenv;
 pub use transfer::ImportReport;
 pub use vault::{
-    ItemChange, ItemSource, ItemStatus, ItemSummary, ItemUse, MAX_FIELD_BYTES, MaskValues, NewItem,
-    Vault, VaultBackend, fill_template,
+    ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary, ItemUse, MAX_FIELD_BYTES,
+    MaskValues, NewItem, Vault, VaultBackend, fill_template,
 };
 
 /// The agent name recorded for changes made by the local user through the CLI.
@@ -108,6 +109,7 @@ mod tests {
             origin_binding: None,
             status: ItemStatus::Active,
             source: ItemSource::User,
+            details: Default::default(),
         }
     }
     pub(crate) fn pref(item: &str, field: &str) -> PlaceholderRef {
@@ -214,6 +216,7 @@ mod tests {
                 origins: Some(vec![Origin::parse("https://gist.github.com").unwrap()]),
                 origin_binding: Some(false),
                 status: Some(ItemStatus::Draft),
+                ..Default::default()
             },
         )
         .unwrap();

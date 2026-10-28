@@ -28,6 +28,7 @@ struct ItemOut<'a> {
     kind: &'static str,
     origins: &'a [String],
     origin_binding: bool,
+    run_allowed: bool,
     status: &'static str,
     source: &'static str,
     fields: BTreeMap<&'a str, &'a str>,
@@ -43,6 +44,9 @@ struct ItemIn {
     kind: String,
     origins: Vec<String>,
     origin_binding: bool,
+    /// Absent in exports from before phase 3: the kind's default.
+    #[serde(default)]
+    run_allowed: Option<bool>,
     status: String,
     fields: BTreeMap<String, String>,
 }
@@ -59,6 +63,7 @@ impl Vault {
             origin_binding: Some(false),
             status: ItemStatus::Active,
             source: ItemSource::Import,
+            details: Default::default(),
         })?;
         Ok(count)
     }
@@ -96,6 +101,7 @@ impl Vault {
                     kind: s.kind.as_str(),
                     origins: &s.origins,
                     origin_binding: s.origin_binding,
+                    run_allowed: s.run_allowed,
                     status: s.status.as_str(),
                     source: s.source.as_str(),
                     fields: fields
@@ -167,6 +173,9 @@ impl Vault {
                 origin_binding: Some(item.origin_binding),
                 status: ItemStatus::parse(&item.status).context("unknown status in export")?,
                 source: ItemSource::Import,
+                details: crate::ItemDetails {
+                    run_allowed: item.run_allowed,
+                },
             })?;
             report.added += 1;
         }
@@ -193,6 +202,7 @@ mod tests {
             origin_binding: None,
             status: ItemStatus::Active,
             source: ItemSource::User,
+            details: Default::default(),
         }
     }
 

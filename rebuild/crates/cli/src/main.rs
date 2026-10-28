@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
 mod audit_cmd;
+mod confirm;
 mod policy_cmd;
 mod run_cmd;
 mod session_cmd;

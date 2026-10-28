@@ -46,3 +46,47 @@ fn field_record_bytes_are_stable() {
     assert_eq!(hex(&record), FIELD_RECORD_HEX);
     assert_eq!(&*open_field(&dk, &ad, &record).unwrap(), b"KH-KAT");
 }
+
+const META_V1_HEX: &str = "7263b493640d4a2ae564062c249db35f664507d37b79a8333a6b5b1016372e58";
+const META_V2_HEX: &str = "243dba424b4566e6d8dafec19ea3b767379af742d1c86ab7cc7fdebac551ea71";
+
+/// §7.6.3 metadata MAC: v2 bytes are stable, and an item signed with v1 still verifies.
+#[test]
+fn meta_macs_are_stable() {
+    use keyharbor_domain::vault::{ItemKind, ItemName, Origin};
+    use keyharbor_vault::meta::{ItemMeta, meta_mac, verify_meta_mac};
+    let keys = KeySet::derive(
+        &SecretKey::from_bytes([0x11; 32]),
+        &VaultId::from_bytes([0x22; 16]),
+    );
+    let vault = VaultId::from_bytes([0x22; 16]);
+    let name = ItemName::parse("github").unwrap();
+    let origins = [Origin::parse("https://github.com").unwrap()];
+    let mut meta = ItemMeta {
+        vault: &vault,
+        item: &[0x55; 16],
+        domain: Domain::Credentials,
+        kind: ItemKind::Login,
+        name: &name,
+        origin_binding: true,
+        origins: &origins,
+        status: "active",
+        updated_at: "2026-10-28T00:00:00Z",
+        run_allowed: false,
+        expires_at: None,
+        description: None,
+        field_descriptions: &[],
+    };
+    let v1: Vec<u8> = (0..32)
+        .map(|i| u8::from_str_radix(&META_V1_HEX[2 * i..2 * i + 2], 16).unwrap())
+        .collect();
+    assert!(verify_meta_mac(keys.mac(), &meta, &v1).is_ok());
+    let described = [("password".to_owned(), "web".to_owned())];
+    meta.run_allowed = true;
+    meta.expires_at = Some("2027-01-31");
+    meta.description = Some("work");
+    meta.field_descriptions = &described;
+    assert!(verify_meta_mac(keys.mac(), &meta, &v1).is_err());
+    let v2 = meta_mac(keys.mac(), &meta);
+    assert_eq!(hex(&v2), META_V2_HEX);
+}

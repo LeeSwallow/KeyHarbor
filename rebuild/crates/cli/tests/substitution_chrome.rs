@@ -115,19 +115,16 @@ fn placeholders_fill_only_allowed_items_into_bound_frames() {
             .to_string(),
         "denied: site (policy)"
     );
-    h.ok(
-        &[
-            "policy",
-            "allow",
-            "--agent",
-            "cli",
-            "--resource",
-            "item",
-            "--target",
-            "site",
-        ],
-        None,
-    );
+    h.confirmed(&[
+        "policy",
+        "allow",
+        "--agent",
+        "cli",
+        "--resource",
+        "item",
+        "--target",
+        "site",
+    ]);
     // An unbound item may go anywhere; `type` checks the focused element's frame.
     h.ok_call(json!({"op": "click", "target": {"selector": "#pw"}}));
     h.ok_call(json!({"op": "type", "text": "{{secret:site.password}}"}));

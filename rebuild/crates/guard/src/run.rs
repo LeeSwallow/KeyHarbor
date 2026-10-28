@@ -2,7 +2,7 @@
 //! its output. Starting the process and pumping its output stay in the CLI.
 //!
 //! Every referenced item is checked first (exists, not discarded, allowed for the agent, not
-//! origin-bound); a refusal is recorded and nothing is resolved.
+//! origin-bound, `run_allowed`); a refusal is recorded and nothing is resolved.
 
 use crate::{
     audit,
@@ -89,6 +89,9 @@ impl Checker<'_> {
         }
         if !origin::allows_process(info.origin_binding) {
             return Err(self.deny(item, "origin"));
+        }
+        if !info.run_allowed {
+            return Err(self.deny(item, "run-not-allowed"));
         }
         if !self.checked.contains(item) {
             self.checked.push(item.clone());

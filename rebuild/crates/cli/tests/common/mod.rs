@@ -241,3 +241,76 @@ pub fn serve_fn(page: impl Fn(&str) -> String + Send + Sync + 'static) -> String
     });
     base
 }
+
+/// What `keyharbor` printed on a pseudo-terminal and whether it succeeded.
+pub struct Terminal {
+    pub success: bool,
+    pub output: String,
+}
+
+/// Runs `keyharbor --data-dir <data> <args>` on a pseudo-terminal (`script(1)`), as a person
+/// at a terminal would, typing `answer` when it asks for confirmation. Test runs have no
+/// terminal, so this is the only way they reach the confirmed path of a weakening operation;
+/// it also shows that the terminal check is a weak boundary (03 §3.12).
+pub fn on_terminal(
+    data: &std::path::Path,
+    keys: &std::path::Path,
+    args: &[&str],
+    answer: &str,
+) -> Terminal {
+    use std::{
+        io::Read,
+        process::{Command, Stdio},
+        sync::{Arc, Mutex},
+        time::{Duration, Instant},
+    };
+    let mut child = Command::new("script")
+        .args([
+            "-q",
+            "/dev/null",
+            env!("CARGO_BIN_EXE_keyharbor"),
+            "--data-dir",
+        ])
+        .arg(data)
+        .args(args)
+        .env("KEYHARBOR_TEST_KEYSTORE_DIR", keys)
+        .env("KEYHARBOR_BROWSER_HEADLESS", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("script(1)");
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let mut stdout = child.stdout.take().unwrap();
+    let sink = output.clone();
+    let reader = thread::spawn(move || {
+        let mut buffer = [0u8; 1024];
+        while let Ok(n) = stdout.read(&mut buffer) {
+            if n == 0 {
+                break;
+            }
+            sink.lock().unwrap().extend_from_slice(&buffer[..n]);
+        }
+    });
+    let mut stdin = child.stdin.take().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let asked = String::from_utf8_lossy(&output.lock().unwrap()).contains("Type yes");
+        if asked {
+            stdin.write_all(format!("{answer}\n").as_bytes()).unwrap();
+            break;
+        }
+        if child.try_wait().unwrap().is_some() || Instant::now() > deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let status = child.wait().unwrap();
+    drop(stdin);
+    reader.join().unwrap();
+    let output = String::from_utf8_lossy(&output.lock().unwrap()).into_owned();
+    Terminal {
+        success: status.success(),
+        output,
+    }
+}

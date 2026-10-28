@@ -28,6 +28,7 @@ diesel::table! {
         source -> Text,
         meta_mac -> Binary,
         updated_at -> Text,
+        run_allowed -> Bool,
     }
 }
 

@@ -39,6 +39,7 @@ pub struct ItemModel {
     pub source: String,
     pub meta_mac: Vec<u8>,
     pub updated_at: String,
+    pub run_allowed: bool,
 }
 
 #[derive(Queryable, Selectable, Insertable)]

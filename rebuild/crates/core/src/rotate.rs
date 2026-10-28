@@ -216,6 +216,7 @@ mod tests {
             )],
             origins: vec![],
             origin_binding: None,
+            details: Default::default(),
             status: ItemStatus::Active,
             source: ItemSource::User,
         }

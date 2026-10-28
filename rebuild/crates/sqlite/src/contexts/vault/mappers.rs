@@ -40,6 +40,7 @@ pub fn item_row(model: ItemModel, origins: Vec<String>) -> Result<ItemRow> {
         domain: u8::try_from(model.domain).context("invalid stored domain")?,
         kind: model.kind,
         origin_binding: model.origin_binding,
+        run_allowed: model.run_allowed,
         status: model.status,
         source: model.source,
         meta_mac: model.meta_mac,
@@ -59,6 +60,7 @@ pub fn item_model(row: &ItemRow) -> ItemModel {
         source: row.source.clone(),
         meta_mac: row.meta_mac.clone(),
         updated_at: row.updated_at.clone(),
+        run_allowed: row.run_allowed,
     }
 }
 
