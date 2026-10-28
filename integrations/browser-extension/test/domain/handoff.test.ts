@@ -6,7 +6,11 @@ describe("handOffRequest", () => {
     expect(handOffRequest("work-2", 3600, true)).toEqual({ ok: true, value: { session: "work-2", ttlSeconds: 3600, includeLocalStorage: true } });
   });
 
-  it.each(["", "Work", "-x", "a b", "a".repeat(65), "../etc"])("rejects session %j", (s) => {
+  it("keeps the trimmed session name", () => {
+    expect(handOffRequest("  Work  ", 3600, false)).toEqual({ ok: true, value: { session: "Work", ttlSeconds: 3600, includeLocalStorage: false } });
+  });
+
+  it.each(["", "  ", "a\nb", "a".repeat(121)])("rejects session %j", (s) => {
     expect(handOffRequest(s, 3600, false)).toEqual({ ok: false, error: "bad_session" });
   });
 

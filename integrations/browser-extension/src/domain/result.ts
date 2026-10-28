@@ -2,7 +2,7 @@
 
 export type ErrorCode =
   | "unsupported_page" // not http(s): file:, about:, browser or extension pages
-  | "bad_session" // session name not [a-z0-9_-]{1,64}
+  | "bad_session" // session name not 1-120 bytes, or with a control character (SessionName)
   | "bad_ttl" // ttl outside TTL_RANGE
   | "no_permission" // the person declined host access for the site
   | "no_cookies" // nothing to hand over

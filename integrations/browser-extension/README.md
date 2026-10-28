@@ -78,6 +78,8 @@ host 이름은 `dev.keyharbor.host`. 요청 하나에 응답 하나.
 
 응답: `{"v":1,"type":"received","session":"work","cookies":3}` 또는 `{"v":1,"type":"error","code":"no_session"}`. 응답에 쿠키 값은 없다.
 
+`session`은 Rust `SessionName::parse`(`rebuild/crates/domain`)와 같은 규칙이다: 앞뒤 Unicode 공백을 지우고, 1–120 UTF-8 바이트, 제어 문자(Cc) 없음. 판정 기준은 Rust이고 확장은 같은 규칙으로 미리 검사한다(`domain/session-name.ts`). 두 쪽 테스트가 저장소 루트의 [`contracts/session-names.json`](../../contracts/session-names.json)을 함께 읽는다(`contracts/`: 언어 사이의 계약 fixture).
+
 쿠키 변환 규칙(`adapters/wire/cdp-cookie.ts`, 어느 쿠키를 넘길지는 `domain/cookie.ts`):
 
 | WebExtension | CDP `CookieParam` | 이유 |

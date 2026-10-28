@@ -11,6 +11,7 @@
 | `docs/superpowers/plans/YYYY-MM-DD-<주제>.md` | 정해진 것을 어떤 순서로 구현하나 | 작업이 끝나면 고치지 않는다 |
 | `design/` | 디자인 시스템 (토큰, 컴포넌트, 아이콘, 쇼케이스) | 코드처럼 관리한다 |
 | `integrations/<이름>/README.md` | 확장·외부 연동의 구조와 설치 | 코드와 함께 |
+| `contracts/` | 언어 사이의 계약 fixture (예: `session-names.json`을 Rust와 TypeScript 테스트가 함께 읽는다) | 규칙이 바뀌면 같은 커밋에서. 두 쪽 테스트가 같이 깨져야 한다 |
 | `.sticky/roadmap.md` | 단계 체크리스트 | 단계가 끝날 때 |
 | `docs/prototype.md` 등 루트 `docs/`의 옛 문서 | 프로토타입 시절 자료 | 읽기만 한다 |
 

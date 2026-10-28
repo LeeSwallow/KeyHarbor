@@ -39,7 +39,7 @@ export async function mountPopup(doc: Document, deps: PopupDeps): Promise<void> 
 
   root.addEventListener("input", (e) => {
     const target = e.target as HTMLInputElement;
-    if (target.id === "session" && state.kind === "ready") state = { ...state, session: target.value.trim() };
+    if (target.id === "session" && state.kind === "ready") state = { ...state, session: target.value }; // parseSessionName trims, as Rust does
   });
   root.addEventListener("click", async (e) => {
     const el = (e.target as HTMLElement).closest("[data-ttl], #ls, #submit");

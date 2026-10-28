@@ -20,7 +20,7 @@ describe("parseCommand", () => {
   });
 
   it("checks the session and TTL with the domain rules", () => {
-    expect(parseCommand({ ...wire, session: "Bad Name" })).toEqual({ ok: false, error: "bad_session" });
+    expect(parseCommand({ ...wire, session: "bad\nname" })).toEqual({ ok: false, error: "bad_session" });
     expect(parseCommand({ ...wire, ttlSeconds: 5 })).toEqual({ ok: false, error: "bad_ttl" });
   });
 });
