@@ -162,10 +162,10 @@ pub fn keystore_from_env() -> Box<dyn KeyStore> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{VaultError, keys::SecretKey};
+    use crate::VaultError;
 
     fn exercise(store: &dyn KeyStore, account: &str) {
-        let first = SecretKey::generate();
+        let first = keyharbor_crypto::random::key();
         assert!(matches!(store.get(account), Err(VaultError::KeyNotFound)));
         assert!(matches!(
             store.replace(account, &first),
@@ -174,11 +174,11 @@ mod tests {
         store.create(account, &first).unwrap();
         assert_eq!(store.get(account).unwrap().expose(), first.expose());
         assert!(matches!(
-            store.create(account, &SecretKey::generate()),
+            store.create(account, &keyharbor_crypto::random::key()),
             Err(VaultError::KeyExists)
         ));
         assert_eq!(store.get(account).unwrap().expose(), first.expose());
-        let second = SecretKey::generate();
+        let second = keyharbor_crypto::random::key();
         store.replace(account, &second).unwrap();
         assert_eq!(store.get(account).unwrap().expose(), second.expose());
         store.delete(account).unwrap();
@@ -203,7 +203,9 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
         let store = FileKeyStore::new(tmp.path().join("keys"));
-        store.create("acct", &SecretKey::generate()).unwrap();
+        store
+            .create("acct", &keyharbor_crypto::random::key())
+            .unwrap();
         let mode = std::fs::metadata(tmp.path().join("keys/acct.key"))
             .unwrap()
             .permissions()
@@ -215,7 +217,11 @@ mod tests {
     fn file_keystore_rejects_path_like_accounts() {
         let tmp = tempfile::tempdir().unwrap();
         let store = FileKeyStore::new(tmp.path().join("keys"));
-        assert!(store.create("../escape", &SecretKey::generate()).is_err());
+        assert!(
+            store
+                .create("../escape", &keyharbor_crypto::random::key())
+                .is_err()
+        );
     }
 
     #[cfg(target_os = "macos")]

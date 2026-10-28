@@ -2,8 +2,14 @@
 //! facts the guard checks before a use.
 
 use super::{ItemSource, ItemStatus, ItemSummary, Vault};
-use anyhow::{Context, Result};
-use keyharbor_domain::vault::{Domain, ItemKind, ItemName, Origin};
+use crate::today;
+use anyhow::{Context, Result, anyhow};
+use keyharbor_domain::{
+    date::Expiry,
+    ports::ItemRow,
+    vault::{Domain, ItemKind, ItemName, Origin},
+};
+use std::collections::BTreeMap;
 
 /// Verified, value-free facts about an item.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -11,9 +17,45 @@ pub struct ItemUse {
     pub kind: ItemKind,
     pub domain: Domain,
     pub origin_binding: bool,
+    pub run_allowed: bool,
+    pub expires_at: Option<Expiry>,
+    /// The expiry date has passed (as of today, UTC).
+    pub expired: bool,
     pub origins: Vec<Origin>,
     pub status: ItemStatus,
     pub fields: Vec<String>,
+}
+
+/// Each field's description: the item's own, or its kind's default.
+pub fn effective_descriptions(
+    kind: ItemKind,
+    fields: &[String],
+    own: &[(String, String)],
+) -> BTreeMap<String, String> {
+    fields
+        .iter()
+        .map(|field| {
+            let text = own
+                .iter()
+                .find(|(f, _)| f == field)
+                .map(|(_, d)| d.as_str())
+                .or_else(|| kind.field(field).map(|spec| spec.description))
+                .unwrap_or_default();
+            (field.clone(), text.to_owned())
+        })
+        .collect()
+}
+
+fn expiry(row: &ItemRow) -> Result<Option<Expiry>> {
+    row.expires_at
+        .as_deref()
+        .map(Expiry::parse)
+        .transpose()
+        .map_err(|_| anyhow!("invalid expiry in database"))
+}
+
+fn is_expired(row: &ItemRow) -> Result<bool> {
+    Ok(expiry(row)?.is_some_and(|e| e.is_expired(today())))
 }
 
 impl Vault {
@@ -21,12 +63,14 @@ impl Vault {
         let mut out = Vec::new();
         for row in self.store.item_list()? {
             let tampered = self.verified(&row).is_err();
+            let (expires_at, expired) = (expiry(&row)?, is_expired(&row)?);
             let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
-            let fields = self
+            let fields: Vec<String> = self
                 .store
                 .item_get(&row.name)?
                 .map(|(_, f)| f.into_iter().map(|f| f.field).collect())
                 .unwrap_or_default();
+            let field_descriptions = effective_descriptions(kind, &fields, &row.field_descriptions);
             out.push(ItemSummary {
                 name: row.name,
                 kind,
@@ -34,6 +78,11 @@ impl Vault {
                 fields,
                 origins: row.origins,
                 origin_binding: row.origin_binding,
+                run_allowed: row.run_allowed,
+                expires_at,
+                expired,
+                description: row.description,
+                field_descriptions,
                 status: ItemStatus::parse(&row.status).context("unknown status in database")?,
                 source: ItemSource::parse(&row.source).context("unknown source in database")?,
                 updated_at: row.updated_at,
@@ -63,6 +112,9 @@ impl Vault {
             kind,
             domain: kind.domain(),
             origin_binding: row.origin_binding,
+            run_allowed: row.run_allowed,
+            expires_at: expiry(&row)?,
+            expired: is_expired(&row)?,
             origins,
             status: ItemStatus::parse(&row.status).context("unknown status in database")?,
             fields: fields.into_iter().map(|f| f.field).collect(),

@@ -113,7 +113,10 @@ fn vault_and_policy_changes_are_recorded_without_values() {
         ],
         None,
     );
-    c.ok(
+    // Removing a deny rule needs a person at a terminal (R-35).
+    let removed = common::on_terminal(
+        &c.data,
+        &c.tmp.path().join("keys"),
         &[
             "policy",
             "rm",
@@ -124,8 +127,9 @@ fn vault_and_policy_changes_are_recorded_without_values() {
             "--target",
             "payment",
         ],
-        None,
+        "yes",
     );
+    assert!(removed.success, "{}", removed.output);
     let events = c.events();
     let summary: Vec<(String, String, String)> = events
         .iter()
@@ -174,7 +178,22 @@ fn vault_and_policy_changes_are_recorded_without_values() {
 
     // Turning the record off keeps everything out, denials included (J-23).
     assert_eq!(c.ok(&["settings", "get", "audit_enabled"], None), "true\n");
-    c.ok(&["settings", "set", "audit_enabled", "false"], None);
+    // Turning it off needs a person at a terminal (R-35); without one it is refused.
+    let refused = c.run(&["settings", "set", "audit_enabled", "false"], None);
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("needs confirmation from a person"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert_eq!(c.ok(&["settings", "get", "audit_enabled"], None), "true\n");
+    let confirmed = common::on_terminal(
+        &c.data,
+        &c.tmp.path().join("keys"),
+        &["settings", "set", "audit_enabled", "false"],
+        "yes",
+    );
+    assert!(confirmed.success, "{}", confirmed.output);
     assert_eq!(c.ok(&["settings", "get", "audit_enabled"], None), "false\n");
     c.ok(
         &["vault", "add", "api", "--kind", "secret", "--stdin"],

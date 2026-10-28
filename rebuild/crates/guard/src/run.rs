@@ -2,17 +2,18 @@
 //! its output. Starting the process and pumping its output stay in the CLI.
 //!
 //! Every referenced item is checked first (exists, not discarded, allowed for the agent, not
-//! origin-bound); a refusal is recorded and nothing is resolved.
+//! origin-bound, `run_allowed`); a refusal is recorded and nothing is resolved.
 
 use crate::{
     audit,
-    pdp::{Action, decide},
-    pep::{mask, mask::Masker, origin},
+    pdp::checks::{self, Target, UseContext},
+    pep::{mask, mask::Masker},
 };
 use anyhow::{Context, Result, anyhow, bail};
-use keyharbor_core::{ItemStatus, PlaintextAccess, Vault, fill_template, parse_dotenv};
+use keyharbor_core::{PlaintextAccess, Vault, fill_template, parse_dotenv};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
+    denial::DenialReason,
     policy::Rule,
     ports::Store,
     vault::{FieldName, ItemKind, ItemName, PlaceholderRef, parse_placeholders},
@@ -56,7 +57,7 @@ struct Checker<'a> {
 }
 
 impl Checker<'_> {
-    fn deny(&self, item: &ItemName, reason: &str) -> anyhow::Error {
+    fn deny(&self, item: &ItemName, reason: DenialReason) -> anyhow::Error {
         audit::record(
             self.store,
             &audit::denied(self.agent, None, item, None, reason),
@@ -64,12 +65,13 @@ impl Checker<'_> {
         audit::denial_error(item, reason)
     }
 
-    /// Checks `item` once; returns its field names.
-    fn check(&mut self, item: &ItemName, env_only: bool) -> Result<Vec<String>> {
+    /// Checks one use of `item` (naming `fields`, none for the whole item) through the
+    /// process chain (`pdp::checks::PROCESS`); returns the item's field names.
+    fn check(&mut self, item: &ItemName, fields: &[&str], env_only: bool) -> Result<Vec<String>> {
         let info = match self.vault.item_use(item) {
             Ok(Some(info)) => info,
-            Ok(None) => return Err(self.deny(item, "not_found")),
-            Err(_) => return Err(self.deny(item, "tampered")),
+            Ok(None) => return Err(self.deny(item, DenialReason::NotFound)),
+            Err(_) => return Err(self.deny(item, DenialReason::Tampered)),
         };
         if env_only && info.kind != ItemKind::Env {
             bail!(
@@ -77,19 +79,15 @@ impl Checker<'_> {
                 item.as_str()
             );
         }
-        if info.status == ItemStatus::Discarded {
-            return Err(self.deny(item, "discarded"));
-        }
-        let action = Action::UseItem {
-            item: item.clone(),
-            domain: info.domain,
+        let ctx = UseContext {
+            agent: self.agent,
+            item,
+            info: &info,
+            rules: &self.rules,
+            fields,
+            to: Target::Process,
         };
-        if !decide(&self.rules, self.agent, &action).allowed() {
-            return Err(self.deny(item, "policy"));
-        }
-        if !origin::allows_process(info.origin_binding) {
-            return Err(self.deny(item, "origin"));
-        }
+        checks::run(checks::PROCESS, &ctx).map_err(|reason| self.deny(item, reason))?;
         if !self.checked.contains(item) {
             self.checked.push(item.clone());
         }
@@ -121,7 +119,7 @@ pub fn prepare(store: &dyn Store, vault: &Vault, request: &Request<'_>) -> Resul
     let mut item_vars: Vec<(ItemName, Vec<String>)> = Vec::new();
     for name in request.items {
         let item = ItemName::parse(name).map_err(|e| anyhow!("{e}"))?;
-        let fields = checker.check(&item, true)?;
+        let fields = checker.check(&item, &[], true)?;
         item_vars.push((item, fields));
     }
     let mut templates = Vec::new();
@@ -132,10 +130,7 @@ pub fn prepare(store: &dyn Store, vault: &Vault, request: &Request<'_>) -> Resul
         );
         for (name, template) in parse_dotenv(&text)? {
             for reference in parse_placeholders(&template).map_err(|e| anyhow!("{e}"))? {
-                let fields = checker.check(&reference.item, false)?;
-                if !fields.iter().any(|f| f == reference.field.as_str()) {
-                    return Err(checker.deny(&reference.item, "not_found"));
-                }
+                checker.check(&reference.item, &[reference.field.as_str()], false)?;
             }
             templates.push((name, template));
         }

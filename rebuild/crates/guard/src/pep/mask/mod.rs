@@ -12,6 +12,8 @@ use keyharbor_domain::vault::PlaceholderRef;
 use serde_json::Value;
 use zeroize::Zeroizing;
 
+mod variants;
+
 pub const MIN_MASKED_CHARS: usize = 4;
 
 pub struct Masker {
@@ -30,94 +32,7 @@ impl std::fmt::Debug for Masker {
     }
 }
 
-/// encodeURIComponent's unreserved set.
-fn component_safe(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b)
-}
-
-fn percent(value: &str, keep: impl Fn(u8) -> bool, upper: bool, plus: bool) -> String {
-    let mut out = String::with_capacity(value.len() * 3);
-    for b in value.bytes() {
-        if plus && b == b' ' {
-            out.push('+');
-        } else if keep(b) {
-            out.push(b as char);
-        } else if upper {
-            out.push_str(&format!("%{b:02X}"));
-        } else {
-            out.push_str(&format!("%{b:02x}"));
-        }
-    }
-    out
-}
-
-fn html(value: &str, apostrophe: &str) -> String {
-    let mut out = String::with_capacity(value.len() + 16);
-    for c in value.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str(apostrophe),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-/// The digits of a card-number-like value (12–19 digits, optionally spaced or hyphenated).
-fn card_digits(value: &str) -> Option<String> {
-    if !value
-        .chars()
-        .all(|c| c.is_ascii_digit() || c == ' ' || c == '-')
-    {
-        return None;
-    }
-    let digits: String = value.chars().filter(char::is_ascii_digit).collect();
-    (12..=19).contains(&digits.len()).then_some(digits)
-}
-
-fn grouped(digits: &str, separator: &str) -> String {
-    digits
-        .as_bytes()
-        .chunks(4)
-        .map(|c| std::str::from_utf8(c).expect("ASCII digits"))
-        .collect::<Vec<_>>()
-        .join(separator)
-}
-
-/// The forms of `value` that are masked: as written, percent-encoded (component and strict,
-/// upper- and lowercase hex, `+` for spaces), HTML-escaped, and for card numbers the bare
-/// digits and groups of four separated by spaces or hyphens.
-pub fn variants(value: &str) -> Vec<Zeroizing<String>> {
-    if value.chars().count() < MIN_MASKED_CHARS {
-        return Vec::new();
-    }
-    let strict = |b: u8| b.is_ascii_alphanumeric() || b"-_.~".contains(&b);
-    let mut out = vec![
-        Zeroizing::new(value.to_owned()),
-        Zeroizing::new(percent(value, component_safe, true, false)),
-        Zeroizing::new(percent(value, component_safe, false, false)),
-        Zeroizing::new(percent(value, strict, true, false)),
-        Zeroizing::new(percent(value, component_safe, true, true)),
-        Zeroizing::new(percent(value, strict, true, true)),
-        Zeroizing::new(html(value, "&#39;")),
-        Zeroizing::new(html(value, "&#x27;")),
-    ];
-    if let Some(digits) = card_digits(value) {
-        out.push(Zeroizing::new(grouped(&digits, " ")));
-        out.push(Zeroizing::new(grouped(&digits, "-")));
-        out.push(Zeroizing::new(digits));
-    }
-    let mut unique: Vec<Zeroizing<String>> = Vec::with_capacity(out.len());
-    for v in out {
-        if !unique.contains(&v) {
-            unique.push(v);
-        }
-    }
-    unique
-}
+pub use variants::variants;
 
 impl Masker {
     /// A masker that changes nothing.
@@ -262,6 +177,36 @@ mod tests {
             assert_eq!(
                 m.redact(&format!("?k={form}&")),
                 "?k={{secret:api.value}}&",
+                "{form}"
+            );
+        }
+    }
+
+    #[test]
+    fn json_escaped_and_form_encoded_forms_are_masked() {
+        // I2: a value with quotes, backslashes or control characters, as JSON text holds it.
+        let m = masker(&[("site", "username", "KH\"q\\z\n\u{1}x")]);
+        for form in ["KH\\\"q\\\\z\\n\\u0001x", "KH\"q\\z\n\u{1}x"] {
+            assert_eq!(
+                m.redact(&format!("value=\"{form}\"")),
+                "value=\"{{secret:site.username}}\"",
+                "{form}"
+            );
+        }
+        let snapshot = format!(
+            "[1] textbox value={}",
+            serde_json::to_string("KH\"q\\z\n\u{1}x").unwrap()
+        );
+        assert_eq!(
+            m.redact(&snapshot),
+            "[1] textbox value=\"{{secret:site.username}}\""
+        );
+        // I5: what a browser sends for a form field: `*` kept, `~ ! ' ( )` encoded, `+` for space.
+        let m = masker(&[("api", "value", "a~b!c'd(e)f*g h")]);
+        for form in ["a%7Eb%21c%27d%28e%29f*g+h", "a%7eb%21c%27d%28e%29f*g+h"] {
+            assert_eq!(
+                m.redact(&format!("?q={form}&")),
+                "?q={{secret:api.value}}&",
                 "{form}"
             );
         }

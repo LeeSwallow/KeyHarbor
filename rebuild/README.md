@@ -20,14 +20,16 @@ cargo run -p keyharbor -- list
 | | `keyharbor-mcp` | stdio MCP 서버 | `server`, `scope`, `tools/{session, browser, vault}` |
 | adapters | `keyharbor-broker` | 감독자, Chrome CDP pipe, 제어 socket, `SessionRuntime` | `cdp/{client, protocol}`, `browser/{navigate, snapshot, input, tabs, screenshot, wait, frames}`(crate 내부), `supervisor/{launch, lock}`, `ops`, `runtime` |
 | | `keyharbor-sqlite` | Diesel 저장소, 저장소 포트 구현 | `connection`, `contexts/{vault, session, access, audit, config}/{schema, models, mappers, repo}` |
-| | `keyharbor-vault` | 암호 레코드·메타 MAC·키 분리, `KeyStore`(Keychain) | `record`, `meta`, `keys`, `keystore` |
-| security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser` | `pdp`, `pep/{substitute, mask, origin}`, `audit`, `run`, `guard`, `browser` |
-| application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess` | `vault/{open, items, summary, resolve}`, `session/{lifecycle, handoff}`, `rotate`, `transfer`, `dotenv` |
-| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 포트(trait) | `vault`, `policy`, `audit`, `secret`, `ports/{vault, session, access, audit, keys, browser, runtime}` |
+| | `keyharbor-vault` | 금고 레코드 형식·메타 MAC 입력·키 분리, `KeyStore`(Keychain) | `record`, `meta`, `keys`, `keystore` |
+| crypto | `keyharbor-crypto` | 모든 암호 원시 연산, I/O 없음 ([ADR-0016](../docs/design/adr/0016-crypto-crate.md)) | `aead`, `envelope`, `kdf`, `mac`, `random`, `export` |
+| security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser` | `pdp/checks/<검사>`, `pep/{substitute, mask/variants/<변형>, origin, selector}`, `audit`, `run`, `guard`, `browser` |
+| application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess`, 약화 작업 판정(`weaken`) | `vault/{open, items, summary, resolve, developer}`, `session/{lifecycle, handoff}`, `rotate`, `transfer`, `dotenv`, `weaken` |
+| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `ports/{vault, session, access, audit, keys, browser, confirm, runtime}` |
 
 - 평문 값은 `Vault::resolve`·`Vault::mask_values`에서만 나오고, 둘 다 guard가 검사 뒤 발급하는 `PlaintextAccess`를 요구한다. 브라우저 조작은 제어 socket → `ops` → `GuardedBrowser`로만 간다.
 - **스키마 확장**: 저장소는 바운디드 컨텍스트별로 나뉘어 있다. 새 컨텍스트(예: 4단계 `site_states`)는 `crates/sqlite/src/contexts/<이름>/`(schema·models·mappers·repo) + `crates/sqlite/migrations/<이름>/<timestamp>_<이름>_<설명>/up.sql` + `contexts::CONTEXTS`에 한 줄이면 된다. 버전 타임스탬프는 모든 컨텍스트에서 유일해야 한다. 원시 SQL은 마이그레이션과 테스트에만 쓴다.
-- **항목 종류 확장**: `keyharbor_domain::vault::KINDS`에 `KindSpec` 하나(필드마다 `secret`·`maskable`)와 `ItemKind` 변형 하나를 더한다. 스키마·origin 바인딩 기본값·CLI의 비밀 필드 거부·마스킹이 이 표를 읽는다.
+- **항목 종류 확장**: `keyharbor_domain::vault::KINDS`에 `KindSpec` 하나(필드마다 `secret`·`maskable`·`input`·기본 `description`, 종류마다 origin 바인딩·`run` 허용 기본값)와 `ItemKind` 변형 하나를 더한다. 스키마·기본값·CLI의 비밀 필드 거부·필드 이름 검사·마스킹이 이 표를 읽는다.
+- **검사·변형 확장**: 사용 검사는 `crates/guard/src/pdp/checks/<검사>.rs` 하나 + `checks::BROWSER`/`PROCESS`에 한 줄, 거부 사유는 `DenialReason` 변형 하나, 마스킹 형태는 `crates/guard/src/pep/mask/variants/<변형>.rs` 하나 + `VARIANTS`에 한 줄, 약화 작업은 `core::weaken::WeakeningOp` 변형 하나다.
 - 테스트 전용 기능: `keyharbor-vault/insecure-test-keystore`, `keyharbor-sqlite/test-support`. 릴리스 빌드에 켜지지 않는지 `scripts/check-release-features.sh`가 확인한다.
 
 ## 브라우저 세션 (1단계)
@@ -36,7 +38,8 @@ cargo run -p keyharbor -- list
 
 | 명령 | 설명 |
 |---|---|
-| `create <name>` · `list` | `list`는 `id 이름 상태[ cdp]`. 상태가 활성인데 감독자가 없으면 `recovery_required` |
+| `create <name> [--description TEXT]` · `list` | `list`는 `id 이름 상태[ cdp][ 설명]`. 상태가 활성인데 감독자가 없으면 `recovery_required` |
+| `edit <id> --description TEXT \| --no-description` | 세션 설명(에이전트에게 보인다, 비밀 아님) |
 | `open <id> [--url U] [--cdp] [--browser PATH]` | 기본 브라우저는 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`. `--url`은 HTTPS(또는 localhost HTTP), 자격 증명·query·fragment 없이 |
 | `stop <id>` | 감독자에게 `close`를 보내 `Browser.close`로 끝내고 `stopped`까지 기다린다(10초 안에 안 끝나면 강제 종료) |
 | `wait-auth <id> [--origin O]` · `handoff <id>` · `resume <id> <request-id>` | 사용자에게 로그인을 넘기고, 같은 request id로만 재개. 새 요청은 이전 대기 요청을 대체한다 |
@@ -56,10 +59,12 @@ cargo run -p keyharbor -- list
 
 | 분류 | 도구 |
 |---|---|
-| 세션 | `session_list`, `session_create`, `session_open {id, url?, cdp?}`, `session_stop`, `session_wait_auth {id, origin?}`, `session_wait_for_resume {id, request_id, timeout_seconds 1–300}` |
+| 세션 | `session_list`(설명 포함), `session_create {name, description?}`, `session_open {id, url?, cdp?}`, `session_stop`, `session_wait_auth {id, origin?}`, `session_wait_for_resume {id, request_id, timeout_seconds 1–300}` |
 | 세션 (선택) | `session_endpoint` — `--allow-cdp`일 때만 등록 |
-| 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_type`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` — 모두 `session` 인자 |
-| 금고 | `vault_list` — 이름·종류·도메인·필드 이름·필드별 placeholder·origin·바인딩·상태·출처만 |
+| 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_type`, `browser_login {item, submit?}`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` — 모두 `session` 인자 |
+| 금고 | `vault_list` — 이름·종류·도메인·필드 이름·필드별 placeholder·설명(항목·필드)·origin·바인딩·`run_allowed`·`expires_at`·`expired`·상태·출처만 |
+
+`browser_login`은 페이지(최상위 또는 같은 origin frame)의 username·password 칸을 포커스와 상관없이 찾아 login 항목의 값을 `browser_fill`과 같은 검사로 넣고, `submit`(기본 참)이면 Enter를 누른다. 칸을 못 찾으면 아무것도 넣지 않고 `not found: password field`처럼 실패한다. browser-use와 함께 쓰는 방법은 [docs/guides/browser-use.md](../docs/guides/browser-use.md).
 
 `browser_snapshot`은 접근성 트리를 `[ref] role "name"` 줄로 돌려준다. `browser_click`·`browser_fill`은 `ref` 또는 CSS `selector`를 받는다. `--session ID`로 띄운 서버는 그 세션만 보고 쓸 수 있으며 새 세션을 만들 수 없고, 같은 세션의 범위 지정 서버는 하나만 뜬다(`run/mcp-<id>.lock`). 재개(`resume`)와 복구(`recover`)는 사람이 CLI로 한다. MCP 도구에는 없다.
 
@@ -72,19 +77,19 @@ cargo run -p keyharbor -- list
 
 ## 로컬 금고 (2단계)
 
-세 도메인(자격 증명·결제·개인정보)의 항목을 암호화해 저장한다. 루트 키는 macOS login keychain(`io.github.leeswallow.keyharbor`)에, 나머지는 SQLite에 암호문으로 둔다. 방식은 [07 암호화 설계](../docs/design/07-cryptography-design.md)를 따른다.
+네 도메인(자격 증명·결제·개인정보·개발자)의 항목을 암호화해 저장한다. 루트 키는 macOS login keychain(`io.github.leeswallow.keyharbor`)에, 나머지는 SQLite에 암호문으로 둔다. 방식은 [07 암호화 설계](../docs/design/07-cryptography-design.md)를 따른다.
 
 | 명령 | 설명 |
 |---|---|
 | `vault init` | 금고와 루트 키를 만든다. 이미 있으면 덮어쓰지 않는다 |
-| `vault add <name> --kind <login\|secret\|env\|card\|identity\|address> [--origin URL]… [--set FIELD=VALUE]… [--stdin] [--no-origin-binding] [--draft]` | 비밀 필드는 숨김 프롬프트나 `--stdin`(JSON 객체)으로만 받는다 |
-| `vault edit <name> [--set …] [--stdin] [--unset FIELD]… [--origin URL]… [--clear-origins] [--origin-binding on\|off] [--status active\|draft\|discarded]` | |
+| `vault add <name> --kind <login\|secret\|env\|card\|identity\|address> [--origin URL]… [--set FIELD=VALUE]… [--stdin] [--no-origin-binding] [--run-allowed on\|off] [--expires YYYY-MM-DD \| --expires-in Nd \| --no-expiry] [--description TEXT] [--field-description FIELD=TEXT]… [--draft]` | 비밀 필드는 숨김 프롬프트나 `--stdin`(JSON 객체)으로만 받는다 |
+| `vault edit <name> [--set …] [--stdin] [--unset FIELD]… [--origin URL]… [--clear-origins] [--origin-binding on\|off] [--run-allowed on\|off] [--expires … \| --expires-in … \| --no-expiry] [--description TEXT \| --no-description] [--field-description FIELD=TEXT]… [--status active\|draft\|discarded]` | 보호를 약하게 하는 변경은 터미널의 사람 확인이 필요하다(아래) |
 | `vault rm <name>` | |
-| `vault list [--json]` | 이름·종류·도메인·상태·사이트·필드 이름만. 값은 보여 주지 않는다 |
+| `vault list [--json]` | 이름·종류·도메인·상태·사이트·필드 이름(만료가 있으면 `expires 2027-01-31`·`expired`)만. `--json`은 `run_allowed`·`expires_at`·`expired`·`description`·`field_descriptions`도. 값은 보여 주지 않는다 |
 | `vault import-env <name> <path>` | `.env` 파일을 env 항목으로 가져온다 |
 | `vault export <path> [--passphrase-stdin]` | [age](https://age-encryption.org/v1) 형식의 암호화 백업. `age -d`로도 열린다. 기존 파일을 덮어쓰지 않는다 |
 | `vault import <path> [--passphrase-stdin]` | 같은 이름의 항목은 건너뛴다 |
-| `vault rotate-root` · `vault rotate-domain <credentials\|payment\|personal>` | 키 교체. 도중에 끊겨도 다음 실행 때 복구된다 |
+| `vault rotate-root` · `vault rotate-domain <credentials\|payment\|personal\|developer>` | 키 교체. 도중에 끊겨도 다음 실행 때 복구된다 |
 
 ```sh
 cargo run -p keyharbor -- vault init
@@ -101,28 +106,37 @@ cargo run -p keyharbor -- vault list
 - 키체인 항목이 사라지면 새 키를 만들지 않고 "vault key not found"로 멈춘다. 기존 암호문을 덮어쓰지 않기 위해서다.
 - 처음 쓰거나 다시 빌드한 뒤 macOS가 키체인 접근을 물을 수 있다. "항상 허용"을 누르면 그 바이너리에 대해서는 다시 묻지 않는다.
 - `KEYHARBOR_TEST_KEYSTORE_DIR`는 **테스트 전용**이다. `insecure-test-keystore` 기능으로 빌드한 테스트 바이너리에서만 동작하고, 일반 빌드에서는 무시된다. 켜지면 stderr에 경고를 출력한다.
+- **만료**(R-37): 기본은 무기한. 만료일(UTC) 다음 날부터 값은 남지만 에이전트의 입력·주입은 `denied: <항목> (expired)`로 거부된다. `settings set default_item_ttl 90d`면 새 항목에 오늘+90일이 붙는다.
+- **설명**(R-38): 항목·필드·세션에 "무엇에 쓰는지"를 500자까지 적는다. 필드는 종류의 기본 설명을 쓰다가 `--field-description`으로 바꿀 수 있다. 평문으로 저장되고 에이전트에게 보이므로 **비밀을 적지 않는다**. 금고 값이 든 설명은 거부된다.
+- R-40 이전 금고는 처음 열 때 `secret`·`env` 항목을 developer 도메인으로 한 번 옮긴다(한 트랜잭션).
 - 키 교체 중에 다른 명령이 금고를 바꾸면 교체는 아무것도 바꾸지 않고 실패한다. 다시 실행하면 된다. 교체 전에 열린 오래된 프로세스의 쓰기는 "vault changed; reopen"으로 거부된다.
 
 ## 치환 입력 · 마스킹 · 정책 · 사용 기록 (3단계)
 
 에이전트는 비밀 값 대신 `{{secret:<항목>.<필드>}}`를 `browser_fill`·`browser_type`에 넘긴다(`vault_list`가 필드마다 보여 준다). 감독자가 그 자리에서 값을 꺼내 입력하고, 에이전트에게 가는 모든 응답(snapshot·URL·탭 제목·오류)에서 금고의 값을 다시 placeholder로 바꾼다. 설계: [02 §2.5.2–§2.5.5](../docs/design/02-system-architecture.md#252-placeholder-치환-입력), [03 §3.7–§3.8](../docs/design/03-security-whitepaper.md#37-마스킹-알고리즘).
 
-- **입력 전 확인**: 항목이 있고 `discarded`가 아니며, 정책이 그 에이전트에게 허용하고, origin 바인딩이 켜진 항목(`login`·`card` 기본)이면 **포커스가 있는 입력란의 frame** origin이 항목의 origin 목록과 정확히 같아야 한다. 하나라도 어긋나면 아무것도 입력하지 않고 `denied: <항목> (<이유>)`를 돌려준다. 이유는 `policy`, `origin`, `not_found`, `tampered`, `discarded`, `focus`, `frame`, `vault`.
+- **입력 전 확인**: 항목이 있고 `discarded`·만료가 아니며, 정책이 그 에이전트에게 허용하고, origin 바인딩이 켜진 항목(`login`·`card` 기본)이면 **포커스가 있는 입력란의 frame** origin이 항목의 origin 목록과 정확히 같아야 한다. `secret`·`env`는 origin 목록이 있을 때 그 origin에만 들어간다. `login.password`는 password 칸(`type=password` 또는 `autocomplete` current-/new-password)에만, 모든 값은 텍스트를 받는 요소에만 들어간다. 포커스는 열린 shadow root와 frame을 품은 요소(iframe·object·embed…) 끝까지 따라가고, 탐색 중이면 기다리거나 거부한다. 하나라도 어긋나면 아무것도 입력하지 않고 `denied: <항목> (<이유>)`를 돌려준다. 이유는 `policy`, `origin`, `no-origin`, `field-kind`, `expired`, `not_found`, `tampered`, `discarded`, `focus`, `frame`, `navigating`, `locked`, `vault`(`keyharbor run`은 `run-not-allowed`도).
+- **요청 속 값은 거부한다**: 에이전트가 보낸 URL·텍스트·selector에 금고 값이 있으면 요청을 거부하고(`mask_probe`), 세션에서 세 번이면 그 세션은 치환과 텍스트가 든 요청을 모두 거부한다. selector는 태그·`#id`·`.class`·`[name|type|id|aria-label|data-testid=…]`·공백/`>`·`:nth-of-type(n)`만 쓸 수 있다.
+- 값을 받은 입력란은 세션 동안 snapshot에서 `value="[redacted]"`로 보인다(값을 고쳐도). 입력 뒤 포커스가 옮겨졌으면 오류를 돌려주고 그 세션의 치환을 잠근다.
 - 입력 뒤 frame origin이 바뀌었으면 결과에 `"warning":"origin_changed_after_fill"`이 붙고 기록에 남는다. 이미 입력된 값은 되돌릴 수 없다(탐지이지 예방이 아니다).
-- **마스킹**: 금고 전체의 4자 이상 값과 그 percent-encoding·HTML 엔티티 형태, 카드 번호는 숫자만·4자리 공백·4자리 하이픈 형태까지 가린다. `type=password` 입력란의 값은 snapshot에 넣지 않는다. 감독자는 첫 치환이나 첫 응답 때 금고를 열고, 금고가 바뀌면(`vault_version`) 다시 만든다. 값을 읽지 못하면 응답을 보내지 않는다.
+- **마스킹**: 금고 전체의 4자 이상 값과 그 percent-encoding(form-urlencoded 포함)·HTML 엔티티·JSON 이스케이프 형태, 카드 번호는 숫자만·4자리 공백·4자리 하이픈 형태까지 가린다. `type=password` 입력란의 값은 snapshot에 넣지 않는다. 감독자는 첫 치환이나 첫 응답 때 금고를 열고, 금고가 바뀌면(`vault_version`) 다시 만든다. 값을 읽지 못하면 응답을 보내지 않는다.
 - snapshot은 같은 프로세스의 iframe 내용을 `[frame] "<origin>"` 아래에 붙인다. 그 ref로 iframe 안 입력란을 채울 수 있다.
 
 | 명령 | 설명 |
 |---|---|
 | `policy list [--json]` | `agent resource target effect` |
-| `policy allow\|deny --agent A --resource R [--target T]` · `policy rm …` | R은 `session`·`item`·`domain`·`create_session`·`raw_cdp`, T는 세션 id·항목 이름·도메인(`credentials`·`payment`·`personal`) 또는 `*`(기본). A가 `*`면 모든 에이전트 |
+| `policy allow\|deny --agent A --resource R [--target T]` · `policy rm …` | R은 `session`·`item`·`domain`·`create_session`·`raw_cdp`, T는 세션 id·항목 이름·도메인(`credentials`·`payment`·`personal`·`developer`) 또는 `*`(기본). A가 `*`면 모든 에이전트 |
 | `audit [--limit N] [--json]` | 사용 기록. `seq at agent kind item origin session result`. 값은 없다 |
-| `settings get\|set audit_enabled [true\|false]` | 끄면 거부를 포함해 아무것도 기록하지 않는다 |
-| `run [--agent A] (--env ITEM \| --env-file PATH)… -- CMD ARGS…` | env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣고, 그 stdout·stderr를 줄 단위로 가려서 내보낸다. 종료 코드를 그대로 전달하고(신호면 128+번호), 자식의 core dump를 끈다 |
+| `settings get\|set KEY [VALUE]` | `audit_enabled true\|false`(끄면 거부를 포함해 아무것도 기록하지 않는다), `capture_enabled true\|false`(4단계), `default_item_ttl <N>d\|none` |
+| `run [--agent A] (--env ITEM \| --env-file PATH)… -- CMD ARGS…` | `run_allowed` 항목(secret·env 기본 허용)만. env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣고, 그 stdout·stderr를 줄 단위로 가려서 내보낸다. 종료 코드를 그대로 전달하고(신호면 128+번호), 자식의 core dump를 끈다 |
 
-정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`.
+정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`, `substitution_locked`, `mask_probe`, `secret_denied_suppressed`(초당 10건을 넘은 거부 수), `first_use_origin`(identity·address가 처음 쓰인 origin).
+
+**보호를 약하게 하는 작업은 사람이 확인한다**(R-35): `vault edit`의 origin 바인딩 끄기·origin 추가·`--run-allowed on`·만료 연장/제거, `policy allow`, deny 규칙의 `policy rm`, `settings set audit_enabled false`, `capture_enabled` 변경. stdin과 stderr가 모두 터미널이면 `/dev/tty`에서 `yes`를 받고, 아니면 `… needs confirmation from a person at a terminal (or the admin app)`으로 거부한다. pty를 흉내 내는 프로그램은 대신 답할 수 있으므로 **약한 경계**다([03 §3.12.1](../docs/design/03-security-whitepaper.md#3121-약화-작업은-사람이-확인한다-r-35)).
 
 ```sh
+keyharbor vault import-env openai ./.env                 # OPENAI_API_KEY 등, developer 도메인
+keyharbor run --env openai -- python agent.py            # 설정 파일에 평문 키를 두지 않는다
 keyharbor vault import-env myapp-dev ./.env
 keyharbor run --agent codex --env myapp-dev -- npm test
 printf 'DATABASE_URL={{secret:myapp-dev.DATABASE_URL}}\n' > .env.keyharbor   # 비밀이 없어 커밋해도 된다
@@ -133,7 +147,8 @@ keyharbor policy deny --agent codex --resource domain --target payment
 ### 3단계의 한계
 
 - **에이전트 이름은 기록용 표시다.** 같은 OS 사용자는 다른 이름으로 MCP 서버를 띄울 수 있다. 정책은 오작동 방지이지 보안 경계가 아니다.
-- **`keyharbor run`의 자식은 평문을 갖는다.** 값을 파일이나 네트워크로 보내는 것은 막지 못한다(T13). 그래서 origin 바인딩이 켜진 항목은 주입하지 않는다. 마스킹은 줄 단위라 여러 줄에 걸친 값은 놓칠 수 있다.
+- **`keyharbor run`의 자식은 평문을 갖는다.** 값을 파일이나 네트워크로 보내는 것은 막지 못한다(T13). 그래서 origin 바인딩이 켜진 항목과 `run_allowed`가 꺼진 항목은 주입하지 않는다. MCP 서버 설정은 명령을 `keyharbor run --env … -- <server>`로 감싸면 키를 설정 파일에 두지 않아도 된다.
+- 4–6자리 PIN처럼 짧은 값은 세션을 여러 번 열어 마스커 거부로 조금씩 추측할 수 있다(세션당 세 번). 탐색 이벤트가 입력 뒤에 오면 확인~입력 사이 탐색을 놓칠 수 있다. 값을 받은 입력란 밖으로 페이지가 옮긴 편집 값은 가리지 못한다. 마스킹은 줄 단위라 여러 줄에 걸친 값은 놓칠 수 있다.
 - 다른 사이트의 iframe(예: 실제 결제사 도메인의 카드 입력란)은 별도 CDP target이라 snapshot에 나오지 않고 입력할 수 없다.
 - 스크린샷의 픽셀, base64 같은 다른 인코딩, 여러 요소에 쪼개진 값은 가리지 못한다. 3자 이하 값(3자리 CVC, 월 등)은 가리지 않는다.
 - 마스킹 오토마톤이 가진 값 사본과 자식 프로세스 환경 변수 사본은 메모리에서 지워지지 않는다.

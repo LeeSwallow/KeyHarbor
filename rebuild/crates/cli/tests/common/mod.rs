@@ -1,6 +1,7 @@
 //! Shared by the real-Chrome tests.
 #![allow(dead_code)]
 
+pub mod harness;
 pub mod mcp;
 
 use std::{
@@ -124,7 +125,8 @@ fn html_escape(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// `/` is a login form posting to `/session`; `/embed?port=N` holds a top-level input and an
+/// `/` is a login form posting to `/session`; `/find` a search form sending `q` to
+/// `/missing` with GET; `/embed?port=N` holds a top-level input and an
 /// iframe showing `http://127.0.0.1:N/`. `/session` records the fields and shows `user` back
 /// as written (`#raw`) and in groups of four separated by spaces (`#grouped`), as payment
 /// pages show card numbers.
@@ -185,6 +187,10 @@ pub fn serve_pages() -> Site {
                  <label>Password <input id=pw name=pw type=password></label>\
                  <button id=go>Sign in</button></form>"
                     .to_owned()
+            } else if path == "/find" {
+                "<!doctype html><title>Find</title><form action=/missing method=get>\
+                 <label>Query <input id=q name=q></label><button id=find>Find</button></form>"
+                    .to_owned()
             } else if let Some(port) = path.strip_prefix("/embed?port=") {
                 format!(
                     "<!doctype html><title>Shop</title><label>Top <input id=top name=top></label>\
@@ -201,4 +207,137 @@ pub fn serve_pages() -> Site {
         }
     });
     Site { base, posted }
+}
+
+/// A tiny HTTP server answering every GET with `page(path)` as HTML. A path starting with
+/// `/slow` is answered after five seconds.
+pub fn serve_fn(page: impl Fn(&str) -> String + Send + Sync + 'static) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let page = std::sync::Arc::new(page);
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let page = page.clone();
+            thread::spawn(move || {
+                let mut reader = BufReader::new(&stream);
+                let mut request = String::new();
+                if reader.read_line(&mut request).is_err() {
+                    return;
+                }
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header == "\r\n" {
+                        break;
+                    }
+                }
+                let path = request.split(' ').nth(1).unwrap_or("/").to_owned();
+                if path.starts_with("/slow") {
+                    thread::sleep(std::time::Duration::from_secs(5));
+                }
+                let body = page(&path);
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            });
+        }
+    });
+    base
+}
+
+/// Arguments for `script(1)` running `argv` quietly with no transcript file. BSD script
+/// (macOS) takes the command as trailing arguments; util-linux script (CI) takes one shell
+/// string with `-c` and needs `-e` to pass the command's exit status on.
+fn script_args(argv: &[String]) -> Vec<String> {
+    if cfg!(target_os = "linux") {
+        let quoted: Vec<String> = argv
+            .iter()
+            .map(|a| format!("'{}'", a.replace('\'', r"'\''")))
+            .collect();
+        vec![
+            "-q".into(),
+            "-e".into(),
+            "-c".into(),
+            quoted.join(" "),
+            "/dev/null".into(),
+        ]
+    } else {
+        let mut out = vec!["-q".to_owned(), "/dev/null".to_owned()];
+        out.extend(argv.iter().cloned());
+        out
+    }
+}
+
+/// What `keyharbor` printed on a pseudo-terminal and whether it succeeded.
+pub struct Terminal {
+    pub success: bool,
+    pub output: String,
+}
+
+/// Runs `keyharbor --data-dir <data> <args>` on a pseudo-terminal (`script(1)`), as a person
+/// at a terminal would, typing `answer` when it asks for confirmation. Test runs have no
+/// terminal, so this is the only way they reach the confirmed path of a weakening operation;
+/// it also shows that the terminal check is a weak boundary (03 §3.12).
+pub fn on_terminal(
+    data: &std::path::Path,
+    keys: &std::path::Path,
+    args: &[&str],
+    answer: &str,
+) -> Terminal {
+    use std::{
+        io::Read,
+        process::{Command, Stdio},
+        sync::{Arc, Mutex},
+        time::{Duration, Instant},
+    };
+    let mut argv = vec![
+        env!("CARGO_BIN_EXE_keyharbor").to_owned(),
+        "--data-dir".to_owned(),
+        data.to_str().expect("UTF-8 test path").to_owned(),
+    ];
+    argv.extend(args.iter().map(|a| (*a).to_owned()));
+    let mut child = Command::new("script")
+        .args(script_args(&argv))
+        .env("KEYHARBOR_TEST_KEYSTORE_DIR", keys)
+        .env("KEYHARBOR_BROWSER_HEADLESS", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("script(1)");
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let mut stdout = child.stdout.take().unwrap();
+    let sink = output.clone();
+    let reader = thread::spawn(move || {
+        let mut buffer = [0u8; 1024];
+        while let Ok(n) = stdout.read(&mut buffer) {
+            if n == 0 {
+                break;
+            }
+            sink.lock().unwrap().extend_from_slice(&buffer[..n]);
+        }
+    });
+    let mut stdin = child.stdin.take().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let asked = String::from_utf8_lossy(&output.lock().unwrap()).contains("Type yes");
+        if asked {
+            stdin.write_all(format!("{answer}\n").as_bytes()).unwrap();
+            break;
+        }
+        if child.try_wait().unwrap().is_some() || Instant::now() > deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let status = child.wait().unwrap();
+    drop(stdin);
+    reader.join().unwrap();
+    let output = String::from_utf8_lossy(&output.lock().unwrap()).into_owned();
+    Terminal {
+        success: status.success(),
+        output,
+    }
 }

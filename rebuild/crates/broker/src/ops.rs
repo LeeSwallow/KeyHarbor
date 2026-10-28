@@ -6,8 +6,9 @@
 use crate::{browser::CdpBrowser, supervisor::Shared};
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
-    policy::{LOCAL_AGENT, parse_agent},
+    policy::{ANY, LOCAL_AGENT, parse_agent},
     ports::{BrowserPort, browser::WaitFor},
+    vault::ItemName,
 };
 use serde_json::{Value, json};
 
@@ -24,6 +25,11 @@ enum Command {
     NewTab(Option<String>),
     SwitchTab(String),
     Wait(WaitFor),
+    /// Fill a login item into the page's sign-in form (R-39).
+    Login {
+        item: ItemName,
+        submit: bool,
+    },
     Close,
     Status,
 }
@@ -46,10 +52,17 @@ fn parse(request: &Value) -> Result<(String, Command)> {
         .get("op")
         .and_then(Value::as_str)
         .context("request has no op")?;
+    // `*` names every agent in rules; as a requester it would match only `*` rules and dodge
+    // the rules written for a real name. An empty name is refused by `parse_agent`.
     let agent = match request.get("agent") {
         None => LOCAL_AGENT.to_owned(),
-        Some(agent) => parse_agent(agent.as_str().context("agent must be a string")?)
-            .map_err(|e| anyhow!("{e}"))?,
+        Some(agent) => {
+            let agent = agent.as_str().context("agent must be a string")?;
+            if agent == ANY {
+                bail!("agent name * is reserved for rules that apply to every agent");
+            }
+            parse_agent(agent).map_err(|e| anyhow!("{e}"))?
+        }
     };
     let command = match op {
         "navigate" => Command::Navigate(str_arg(request, "url")?),
@@ -79,6 +92,13 @@ fn parse(request: &Value) -> Result<(String, Command)> {
                     .context("wait needs ms or selector")?,
             ),
         }),
+        "login" => Command::Login {
+            item: ItemName::parse(&str_arg(request, "item")?).map_err(|e| anyhow!("{e}"))?,
+            submit: request
+                .get("submit")
+                .map_or(Some(true), Value::as_bool)
+                .context("submit must be true or false")?,
+        },
         "close" => Command::Close,
         "status" => Command::Status,
         _ => bail!("unknown operation"),
@@ -114,6 +134,7 @@ impl Ops {
             Command::NewTab(url) => browser.new_tab(url.as_deref()).await,
             Command::SwitchTab(id) => browser.switch_tab(&id).await,
             Command::Wait(until) => browser.wait(&until).await,
+            Command::Login { item, submit } => browser.login(&item, submit).await,
             Command::Close => {
                 let closed = browser.close();
                 shared.request_close();
@@ -134,4 +155,23 @@ fn status(shared: &Shared) -> Result<Value> {
         "state": row.as_ref().map(|r| r.state.as_str()),
         "generation": shared.generation.to_string(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn requests_name_a_real_agent() {
+        let (agent, _) = parse(&json!({"op": "snapshot"})).unwrap();
+        assert_eq!(agent, LOCAL_AGENT);
+        let (agent, _) = parse(&json!({"op": "snapshot", "agent": "claude"})).unwrap();
+        assert_eq!(agent, "claude");
+        for bad in [json!("*"), json!(""), json!("a b"), json!(3)] {
+            assert!(
+                parse(&json!({"op": "snapshot", "agent": bad})).is_err(),
+                "{bad}"
+            );
+        }
+    }
 }

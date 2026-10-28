@@ -11,7 +11,9 @@ use keyharbor_core::{
     LOCAL_AGENT, Vault,
     session::{self as lifecycle, OpenOptions},
 };
-use keyharbor_domain::{Generation, SessionId, SessionName, ports::SessionStore};
+use keyharbor_domain::{
+    Generation, SessionId, SessionName, ports::SessionStore, vault::Description,
+};
 use keyharbor_sqlite::{SqliteStore, SqliteStores};
 use keyharbor_vault::keystore::keystore_from_env;
 use std::{
@@ -22,7 +24,25 @@ use std::{
 #[derive(Subcommand)]
 pub enum SessionCmd {
     /// Create a stopped session
-    Create { name: String },
+    Create {
+        name: String,
+        /// What the session is for, shown to agents
+        #[arg(long, value_name = "TEXT")]
+        description: Option<String>,
+    },
+    /// Change a session's description
+    Edit {
+        id: String,
+        #[arg(
+            long,
+            value_name = "TEXT",
+            conflicts_with = "no_description",
+            required_unless_present = "no_description"
+        )]
+        description: Option<String>,
+        #[arg(long)]
+        no_description: bool,
+    },
     /// List sessions with their state
     List,
     /// Open the session's browser under a supervisor
@@ -71,6 +91,10 @@ pub enum SessionCmd {
     },
 }
 
+fn parse_description(text: &str) -> Result<Description> {
+    Description::parse(text).map_err(|e| anyhow::anyhow!("{e}"))
+}
+
 fn session_id(value: &str) -> Result<SessionId> {
     SessionId::parse(value).context("invalid session id")
 }
@@ -91,9 +115,11 @@ pub fn supervisor_adapters(root: &Path) -> Adapters {
 
 pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
     match command {
-        SessionCmd::Create { name } => {
+        SessionCmd::Create { name, description } => {
+            let description = description.as_deref().map(parse_description).transpose()?;
             let store = SqliteStore::open(root)?;
             let session = store.create(SessionName::parse(&name)?)?;
+            store.set_description(session.id, description.as_ref())?;
             println!(
                 "{}\t{}\t{}",
                 session.id,
@@ -110,8 +136,28 @@ pub fn run(root: &Path, command: SessionCmd) -> Result<()> {
                 } else {
                     ""
                 };
-                println!("{}\t{}\t{state}{cdp}", row.id, row.name.as_str());
+                let about = row
+                    .description
+                    .as_ref()
+                    .map(|d| format!("\t{}", d.as_str().replace(['\t', '\n'], " ")))
+                    .unwrap_or_default();
+                println!("{}\t{}\t{state}{cdp}{about}", row.id, row.name.as_str());
             }
+        }
+        SessionCmd::Edit {
+            id,
+            description,
+            no_description,
+        } => {
+            let id = session_id(&id)?;
+            let description = match (description, no_description) {
+                (_, true) | (None, _) => None,
+                (Some(text), false) => Some(parse_description(&text)?),
+            };
+            if !SqliteStore::open(root)?.set_description(id, description.as_ref())? {
+                bail!("session not found");
+            }
+            println!("updated\t{id}");
         }
         SessionCmd::Open {
             id,

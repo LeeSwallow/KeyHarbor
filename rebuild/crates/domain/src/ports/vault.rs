@@ -22,6 +22,14 @@ pub struct ItemRow {
     pub domain: u8,
     pub kind: String,
     pub origin_binding: bool,
+    /// `keyharbor run` may inject the values (signed in the metadata MAC).
+    pub run_allowed: bool,
+    /// The last day of use, `YYYY-MM-DD` (signed in the metadata MAC); `None` never expires.
+    pub expires_at: Option<String>,
+    /// What the item is for (plaintext, signed).
+    pub description: Option<String>,
+    /// Per-field overrides of the kind's field descriptions, `(field, text)` sorted by field.
+    pub field_descriptions: Vec<(String, String)>,
     pub status: String,
     pub source: String,
     pub meta_mac: Vec<u8>,
@@ -76,4 +84,13 @@ pub trait VaultStore: Send {
         fields: &[([u8; 16], FieldRow)],
     ) -> Result<()>;
     fn vault_version(&self) -> Result<i64>;
+    /// Adds a domain key and moves items into it — each item's metadata row and its
+    /// re-sealed fields replaced — atomically, from an expected version. Fails, changing
+    /// nothing, if the version moved or the domain already has a key.
+    fn add_domain(
+        &self,
+        expected_version: i64,
+        dk: &DomainKeyRow,
+        items: &[(ItemRow, Vec<FieldRow>)],
+    ) -> Result<()>;
 }

@@ -464,7 +464,8 @@ fn placeholders_through_mcp_with_chrome() {
     assert!(!error, "{text}");
     transcript.push_str(&text);
     let (_, snapshot) = mcp.call("browser_snapshot", json!({"session": id}));
-    assert!(snapshot.contains("{{secret:site.username}}"), "{snapshot}");
+    // The input that received the value stays redacted for the session (C1).
+    assert!(snapshot.contains("value=\\\"[redacted]\\\""), "{snapshot}");
     transcript.push_str(&snapshot);
     mcp.ok("browser_click", json!({"session": id, "selector": "#go"}));
     mcp.ok("browser_wait", json!({"session": id, "selector": "#done"}));

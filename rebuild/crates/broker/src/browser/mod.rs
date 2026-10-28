@@ -5,7 +5,9 @@
 
 mod frames;
 mod input;
+mod login;
 mod navigate;
+mod navigation;
 mod screenshot;
 mod snapshot;
 mod tabs;
@@ -17,12 +19,17 @@ use keyharbor_domain::{
     SessionId,
     ports::{
         BrowserPort, FrameInspector, PageInput,
-        browser::{Focus, Page, WaitFor},
+        browser::{Element, Focus, LoginFields, Page, WaitFor},
     },
     vault::Origin,
 };
 use serde_json::{Value, json};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeSet, HashMap},
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 
 pub(crate) const LOAD_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const WAIT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -37,6 +44,10 @@ pub(crate) struct CdpBrowser {
     /// The data directory and session, for screenshot files.
     data: PathBuf,
     session: SessionId,
+    /// Navigation state per attached page, kept current from CDP events (I4).
+    navigations: navigation::Navigations,
+    /// When the last click or key press was sent.
+    last_input: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 struct Tab {
@@ -46,13 +57,18 @@ struct Tab {
 }
 
 impl CdpBrowser {
+    /// Must be called inside a Tokio runtime (it starts the navigation tracker).
     pub fn new(cdp: Arc<Cdp>, data: PathBuf, session: SessionId) -> Self {
+        let navigations = navigation::Navigations::default();
+        tokio::spawn(navigation::track(cdp.events(), navigations.clone()));
         Self {
             cdp,
             active: None,
             attached: HashMap::new(),
             data,
             session,
+            navigations,
+            last_input: std::sync::Mutex::new(None),
         }
     }
 
@@ -136,7 +152,7 @@ impl BrowserPort for CdpBrowser {
         self.navigate_to(url).await
     }
     async fn snapshot(&mut self) -> Result<Value> {
-        self.take_snapshot().await
+        self.take_snapshot(&BTreeSet::new()).await
     }
     async fn screenshot(&mut self) -> Result<Value> {
         self.save_screenshot().await
@@ -190,6 +206,15 @@ impl PageInput for CdpBrowser {
     async fn insert_text(&mut self, page: &Page, text: &str) -> Result<()> {
         self.insert(&page.0, text).await
     }
+    async fn redacted_snapshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
+        self.take_snapshot(hidden).await
+    }
+    async fn login_fields(&mut self, page: &Page) -> Result<LoginFields> {
+        self.find_login_fields(&page.0).await
+    }
+    async fn location(&mut self, page: &Page) -> Result<String> {
+        Ok(self.page_info(&page.0).await?.0)
+    }
 }
 
 impl FrameInspector for CdpBrowser {
@@ -198,5 +223,14 @@ impl FrameInspector for CdpBrowser {
     }
     async fn frame_origin(&mut self, page: &Page, frame: &str) -> Option<Origin> {
         self.origin_of(&page.0, frame).await
+    }
+    async fn element(&mut self, page: &Page, node: u64) -> Result<Element> {
+        self.describe_element(&page.0, node).await
+    }
+    async fn settle(&mut self, page: &Page, frame: Option<&str>) -> Result<bool> {
+        self.settle_frames(&page.0, frame).await
+    }
+    async fn navigation_epoch(&mut self, page: &Page) -> u64 {
+        self.epoch(&page.0)
     }
 }

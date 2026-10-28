@@ -4,10 +4,15 @@
 
 use super::{
     mappers::{
-        domain_key_model, domain_key_row, field_model, field_row, item_model, item_row, vault_row,
+        ItemChildren, domain_key_model, domain_key_row, field_model, field_row, item_model,
+        item_row, vault_row,
     },
-    models::{DomainKeyModel, FieldModel, ItemModel, NewOrigin, NewVault, VaultModel},
-    schema::{domain_keys, item_origins, vault, vault_fields, vault_items},
+    models::{
+        DomainKeyModel, FieldModel, ItemModel, NewFieldDescription, NewOrigin, NewVault, VaultModel,
+    },
+    schema::{
+        domain_keys, item_field_descriptions, item_origins, vault, vault_fields, vault_items,
+    },
 };
 use crate::SqliteStore;
 use anyhow::{Context, Result, bail};
@@ -67,6 +72,15 @@ fn write_children(conn: &mut SqliteConnection, item: &ItemRow, fields: &[FieldRo
             })
             .execute(conn)?;
     }
+    for (field, description) in &item.field_descriptions {
+        diesel::insert_into(item_field_descriptions::table)
+            .values(NewFieldDescription {
+                item_id: &item.id,
+                field,
+                description,
+            })
+            .execute(conn)?;
+    }
     Ok(())
 }
 
@@ -78,12 +92,26 @@ fn origins_of(conn: &mut SqliteConnection, id: &[u8]) -> Result<Vec<String>> {
         .load(conn)?)
 }
 
-fn with_origins(conn: &mut SqliteConnection, models: Vec<ItemModel>) -> Result<Vec<ItemRow>> {
+fn children_of(conn: &mut SqliteConnection, id: &[u8]) -> Result<ItemChildren> {
+    Ok(ItemChildren {
+        origins: origins_of(conn, id)?,
+        field_descriptions: item_field_descriptions::table
+            .filter(item_field_descriptions::item_id.eq(id))
+            .select((
+                item_field_descriptions::field,
+                item_field_descriptions::description,
+            ))
+            .order(item_field_descriptions::field)
+            .load(conn)?,
+    })
+}
+
+fn with_children(conn: &mut SqliteConnection, models: Vec<ItemModel>) -> Result<Vec<ItemRow>> {
     models
         .into_iter()
         .map(|model| {
-            let origins = origins_of(conn, &model.id)?;
-            item_row(model, origins)
+            let children = children_of(conn, &model.id)?;
+            item_row(model, children)
         })
         .collect()
 }
@@ -177,6 +205,11 @@ impl VaultStore for SqliteStore {
                 .execute(conn)?;
             diesel::delete(item_origins::table.filter(item_origins::item_id.eq(&item.id[..])))
                 .execute(conn)?;
+            diesel::delete(
+                item_field_descriptions::table
+                    .filter(item_field_descriptions::item_id.eq(&item.id[..])),
+            )
+            .execute(conn)?;
             write_children(conn, item, fields)?;
             bump(conn)
         })
@@ -212,8 +245,8 @@ impl VaultStore for SqliteStore {
                 .into_iter()
                 .map(field_row)
                 .collect();
-            let origins = origins_of(conn, &model.id)?;
-            Ok(Some((item_row(model, origins)?, fields)))
+            let children = children_of(conn, &model.id)?;
+            Ok(Some((item_row(model, children)?, fields)))
         })
     }
 
@@ -223,7 +256,7 @@ impl VaultStore for SqliteStore {
                 .select(ItemModel::as_select())
                 .order(vault_items::name)
                 .load(conn)?;
-            with_origins(conn, models)
+            with_children(conn, models)
         })
     }
 
@@ -274,6 +307,37 @@ impl VaultStore for SqliteStore {
 
     fn vault_version(&self) -> Result<i64> {
         self.read(|conn| Ok(vault::table.select(vault::version).first(conn)?))
+    }
+
+    fn add_domain(
+        &self,
+        expected_version: i64,
+        dk: &DomainKeyRow,
+        items: &[(ItemRow, Vec<FieldRow>)],
+    ) -> Result<()> {
+        self.write(|conn| {
+            bump_from(conn, expected_version)?;
+            diesel::insert_into(domain_keys::table)
+                .values(domain_key_model(dk))
+                .execute(conn)
+                .context("the domain already has a key")?;
+            for (item, fields) in items {
+                let updated = diesel::update(vault_items::table.find(&item.id[..]))
+                    .set(item_model(item))
+                    .execute(conn)?;
+                if updated != 1 {
+                    bail!("item not found while moving it to a new domain");
+                }
+                diesel::delete(vault_fields::table.filter(vault_fields::item_id.eq(&item.id[..])))
+                    .execute(conn)?;
+                for field in fields {
+                    diesel::insert_into(vault_fields::table)
+                        .values(field_model(&item.id, field))
+                        .execute(conn)?;
+                }
+            }
+            Ok(())
+        })
     }
 }
 
@@ -361,6 +425,10 @@ mod tests {
             domain: 1,
             kind: "login".into(),
             origin_binding: true,
+            run_allowed: false,
+            expires_at: None,
+            description: None,
+            field_descriptions: vec![],
             status: "active".into(),
             source: "user".into(),
             meta_mac: vec![id; 32],
@@ -568,5 +636,43 @@ mod tests {
             field: "username".into(),
             sealed: vec![4, 5]
         }));
+    }
+
+    #[test]
+    fn add_domain_moves_items_with_their_key_atomically() {
+        let (_t, s) = store();
+        with_vault(&s);
+        s.item_insert(&G, &item("api", 1), &fields()).unwrap();
+        let version = s.vault_version().unwrap();
+        let dk = DomainKeyRow {
+            domain: 4,
+            dk_id: [4; 16],
+            wrapped: vec![4; 8],
+        };
+        let mut moved = item("api", 1);
+        moved.domain = 4;
+        moved.meta_mac = vec![7; 32];
+        let sealed = vec![FieldRow {
+            field: "value".into(),
+            sealed: vec![9, 9],
+        }];
+        // A stale version changes nothing.
+        assert!(
+            s.add_domain(version - 1, &dk, &[(moved.clone(), sealed.clone())])
+                .is_err()
+        );
+        assert_eq!(s.domain_keys().unwrap().len(), 3);
+        s.add_domain(version, &dk, &[(moved.clone(), sealed.clone())])
+            .unwrap();
+        assert_eq!(s.vault_version().unwrap(), version + 1);
+        assert_eq!(s.domain_keys().unwrap()[3], dk);
+        let (row, f) = s.item_get("api").unwrap().unwrap();
+        assert_eq!((row.domain, row.meta_mac.clone()), (4, vec![7; 32]));
+        assert_eq!(row.origins, vec!["https://github.com"], "origins are kept");
+        assert_eq!(f, sealed);
+        // The domain gets one key only.
+        let version = s.vault_version().unwrap();
+        assert!(s.add_domain(version, &dk, &[]).is_err());
+        assert_eq!(s.vault_version().unwrap(), version);
     }
 }

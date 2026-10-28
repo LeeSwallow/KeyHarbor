@@ -18,3 +18,4 @@
 | [0012](0012-crypto-scheme.md) | 암호화 방식은 선행 사례의 합의를 따르고, 표준 형식이 있으면 재사용한다 | Proposed |
 | [0013](0013-registration-draft-model.md) | 미등록 정보는 네 경로로 받고 draft로 먼저 저장한다 | Proposed |
 | [0014](0014-hexagonal-guard-layer.md) | 헥사고날 구조로 나누고, 평문은 보안 계층(guard) 하나만 다룬다 | Accepted |
+| [0016](0016-crypto-crate.md) | 모든 암호 원시 연산은 `keyharbor-crypto` 한 곳에 둔다 | Accepted |

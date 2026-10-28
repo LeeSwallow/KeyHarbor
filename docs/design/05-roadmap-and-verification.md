@@ -95,6 +95,21 @@ flowchart LR
 - `keyharbor run`은 origin 바인딩이 켜진 항목을 주입하지 않는다.
 - MCP의 세션 도구는 `OpenSession`·`CreateSession`·`RawCdp`를, 감독자는 `UseItem`을 판정한다. 에이전트 이름은 MCP가 제어 요청에 붙이고, 없으면 `cli`다.
 
+### 3단계 보강 — 독립 보안 검토 대응 ✅ 구현됨 (2026-10-29, 브랜치 `feat/phase3-hardening`)
+
+계획: [`docs/superpowers/plans/2026-10-29-phase3-hardening.md`](../superpowers/plans/2026-10-29-phase3-hardening.md). 테스트: `tests/hardening_chrome.rs`(실제 Chrome: 편집 후 재조회·password 칸, shadow root·`<object>` 우회, 마스커 추측·JSON 이스케이프, selector 오라클, 탐색 TOCTOU, API 키 origin, `browser_login`), `tests/weaken_cli.rs`(약화 작업 거부·확인, `run_allowed`, developer 도메인), `tests/expiry_cli.rs`, `tests/description_cli.rs`, guard 단위 테스트(검사 체인·잠금·탐색·거부 상한·로그인), crypto KAT.
+
+| 항목 | 완료 조건 |
+|---|---|
+| C1 편집 후 재조회 | 치환받은 요소는 세션 동안 `[redacted]`, password는 password 칸에만 ✅ |
+| C2 shadow DOM·object | 포커스를 shadow root·frame host 끝까지 추적, 입력 뒤 포커스 변경 시 세션 잠금 ✅ |
+| C3 셸 에이전트 (R-35) | `run_allowed`, 약화 작업 터미널 확인 ✅ (약한 경계, 03 §3.1) |
+| I1–I5 | 값이 든 요청 거부·잠금, JSON 이스케이프·form-urlencoded 변형, selector 문법, 탐색 정착 ✅ |
+| Minor | `*` 에이전트 거부, `RLIMIT_CORE=0`, 거부 기록 상한 ✅ |
+| R-36–R-40 | 안전한 기본값, 만료, 설명, `browser_login`, developer 도메인 ✅ |
+| 구조 | `keyharbor-crypto`(ADR-0016), 검사 체인·`DenialReason`·마스킹 변형 레지스트리·`Confirm` 포트 ✅ |
+| 남은 것 | 저엔트로피 값의 추측(세션당 세 번), 늦게 오는 탐색 이벤트, 페이지가 옮긴 편집 값, 스크린샷 — 03 §3.11 |
+
 ### 4단계 — 사이트 로그인 상태
 
 | 범위 | 완료 조건 |

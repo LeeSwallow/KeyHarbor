@@ -12,7 +12,7 @@ use anyhow::{Context, Result, bail};
 use keyharbor_domain::ports::{DomainKeyRow, FieldRow};
 use keyharbor_domain::vault::{Domain, FieldName};
 use keyharbor_vault::{
-    keys::{KeyId, KeySet, SecretKey},
+    keys::{KeyId, KeySet},
     record::{FieldAd, open_field, seal_field, wrap_domain_key},
 };
 use std::fs::{File, TryLockError};
@@ -79,7 +79,7 @@ impl Vault {
         }
         let main = account(&self.vault_id);
         let next = next_account(&main);
-        let new_root = SecretKey::generate();
+        let new_root = keyharbor_crypto::random::key();
         // Step 1: park the new root key next to the current one.
         self.keystore.create(&next, &new_root).map_err(vault_err)?;
         if stop_after == 1 {
@@ -150,7 +150,7 @@ impl Vault {
             bail!("vault changed (keys were rotated); reopen it and retry");
         }
         let old_dk = self.domain_keys[&domain].1.clone();
-        let (new_id, new_dk) = (KeyId::new(), SecretKey::generate());
+        let (new_id, new_dk) = (KeyId::new(), keyharbor_crypto::random::key());
         let mut fields = Vec::new();
         for row in self.store.item_list()? {
             let (kind, _, _) = self.verified(&row)?;
@@ -216,6 +216,7 @@ mod tests {
             )],
             origins: vec![],
             origin_binding: None,
+            details: Default::default(),
             status: ItemStatus::Active,
             source: ItemSource::User,
         }
@@ -297,7 +298,7 @@ mod tests {
         v.add(login("github", "pw")).unwrap();
         let parked = format!("{}#next", v.vault_id().to_uuid_string());
         FileKeyStore::new(e.keys.clone())
-            .create(&parked, &keyharbor_vault::keys::SecretKey::generate())
+            .create(&parked, &keyharbor_crypto::random::key())
             .unwrap();
         let lock = std::fs::File::create(e.data.join("vault.lock")).unwrap();
         lock.lock().unwrap();

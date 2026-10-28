@@ -1,11 +1,33 @@
 //! Origin binding (03 §3.8, J-12, J-34): where an item's values may go.
 
-use keyharbor_domain::vault::Origin;
+use keyharbor_domain::{
+    denial::DenialReason,
+    vault::{Domain, Origin},
+};
 
 /// An origin-bound item may be typed only into a frame whose origin is exactly one of the
 /// item's origins (no subdomain wildcards). Unbound items go anywhere.
 pub fn allows_frame(origin_binding: bool, origins: &[Origin], frame: Option<&Origin>) -> bool {
     !origin_binding || frame.is_some_and(|o| origins.contains(o))
+}
+
+/// Where a browser may receive an item's values, or the reason it may not. Developer items
+/// (API keys, environment variables) go only into frames of their listed origins, and with
+/// no origin listed nowhere (R-36): a prompt-injected agent must not be able to type a key
+/// into an input on the attacker's page. Other items follow their origin binding.
+pub fn allows_browser(
+    domain: Domain,
+    origin_binding: bool,
+    origins: &[Origin],
+    frame: Option<&Origin>,
+) -> Result<(), DenialReason> {
+    let bound = origin_binding || domain == Domain::Developer;
+    if domain == Domain::Developer && origins.is_empty() {
+        return Err(DenialReason::NoOrigin);
+    }
+    allows_frame(bound, origins, frame)
+        .then_some(())
+        .ok_or(DenialReason::Origin)
 }
 
 /// `keyharbor run` hands values to a process, which can send them anywhere; an origin-bound
@@ -27,6 +49,24 @@ mod tests {
         assert!(!allows_frame(true, &origins, None));
         assert!(allows_frame(false, &origins, None));
         assert!(allows_process(false));
+        let d = Domain::Developer;
+        assert_eq!(
+            allows_browser(d, false, &[], Some(&github)),
+            Err(DenialReason::NoOrigin)
+        );
+        assert_eq!(
+            allows_browser(d, false, &origins, Some(&gist)),
+            Err(DenialReason::Origin)
+        );
+        assert_eq!(allows_browser(d, false, &origins, Some(&github)), Ok(()));
+        assert_eq!(
+            allows_browser(Domain::Personal, false, &[], Some(&gist)),
+            Ok(())
+        );
+        assert_eq!(
+            allows_browser(Domain::Payment, true, &origins, Some(&gist)),
+            Err(DenialReason::Origin)
+        );
         assert!(!allows_process(true));
     }
 }

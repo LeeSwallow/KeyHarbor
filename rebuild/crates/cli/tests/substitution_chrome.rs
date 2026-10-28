@@ -4,160 +4,12 @@
 
 mod common;
 
-use common::{chrome, serve_pages};
-use keyharbor_broker::client;
-use keyharbor_domain::SessionId;
-use serde_json::{Value, json};
-use std::{
-    cell::RefCell,
-    io::Write,
-    path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+use common::{
+    chrome,
+    harness::{Harness, reference},
+    serve_pages,
 };
-
-pub struct Harness {
-    pub tmp: tempfile::TempDir,
-    pub data: PathBuf,
-    pub id: String,
-    /// Everything the caller saw: CLI output, op results and errors.
-    pub transcript: RefCell<String>,
-}
-impl Harness {
-    fn new() -> Self {
-        let tmp = common::short_tempdir();
-        let data = tmp.path().join("data");
-        let h = Self {
-            tmp,
-            data,
-            id: String::new(),
-            transcript: RefCell::default(),
-        };
-        h.ok(&["vault", "init"], None);
-        h
-    }
-    pub fn synth(&self, tag: &str) -> String {
-        format!(
-            "KH-SYNTH-{}-{tag}",
-            self.tmp.path().file_name().unwrap().to_string_lossy()
-        )
-    }
-    pub fn run(&self, args: &[&str], stdin: Option<&str>) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
-            .arg("--data-dir")
-            .arg(&self.data)
-            .args(args)
-            .env("KEYHARBOR_TEST_KEYSTORE_DIR", self.tmp.path().join("keys"))
-            .env("KEYHARBOR_BROWSER_HEADLESS", "1")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        if let Some(input) = stdin {
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(input.as_bytes())
-                .unwrap();
-        }
-        drop(child.stdin.take());
-        let out = child.wait_with_output().unwrap();
-        let mut t = self.transcript.borrow_mut();
-        t.push_str(&String::from_utf8_lossy(&out.stdout));
-        t.push_str(&String::from_utf8_lossy(&out.stderr));
-        out
-    }
-    pub fn ok(&self, args: &[&str], stdin: Option<&str>) -> String {
-        let out = self.run(args, stdin);
-        assert!(
-            out.status.success(),
-            "{args:?}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        String::from_utf8(out.stdout).unwrap()
-    }
-    pub fn add(&self, name: &str, kind: &str, origins: &[&str], fields: Value) {
-        let mut args = vec!["vault", "add", name, "--kind", kind, "--stdin"];
-        for origin in origins {
-            args.push("--origin");
-            args.push(origin);
-        }
-        self.ok(&args, Some(&fields.to_string()));
-    }
-    pub fn open(&mut self, browser: &Path) {
-        self.id = self
-            .ok(&["create", "chrome"], None)
-            .split('\t')
-            .next()
-            .unwrap()
-            .to_owned();
-        let id = self.id.clone();
-        self.ok(&["open", &id, "--browser", browser.to_str().unwrap()], None);
-    }
-    pub fn call(&self, request: Value) -> anyhow::Result<Value> {
-        let result = client::call(&self.data, &SessionId::parse(&self.id).unwrap(), &request);
-        let mut t = self.transcript.borrow_mut();
-        match &result {
-            Ok(value) => t.push_str(&value.to_string()),
-            Err(error) => t.push_str(&format!("{error:#}")),
-        }
-        t.push('\n');
-        result
-    }
-    pub fn ok_call(&self, request: Value) -> Value {
-        let op = request["op"].clone();
-        self.call(request).unwrap_or_else(|e| panic!("{op}: {e:#}"))
-    }
-    pub fn denied(&self, request: Value) -> String {
-        let error = self.call(request).expect_err("should be denied");
-        format!("{error:#}")
-    }
-    pub fn fill(&self, selector: &str, text: &str) -> anyhow::Result<Value> {
-        self.call(json!({"op": "fill", "target": {"selector": selector}, "text": text}))
-    }
-    pub fn snapshot(&self) -> String {
-        self.ok_call(json!({"op": "snapshot"}))["text"]
-            .as_str()
-            .unwrap()
-            .to_owned()
-    }
-    pub fn assert_absent(&self, secrets: &[&str]) {
-        let t = self.transcript.borrow();
-        for secret in secrets {
-            assert!(!t.contains(secret), "plaintext reached the caller:\n{t}");
-        }
-        for file in ["keyharbor.sqlite3", "keyharbor.sqlite3-wal"] {
-            if let Ok(bytes) = std::fs::read(self.data.join(file)) {
-                for secret in secrets {
-                    assert!(
-                        !bytes.windows(secret.len()).any(|w| w == secret.as_bytes()),
-                        "{file} holds plaintext"
-                    );
-                }
-            }
-        }
-    }
-}
-impl Drop for Harness {
-    fn drop(&mut self) {
-        if !self.id.is_empty() {
-            let _ = self.run(&["stop", &self.id.clone()], None);
-        }
-    }
-}
-
-/// The ref of the first snapshot line containing `needle`, after the line containing `after`.
-pub fn reference(snapshot: &str, after: &str, needle: &str) -> u64 {
-    let line = snapshot
-        .lines()
-        .skip_while(|line| !line.contains(after))
-        .find(|line| line.contains(needle))
-        .unwrap_or_else(|| panic!("{needle} not in snapshot:\n{snapshot}"));
-    let start = line.find('[').unwrap() + 1;
-    let end = line.find(']').unwrap();
-    line[start..end].parse().unwrap()
-}
+use serde_json::{Value, json};
 
 #[test]
 fn placeholders_fill_only_allowed_items_into_bound_frames() {
@@ -185,7 +37,13 @@ fn placeholders_fill_only_allowed_items_into_bound_frames() {
         &[&other.base],
         json!({"username": inner_user}),
     );
-    h.add("free", "secret", &[], json!({"value": note}));
+    // An API key goes into a browser only at its listed origins (R-36).
+    h.add(
+        "free",
+        "secret",
+        &[&shop.base, &other.base],
+        json!({"value": note}),
+    );
     h.open(&browser);
 
     // The bound origin matches: both fields are typed, the response holds no value.
@@ -263,19 +121,16 @@ fn placeholders_fill_only_allowed_items_into_bound_frames() {
             .to_string(),
         "denied: site (policy)"
     );
-    h.ok(
-        &[
-            "policy",
-            "allow",
-            "--agent",
-            "cli",
-            "--resource",
-            "item",
-            "--target",
-            "site",
-        ],
-        None,
-    );
+    h.confirmed(&[
+        "policy",
+        "allow",
+        "--agent",
+        "cli",
+        "--resource",
+        "item",
+        "--target",
+        "site",
+    ]);
     // An unbound item may go anywhere; `type` checks the focused element's frame.
     h.ok_call(json!({"op": "click", "target": {"selector": "#pw"}}));
     h.ok_call(json!({"op": "type", "text": "{{secret:site.password}}"}));
@@ -352,7 +207,7 @@ fn values_shown_back_by_the_page_are_masked() {
         &[&shop.base],
         json!({"number": number, "cvc": "123", "exp_month": "12"}),
     );
-    h.add("api", "secret", &[], json!({"value": spaced}));
+    h.add("api", "secret", &[&shop.base], json!({"value": spaced}));
     h.add("other", "secret", &[], json!({"value": token}));
     h.open(&browser);
 
@@ -361,10 +216,8 @@ fn values_shown_back_by_the_page_are_masked() {
     h.fill("#user", "{{secret:visa.number}}").unwrap();
     h.fill("#pw", "{{secret:api.value}}").unwrap();
     let before = h.snapshot();
-    assert!(
-        before.contains("value=\"{{secret:visa.number}}\""),
-        "{before}"
-    );
+    // The input that received the value stays redacted for the session (C1).
+    assert!(before.contains("value=\"[redacted]\""), "{before}");
     let password = before
         .lines()
         .find(|l| l.contains("textbox \"Password\""))
@@ -386,7 +239,8 @@ fn values_shown_back_by_the_page_are_masked() {
     );
     assert!(!after.contains(&number[..8]), "{after}");
 
-    // Values in URLs, raw or percent-encoded, are masked in every result.
+    // A request that carries a value is refused (I1), so values reach URLs only through
+    // the page: a form sends them form-urlencoded, and every result masks that form (I5).
     let encoded: String = spaced
         .bytes()
         .map(|b| {
@@ -397,36 +251,36 @@ fn values_shown_back_by_the_page_are_masked() {
             }
         })
         .collect();
-    let page = h.ok_call(json!({
+    let error = h.denied(json!({
         "op": "navigate",
         "url": format!("{}/missing?a={encoded}&b={token}", shop.base),
     }));
-    assert_eq!(
-        page["url"],
-        format!(
-            "{}/missing?a={{{{secret:api.value}}}}&b={{{{secret:other.value}}}}",
-            shop.base
-        )
+    assert!(
+        error.starts_with("denied: the request contains a vault value"),
+        "{error}"
     );
+    h.ok_call(json!({"op": "navigate", "url": format!("{}/find", shop.base)}));
+    h.fill("#q", "{{secret:api.value}}").unwrap();
+    h.ok_call(json!({"op": "click", "target": {"selector": "#find"}}));
+    h.ok_call(json!({"op": "wait", "ms": 500}));
     let tabs = h.ok_call(json!({"op": "tabs"}));
     assert!(
-        tabs.to_string().contains("{{secret:other.value}}"),
+        tabs.to_string().contains("/missing?q={{secret:api.value}}"),
         "{tabs}"
     );
 
     // A vault change is picked up by the next response without restarting the session.
     let late = h.synth("late");
-    h.add("late", "secret", &[], json!({"value": late}));
-    let page = h.ok_call(json!({
-        "op": "navigate",
-        "url": format!("{}/missing?c={late}", shop.base),
-    }));
+    h.add("late", "secret", &[&shop.base], json!({"value": late}));
+    h.ok_call(json!({"op": "navigate", "url": format!("{}/find", shop.base)}));
+    h.fill("#q", "{{secret:late.value}}").unwrap();
+    h.ok_call(json!({"op": "click", "target": {"selector": "#find"}}));
+    h.ok_call(json!({"op": "wait", "ms": 500}));
+    let tabs = h.ok_call(json!({"op": "tabs"}));
     assert!(
-        page["url"]
-            .as_str()
-            .unwrap()
-            .ends_with("c={{secret:late.value}}"),
-        "{page}"
+        tabs.to_string()
+            .contains("/missing?q={{secret:late.value}}"),
+        "{tabs}"
     );
     h.assert_absent(&[&number, &spaced, &encoded, &token, &late]);
 }

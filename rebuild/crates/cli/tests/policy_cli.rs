@@ -1,5 +1,7 @@
 //! `keyharbor policy …`.
 
+mod common;
+
 use std::process::{Command, Output, Stdio};
 
 fn run(data: &std::path::Path, args: &[&str]) -> Output {
@@ -19,6 +21,11 @@ fn ok(data: &std::path::Path, args: &[&str]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8(out.stdout).unwrap()
+}
+/// A weakening change, confirmed by a person at a terminal.
+fn confirmed(data: &std::path::Path, args: &[&str]) {
+    let out = common::on_terminal(data, &data.join("keys"), args, "yes");
+    assert!(out.success, "{args:?}: {}", out.output);
 }
 
 #[test]
@@ -42,7 +49,7 @@ fn policy_rules_can_be_added_listed_changed_and_removed() {
         ),
         "deny\tcodex\tdomain\tpayment\n"
     );
-    ok(
+    confirmed(
         &data,
         &[
             "policy",
@@ -63,7 +70,7 @@ fn policy_rules_can_be_added_listed_changed_and_removed() {
         ok(&data, &["policy", "list"]),
         "*\titem\tgithub\tallow\n*\traw_cdp\t*\tdeny\ncodex\tdomain\tpayment\tdeny\n"
     );
-    ok(
+    confirmed(
         &data,
         &[
             "policy",

@@ -6,8 +6,8 @@ license.workspace = true
 publish = false
 
 [dependencies]
-age.workspace = true
 anyhow.workspace = true
+keyharbor-crypto = { path = "../crypto" }
 keyharbor-domain = { path = "../domain" }
 keyharbor-vault = { path = "../vault" }
 serde.workspace = true

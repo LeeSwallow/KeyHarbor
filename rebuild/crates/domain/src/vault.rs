@@ -11,17 +11,27 @@ impl Error for InvalidValue {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum Domain {
+    /// Site sign-ins (`login`): typed only into the sites they belong to.
     Credentials,
     Payment,
     Personal,
+    /// API keys and environment variables (`secret`, `env`): injected into processes and
+    /// tools (R-40).
+    Developer,
 }
 impl Domain {
-    pub const ALL: [Domain; 3] = [Self::Credentials, Self::Payment, Self::Personal];
+    pub const ALL: [Domain; 4] = [
+        Self::Credentials,
+        Self::Payment,
+        Self::Personal,
+        Self::Developer,
+    ];
     pub fn as_byte(self) -> u8 {
         match self {
             Self::Credentials => 1,
             Self::Payment => 2,
             Self::Personal => 3,
+            Self::Developer => 4,
         }
     }
     pub fn from_byte(value: u8) -> Option<Self> {
@@ -34,6 +44,7 @@ impl Domain {
             Self::Credentials => "credentials",
             Self::Payment => "payment",
             Self::Personal => "personal",
+            Self::Developer => "developer",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {
@@ -88,6 +99,10 @@ impl ItemKind {
     pub fn default_origin_binding(self) -> bool {
         self.spec().default_origin_binding
     }
+    /// Whether `keyharbor run` may inject a new item of this kind (R-35, R-36).
+    pub fn default_run_allowed(self) -> bool {
+        self.spec().default_run_allowed
+    }
     /// How `field` is treated in an item of this kind: its declared spec, the free-field spec
     /// for kinds with free-form names, or `None` if the kind has no such field.
     pub fn field(self, field: &str) -> Option<&'static FieldSpec> {
@@ -96,6 +111,14 @@ impl ItemKind {
             .iter()
             .find(|f| f.name == field)
             .or(spec.free_fields.then_some(&FREE_FIELD))
+    }
+    /// A field name for this kind: free-form kinds take environment variable names.
+    pub fn field_name(self, field: &str) -> Result<FieldName, InvalidValue> {
+        if self.spec().free_fields {
+            FieldName::parse_env(field)
+        } else {
+            FieldName::parse(field)
+        }
     }
     /// Whether `field` may hold a secret, so it must never arrive on the command line. A name
     /// this kind does not declare counts as secret if any kind declares it secret.
@@ -110,6 +133,15 @@ impl ItemKind {
     }
 }
 
+/// Which elements a field's value may be typed into (03 §3.8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputKind {
+    /// Any element that takes text.
+    Text,
+    /// Only password inputs (`type=password`, or `autocomplete` current-/new-password).
+    Password,
+}
+
 /// One field of an item kind.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FieldSpec {
@@ -119,6 +151,10 @@ pub struct FieldSpec {
     pub secret: bool,
     /// Replaced by its placeholder in responses (03 §3.7). Values under 4 characters never are.
     pub maskable: bool,
+    /// Where a browser may receive the value.
+    pub input: InputKind,
+    /// What the field holds, for agents choosing a placeholder; an item may override it.
+    pub description: &'static str,
 }
 
 /// One item kind: its stored name, domain, fields and defaults (02 §2.7.2). Adding a kind is
@@ -132,6 +168,9 @@ pub struct KindSpec {
     /// Field names are free-form (environment variable names), each treated as [`FREE_FIELD`].
     pub free_fields: bool,
     pub default_origin_binding: bool,
+    /// `keyharbor run` may inject the values unless the user turns it off: true for API keys
+    /// and environment items, false for anything a site signs in or pays with (R-36).
+    pub default_run_allowed: bool,
 }
 
 /// How a free-form field (an `env` variable) is treated: secret and masked.
@@ -139,20 +178,29 @@ pub const FREE_FIELD: FieldSpec = FieldSpec {
     name: "*",
     secret: true,
     maskable: true,
+    input: InputKind::Text,
+    description: "Environment variable",
 };
 
-const fn plain(name: &'static str) -> FieldSpec {
+const fn plain(name: &'static str, description: &'static str) -> FieldSpec {
     FieldSpec {
         name,
         secret: false,
         maskable: true,
+        input: InputKind::Text,
+        description,
     }
 }
-const fn secret(name: &'static str) -> FieldSpec {
+const fn secret(name: &'static str, description: &'static str) -> FieldSpec {
     FieldSpec {
-        name,
         secret: true,
-        maskable: true,
+        ..plain(name, description)
+    }
+}
+const fn password(name: &'static str, description: &'static str) -> FieldSpec {
+    FieldSpec {
+        input: InputKind::Password,
+        ..secret(name, description)
     }
 }
 
@@ -164,79 +212,88 @@ pub static KINDS: &[KindSpec] = &[
         name: "login",
         domain: Domain::Credentials,
         fields: &[
-            plain("username"),
-            secret("password"),
-            secret("totp_seed"),
-            secret("note"),
+            plain("username", "Sign-in name or email"),
+            password("password", "Sign-in password"),
+            secret("totp_seed", "One-time code seed (stored only)"),
+            secret("note", "Free-form note"),
         ],
         free_fields: false,
         default_origin_binding: true,
+        default_run_allowed: false,
     },
     KindSpec {
         kind: ItemKind::Secret,
         name: "secret",
-        domain: Domain::Credentials,
-        fields: &[secret("value"), secret("note")],
+        domain: Domain::Developer,
+        fields: &[
+            secret("value", "The secret value, e.g. an API key or token"),
+            secret("note", "Free-form note"),
+        ],
         free_fields: false,
         default_origin_binding: false,
+        default_run_allowed: true,
     },
     KindSpec {
         kind: ItemKind::Env,
         name: "env",
-        domain: Domain::Credentials,
+        domain: Domain::Developer,
         fields: &[],
         free_fields: true,
         default_origin_binding: false,
+        default_run_allowed: true,
     },
     KindSpec {
         kind: ItemKind::Card,
         name: "card",
         domain: Domain::Payment,
         fields: &[
-            plain("holder"),
-            secret("number"),
-            plain("exp_month"),
-            plain("exp_year"),
-            secret("cvc"),
-            plain("billing_address"),
-            secret("note"),
+            plain("holder", "Name on the card"),
+            secret("number", "Card number"),
+            plain("exp_month", "Expiry month"),
+            plain("exp_year", "Expiry year"),
+            secret("cvc", "Security code"),
+            plain("billing_address", "Billing address item"),
+            secret("note", "Free-form note"),
         ],
         free_fields: false,
         default_origin_binding: true,
+        default_run_allowed: false,
     },
     KindSpec {
         kind: ItemKind::Identity,
         name: "identity",
         domain: Domain::Personal,
         fields: &[
-            plain("full_name"),
-            plain("given_name"),
-            plain("family_name"),
-            plain("email"),
-            plain("phone"),
-            plain("birth_date"),
-            secret("note"),
+            plain("full_name", "Full name"),
+            plain("given_name", "Given name"),
+            plain("family_name", "Family name"),
+            plain("email", "Email address"),
+            plain("phone", "Phone number"),
+            plain("birth_date", "Date of birth"),
+            secret("note", "Free-form note"),
         ],
         free_fields: false,
         default_origin_binding: false,
+        default_run_allowed: false,
     },
     KindSpec {
         kind: ItemKind::Address,
         name: "address",
         domain: Domain::Personal,
         fields: &[
-            plain("recipient"),
-            plain("line1"),
-            plain("line2"),
-            plain("city"),
-            plain("region"),
-            plain("postal_code"),
-            plain("country"),
-            plain("phone"),
-            secret("note"),
+            plain("recipient", "Recipient name"),
+            plain("line1", "Street address"),
+            plain("line2", "Apartment, suite, etc."),
+            plain("city", "City"),
+            plain("region", "State, province or region"),
+            plain("postal_code", "Postal code"),
+            plain("country", "Country"),
+            plain("phone", "Phone number"),
+            secret("note", "Free-form note"),
         ],
         free_fields: false,
         default_origin_binding: false,
+        default_run_allowed: false,
     },
 ];
 
@@ -328,6 +385,31 @@ impl Origin {
     }
 }
 
+/// What an item, a field or a session is for, so an agent can tell when to use it (R-38).
+/// 1–500 characters, no control characters but newlines. Not a secret: it is stored in
+/// plaintext (signed in the metadata MAC for items) and shown to agents.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Description(String);
+
+impl Description {
+    pub const MAX_CHARS: usize = 500;
+
+    pub fn parse(value: &str) -> Result<Self, InvalidValue> {
+        let value = value.trim();
+        let count = value.chars().count();
+        if count == 0 || count > Self::MAX_CHARS {
+            return Err(InvalidValue("a description is 1–500 characters"));
+        }
+        if value.chars().any(|c| c.is_control() && c != '\n') {
+            return Err(InvalidValue("a description has no control characters"));
+        }
+        Ok(Self(value.to_owned()))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlaceholderRef {
     pub item: ItemName,
@@ -363,12 +445,26 @@ mod tests {
     #[test]
     fn kinds_map_to_domains() {
         assert_eq!(ItemKind::Login.domain(), Domain::Credentials);
-        assert_eq!(ItemKind::Env.domain(), Domain::Credentials);
+        assert_eq!(ItemKind::Env.domain(), Domain::Developer);
+        assert_eq!(ItemKind::Secret.domain(), Domain::Developer);
+        assert_eq!(Domain::Developer.as_byte(), 4);
+        assert_eq!(Domain::from_byte(4), Some(Domain::Developer));
+        assert_eq!(Domain::parse("developer"), Some(Domain::Developer));
+        // The existing domains keep their stored numbers.
+        assert_eq!(
+            Domain::ALL[..3]
+                .iter()
+                .map(|d| d.as_byte())
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
         assert_eq!(ItemKind::Card.domain(), Domain::Payment);
         assert_eq!(ItemKind::Address.domain(), Domain::Personal);
         assert_eq!(Domain::Payment.as_byte(), 2);
         assert!(ItemKind::Card.default_origin_binding());
         assert!(!ItemKind::Identity.default_origin_binding());
+        assert!(ItemKind::Env.default_run_allowed() && ItemKind::Secret.default_run_allowed());
+        assert!(!ItemKind::Login.default_run_allowed() && !ItemKind::Card.default_run_allowed());
     }
     #[test]
     fn item_names_reject_placeholder_syntax() {
@@ -390,6 +486,28 @@ mod tests {
             assert!(ItemName::parse(good).is_ok(), "{good:?}");
         }
     }
+    #[test]
+    fn descriptions_are_short_plain_text() {
+        assert_eq!(
+            Description::parse("  Work GitHub, for CI  ")
+                .unwrap()
+                .as_str(),
+            "Work GitHub, for CI"
+        );
+        assert!(Description::parse("two\nlines").is_ok());
+        assert!(Description::parse(&"가".repeat(500)).is_ok());
+        for bad in ["", "   ", "tab\there", "\u{1b}[31m"] {
+            assert!(Description::parse(bad).is_err(), "{bad:?}");
+        }
+        assert!(Description::parse(&"x".repeat(501)).is_err());
+        assert!(
+            KINDS
+                .iter()
+                .flat_map(|k| k.fields)
+                .all(|f| !f.description.is_empty())
+        );
+    }
+
     #[test]
     fn origins_are_normalized() {
         assert_eq!(
@@ -455,6 +573,18 @@ mod tests {
         assert!(ItemKind::Env.is_secret_field("API_KEY"));
         assert!(ItemKind::Card.field("number").unwrap().maskable);
         assert!(ItemKind::Card.field("password").is_none());
+        assert_eq!(
+            ItemKind::Login.field("password").unwrap().input,
+            InputKind::Password
+        );
+        assert_eq!(
+            ItemKind::Login.field("username").unwrap().input,
+            InputKind::Text
+        );
+        assert_eq!(
+            ItemKind::Env.field("API_KEY").unwrap().input,
+            InputKind::Text
+        );
     }
     #[test]
     fn schemas_cover_every_kind() {

@@ -3,18 +3,20 @@
 //! plaintext paths ([`resolve`]) are split by use case; key rotation and export live in
 //! `rotate` and `transfer`.
 
+mod developer;
 mod items;
 mod open;
 mod resolve;
 mod summary;
 
 pub use resolve::fill_template;
-pub use summary::ItemUse;
+pub use summary::{ItemUse, effective_descriptions};
 
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
-    ports::{AuditStore, FieldRow, ItemRow, KeyGuard, KeyStore, VaultStore},
-    vault::{Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
+    date::Expiry,
+    ports::{AuditStore, FieldRow, ItemRow, KeyGuard, KeyStore, SettingsStore, VaultStore},
+    vault::{Description, Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
 };
 use keyharbor_vault::{
     VaultError,
@@ -91,6 +93,28 @@ pub struct NewItem {
     pub origin_binding: Option<bool>,
     pub status: ItemStatus,
     pub source: ItemSource,
+    pub details: ItemDetails,
+}
+
+/// Attributes a new item may set beyond its fields and origins; each defaults sensibly.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ItemDetails {
+    /// `None` uses the kind's default (secret and env items yes, the others no; R-36).
+    pub run_allowed: Option<bool>,
+    pub expiry: ExpiryChoice,
+    pub description: Option<Description>,
+    /// Overrides of the kind's field descriptions; each names a field the item has.
+    pub field_descriptions: Vec<(FieldName, Description)>,
+}
+
+/// The expiry a new item gets (R-37).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExpiryChoice {
+    /// Today plus `default_item_ttl` if that is set, otherwise never.
+    #[default]
+    Default,
+    Never,
+    On(Expiry),
 }
 
 #[derive(Default)]
@@ -99,6 +123,13 @@ pub struct ItemChange {
     pub remove_fields: Vec<FieldName>,
     pub origins: Option<Vec<Origin>>,
     pub origin_binding: Option<bool>,
+    pub run_allowed: Option<bool>,
+    /// `Some(None)` removes the expiry.
+    pub expiry: Option<Option<Expiry>>,
+    /// `Some(None)` removes the description.
+    pub description: Option<Option<Description>>,
+    /// Sets (`Some`) or removes (`None`, back to the kind's default) a field's description.
+    pub field_descriptions: Vec<(FieldName, Option<Description>)>,
     pub status: Option<ItemStatus>,
 }
 
@@ -111,6 +142,13 @@ pub struct ItemSummary {
     pub fields: Vec<String>,
     pub origins: Vec<String>,
     pub origin_binding: bool,
+    pub run_allowed: bool,
+    pub expires_at: Option<Expiry>,
+    /// The expiry date has passed: agents may not use the item.
+    pub expired: bool,
+    pub description: Option<String>,
+    /// Every field's description: the item's own or the kind's default.
+    pub field_descriptions: BTreeMap<String, String>,
     pub status: ItemStatus,
     pub source: ItemSource,
     pub updated_at: String,
@@ -119,8 +157,15 @@ pub struct ItemSummary {
 }
 
 /// What a vault needs from storage: its tables and the usage record.
-pub trait VaultBackend: VaultStore + AuditStore {}
-impl<T: VaultStore + AuditStore> VaultBackend for T {}
+/// What a vault needs from storage: its tables, the usage record and the settings
+/// (`default_item_ttl`).
+pub trait VaultBackend: VaultStore + AuditStore + SettingsStore {}
+impl<T: VaultStore + AuditStore + SettingsStore> VaultBackend for T {}
+
+/// The setting that gives new items an expiry, e.g. `90d` (R-37). Unset: they never expire.
+pub const DEFAULT_ITEM_TTL: &str = "default_item_ttl";
+/// The `default_item_ttl` value meaning "never expire" (also the default).
+pub const NO_TTL: &str = "none";
 
 /// Every vault value with its placeholder, as of `version`. Values are zeroized on drop.
 pub struct MaskValues {
@@ -205,7 +250,11 @@ impl Vault {
                 .context("could not unwrap domain key")?;
             out.insert(domain, (dk_id, dk));
         }
-        if out.len() != Domain::ALL.len() {
+        // A vault from before R-40 has no developer key yet; `open` adds it.
+        if Domain::ALL
+            .iter()
+            .any(|d| *d != Domain::Developer && !out.contains_key(d))
+        {
             bail!("domain keys are missing");
         }
         Ok(out)
@@ -215,6 +264,33 @@ impl Vault {
         &self.vault_id
     }
 
+    /// The signed view of a stored row: its metadata in the domain the row is stored in.
+    fn meta<'a>(
+        &'a self,
+        row: &'a ItemRow,
+        domain: Domain,
+        kind: ItemKind,
+        name: &'a ItemName,
+        origins: &'a [Origin],
+    ) -> ItemMeta<'a> {
+        ItemMeta {
+            vault: &self.vault_id,
+            item: &row.id,
+            domain,
+            kind,
+            name,
+            origin_binding: row.origin_binding,
+            origins,
+            status: &row.status,
+            updated_at: &row.updated_at,
+            run_allowed: row.run_allowed,
+            expires_at: row.expires_at.as_deref(),
+            description: row.description.as_deref(),
+            field_descriptions: &row.field_descriptions,
+        }
+    }
+
+    /// Signs `row` for the domain it is stored in (`row.domain`).
     pub(crate) fn mac_for(
         &self,
         row: &ItemRow,
@@ -222,19 +298,10 @@ impl Vault {
         name: &ItemName,
         origins: &[Origin],
     ) -> Vec<u8> {
+        let domain = Domain::from_byte(row.domain).unwrap_or_else(|| kind.domain());
         meta_mac(
             self.keys.mac(),
-            &ItemMeta {
-                vault: &self.vault_id,
-                item: &row.id,
-                domain: kind.domain(),
-                kind,
-                name,
-                origin_binding: row.origin_binding,
-                origins,
-                status: &row.status,
-                updated_at: &row.updated_at,
-            },
+            &self.meta(row, domain, kind, name, origins),
         )
         .to_vec()
     }
@@ -270,28 +337,30 @@ impl Vault {
         row: &ItemRow,
     ) -> Result<(ItemKind, ItemName, Vec<Origin>)> {
         let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
+        if kind.domain().as_byte() != row.domain {
+            return Err(vault_err(VaultError::Tampered));
+        }
+        self.verified_as_stored(keys, row)
+    }
+
+    /// Checks the MAC of `row` for the domain it is stored in, even if its kind now belongs
+    /// to another one (an item written before R-40 moved secret and env items).
+    pub(crate) fn verified_as_stored(
+        &self,
+        keys: &KeySet,
+        row: &ItemRow,
+    ) -> Result<(ItemKind, ItemName, Vec<Origin>)> {
+        let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
+        let domain = Domain::from_byte(row.domain).context("unknown domain in database")?;
         let name = ItemName::parse(&row.name).map_err(|e| anyhow!(e.to_string()))?;
         let origins = row
             .origins
             .iter()
             .map(|o| Origin::parse(o).map_err(|e| anyhow!(e.to_string())))
             .collect::<Result<Vec<_>>>()?;
-        if kind.domain().as_byte() != row.domain {
-            return Err(vault_err(VaultError::Tampered));
-        }
         verify_meta_mac(
             keys.mac(),
-            &ItemMeta {
-                vault: &self.vault_id,
-                item: &row.id,
-                domain: kind.domain(),
-                kind,
-                name: &name,
-                origin_binding: row.origin_binding,
-                origins: &origins,
-                status: &row.status,
-                updated_at: &row.updated_at,
-            },
+            &self.meta(row, domain, kind, &name, &origins),
             &row.meta_mac,
         )
         .map_err(vault_err)?;

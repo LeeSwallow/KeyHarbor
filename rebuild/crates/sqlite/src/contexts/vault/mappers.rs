@@ -32,19 +32,28 @@ pub fn domain_key_model(row: &DomainKeyRow) -> DomainKeyModel {
     }
 }
 
-/// `origins` are read separately and sorted.
-pub fn item_row(model: ItemModel, origins: Vec<String>) -> Result<ItemRow> {
+/// The item's other tables, read separately and sorted.
+pub struct ItemChildren {
+    pub origins: Vec<String>,
+    pub field_descriptions: Vec<(String, String)>,
+}
+
+pub fn item_row(model: ItemModel, children: ItemChildren) -> Result<ItemRow> {
     Ok(ItemRow {
         id: id16(model.id)?,
         name: model.name,
         domain: u8::try_from(model.domain).context("invalid stored domain")?,
         kind: model.kind,
         origin_binding: model.origin_binding,
+        run_allowed: model.run_allowed,
+        expires_at: model.expires_at,
+        description: model.description,
+        field_descriptions: children.field_descriptions,
         status: model.status,
         source: model.source,
         meta_mac: model.meta_mac,
         updated_at: model.updated_at,
-        origins,
+        origins: children.origins,
     })
 }
 
@@ -59,6 +68,9 @@ pub fn item_model(row: &ItemRow) -> ItemModel {
         source: row.source.clone(),
         meta_mac: row.meta_mac.clone(),
         updated_at: row.updated_at.clone(),
+        run_allowed: row.run_allowed,
+        expires_at: row.expires_at.clone(),
+        description: row.description.clone(),
     }
 }
 

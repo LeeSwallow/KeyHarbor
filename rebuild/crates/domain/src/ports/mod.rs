@@ -6,6 +6,7 @@
 pub mod access;
 pub mod audit;
 pub mod browser;
+pub mod confirm;
 pub mod keys;
 pub mod runtime;
 pub mod session;
@@ -14,6 +15,7 @@ pub mod vault;
 pub use access::PolicyStore;
 pub use audit::{AUDIT_ENABLED, AuditStore, SettingsStore};
 pub use browser::{BrowserPort, FrameInspector, PageInput};
+pub use confirm::{Answer, Confirm};
 pub use keys::KeyStore;
 pub use runtime::SessionRuntime;
 pub use session::{SessionRow, SessionStore};

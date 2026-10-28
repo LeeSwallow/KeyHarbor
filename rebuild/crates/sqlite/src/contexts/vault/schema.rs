@@ -28,6 +28,17 @@ diesel::table! {
         source -> Text,
         meta_mac -> Binary,
         updated_at -> Text,
+        run_allowed -> Bool,
+        expires_at -> Nullable<Text>,
+        description -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    item_field_descriptions (item_id, field) {
+        item_id -> Binary,
+        field -> Text,
+        description -> Text,
     }
 }
 
@@ -48,4 +59,5 @@ diesel::table! {
 
 diesel::joinable!(vault_fields -> vault_items (item_id));
 diesel::joinable!(item_origins -> vault_items (item_id));
+diesel::joinable!(item_field_descriptions -> vault_items (item_id));
 diesel::allow_tables_to_appear_in_same_query!(vault_fields, vault_items);

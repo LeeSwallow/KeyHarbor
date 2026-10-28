@@ -8,3 +8,10 @@ diesel::table! {
         effect -> Text,
     }
 }
+
+diesel::table! {
+    origin_uses (item_name, origin) {
+        item_name -> Text,
+        origin -> Text,
+    }
+}
