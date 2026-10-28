@@ -1,0 +1,15 @@
+[package]
+name = "keyharbor-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+keyharbor-domain = { path = "../domain" }
+keyharbor-sqlite = { path = "../sqlite" }
+keyharbor-vault = { path = "../vault" }
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
