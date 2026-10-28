@@ -4,6 +4,8 @@ use keyharbor_domain::SessionName;
 use keyharbor_sqlite::SqliteStore;
 use std::path::PathBuf;
 
+mod vault_cmd;
+
 #[derive(Parser)]
 #[command(version, about = "Local browser session management")]
 struct Cli {
@@ -14,8 +16,13 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
-    Create { name: String },
+    Create {
+        name: String,
+    },
     List,
+    /// Manage the local encrypted vault
+    #[command(subcommand)]
+    Vault(vault_cmd::VaultCmd),
 }
 
 fn main() -> Result<()> {
@@ -25,9 +32,10 @@ fn main() -> Result<()> {
         None => PathBuf::from(std::env::var_os("HOME").context("HOME is not set; use --data-dir")?)
             .join(".keyharbor-rebuild"),
     };
-    let store = SqliteStore::open(&root)?;
     match args.command {
+        Command::Vault(command) => return vault_cmd::run(&root, command),
         Command::Create { name } => {
+            let store = SqliteStore::open(&root)?;
             let session = store.create(SessionName::parse(&name)?)?;
             println!(
                 "{}\t{}\t{}",
@@ -37,7 +45,7 @@ fn main() -> Result<()> {
             );
         }
         Command::List => {
-            for session in store.list()? {
+            for session in SqliteStore::open(&root)?.list()? {
                 println!(
                     "{}\t{}\t{}",
                     session.id,

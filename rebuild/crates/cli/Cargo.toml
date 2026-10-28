@@ -8,4 +8,13 @@ license.workspace = true
 anyhow.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
 keyharbor-domain = { path = "../domain" }
+keyharbor-core = { path = "../core" }
 keyharbor-sqlite = { path = "../sqlite" }
+keyharbor-vault = { path = "../vault" }
+age.workspace = true
+rpassword.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
