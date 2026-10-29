@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
 mod audit_cmd;
+mod browser_cmd;
 mod compose;
 mod description_args;
 mod expiry_args;
@@ -60,6 +61,9 @@ enum Command {
     /// Which sites a session may load (grants)
     #[command(subcommand)]
     Grant(grant_cmd::GrantCmd),
+    /// Hand sites over from your own browser (Native Messaging host)
+    #[command(subcommand)]
+    Browser(browser_cmd::BrowserCmd),
     /// Run a command with env items injected; its output is masked
     Run(run_cmd::RunArgs),
 }
@@ -100,6 +104,7 @@ fn main() -> Result<()> {
         Command::Settings(command) => settings_cmd::run(&*app.store()?, command),
         Command::Site(command) => site_cmd::run(&app, command),
         Command::Grant(command) => grant_cmd::run(&app, command),
+        Command::Browser(command) => browser_cmd::run(&app, command),
         Command::Run(args) => {
             let code = run_cmd::run(&app, args)?;
             std::process::exit(code)

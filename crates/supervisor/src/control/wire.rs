@@ -5,10 +5,15 @@
 //! `{"ok":false,"error":"..."}`. The server (`ops`) and every client (MCP, `ProcessRuntime`)
 //! build and read these types only; defaults such as `login`'s `submit` live here once.
 
-use keyharbor_domain::ports::browser::{FillOutcome, Target};
+use keyharbor_domain::{
+    handoff_site::SiteCookie,
+    ports::browser::{FillOutcome, Target},
+};
 use keyharbor_guard::LoginOutcome;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
+use zeroize::Zeroizing;
 
 /// One request: who asks (the local user when absent) and the operation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,6 +86,15 @@ pub enum ControlRequest {
         /// Absent means [`LOGIN_SUBMITS_BY_DEFAULT`]; read it with [`login_submits`].
         #[serde(default, skip_serializing_if = "Option::is_none")]
         submit: Option<bool>,
+    },
+    /// A site handed over from the user's browser by the native host (R-42). Values travel
+    /// only in this request; the response is a count.
+    ReceiveSite {
+        origin: String,
+        cookies: Vec<CookieWire>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        local_storage: Option<BTreeMap<String, String>>,
+        ttl_seconds: u64,
     },
     Close,
     Status,
@@ -290,5 +304,68 @@ mod tests {
             serde_json::from_value::<ControlResponse>(json!({"ok": true})).unwrap(),
             ControlResponse::Ok(Value::Null)
         );
+    }
+}
+
+/// A cookie as the extension and CDP shape it (`Network.CookieParam`). `Debug` leaves the
+/// value out.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CookieWire {
+    pub name: String,
+    pub value: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub secure: bool,
+    #[serde(default)]
+    pub http_only: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub same_site: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires: Option<i64>,
+}
+
+impl std::fmt::Debug for CookieWire {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CookieWire")
+            .field("name", &self.name)
+            .field("url", &self.url)
+            .finish_non_exhaustive()
+    }
+}
+
+impl From<CookieWire> for SiteCookie {
+    fn from(wire: CookieWire) -> Self {
+        Self {
+            name: wire.name,
+            value: Zeroizing::new(wire.value),
+            url: wire.url,
+            domain: wire.domain,
+            path: wire.path,
+            secure: wire.secure,
+            http_only: wire.http_only,
+            same_site: wire.same_site,
+            expires: wire.expires,
+        }
+    }
+}
+
+impl From<&SiteCookie> for CookieWire {
+    fn from(cookie: &SiteCookie) -> Self {
+        Self {
+            name: cookie.name.clone(),
+            value: cookie.value.to_string(),
+            url: cookie.url.clone(),
+            domain: cookie.domain.clone(),
+            path: cookie.path.clone(),
+            secure: cookie.secure,
+            http_only: cookie.http_only,
+            same_site: cookie.same_site.clone(),
+            expires: cookie.expires,
+        }
     }
 }

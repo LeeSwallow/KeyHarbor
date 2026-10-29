@@ -63,6 +63,36 @@ pub fn add(
     Ok(grant)
 }
 
+/// Who the record names for a grant made by handing a site over.
+pub const HANDOFF: &str = "handoff";
+
+/// The grant a site handoff makes (R-42): the person handing the site over from their own
+/// browser is the confirmation, so nothing is asked (spec §3). Lasts `ttl_seconds`.
+pub fn add_for_handoff(
+    store: &dyn Store,
+    clock: &dyn Clock,
+    id: SessionId,
+    origin: Origin,
+    ttl_seconds: u64,
+) -> Result<Grant> {
+    session(store, id)?;
+    let now = clock.unix_seconds();
+    let grant = Grant {
+        id: random::id(),
+        session: id,
+        origin,
+        until: Some(now + ttl_seconds),
+        created_by: HANDOFF.to_owned(),
+        reason: None,
+        created_at: now,
+        revoked_at: None,
+        cleared: false,
+    };
+    store.grant_add(&grant)?;
+    note(store, HANDOFF, AuditKind::GrantChanged, &grant, "added");
+    Ok(grant)
+}
+
 pub fn list(store: &dyn Store, id: SessionId) -> Result<Vec<Grant>> {
     session(store, id)?;
     store.grants_for(id)
@@ -193,6 +223,20 @@ mod tests {
             .collect();
         assert!(kinds.contains(&(AuditKind::NavigationDenied, "out-of-grant".into())));
         assert!(kinds.contains(&(AuditKind::GrantChanged, "cleared".into())));
+    }
+
+    #[test]
+    fn a_handoff_grants_its_site_for_its_ttl_without_asking() {
+        let (_tmp, store, id) = setup();
+        let clock = ManualClock::at_unix_seconds(1_000);
+        let origin = Origin::parse("https://github.com").unwrap();
+        let grant = add_for_handoff(&store, &clock, id, origin, 600).unwrap();
+        assert_eq!(
+            (grant.until, grant.created_by.as_str()),
+            (Some(1_600), HANDOFF)
+        );
+        assert!(allows(&store, &clock, id, "https://github.com/").unwrap());
+        assert!(!allows(&store, &clock, id, "https://example.com/").unwrap());
     }
 
     #[test]
