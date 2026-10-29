@@ -18,7 +18,10 @@ pub use answers::{
 pub use inbox::{InboxDto, confirm_draft, decline_request, discard_draft, inbox};
 pub use items::{ItemDto, copy_placeholder, copy_value, items, reveal};
 pub use manage::{ChangeForm, KindForm, NewItemForm, add_item, edit_item, kinds, remove_item};
-pub use overview::{AuditDto, MenuText, OverviewDto, audit, menu_text, overview};
+pub use overview::{
+    AuditDto, MenuText, Notice, NoticeKinds, OverviewDto, Seen, Snapshot, audit, menu_text,
+    notice_kinds, notices, overview, snapshot,
+};
 pub use sessions::{SessionDto, open_session, recover_session, sessions, stop_session};
 
 /// Errors cross to the window as text: a short reason, never a value.

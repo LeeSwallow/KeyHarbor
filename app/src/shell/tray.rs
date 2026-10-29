@@ -1,10 +1,11 @@
 //! The menu bar icon: a template image, the count of what waits beside it, and a menu with
-//! the status, the waiting count, "KeyHarbor 열기" and "종료". The text comes from
-//! `commands::menu_text`; this file only builds Tauri menus.
+//! the status, the waiting count, "KeyHarbor 열기" and "종료"; and notifications for what is
+//! new. The text comes from `commands::menu_text` and `commands::notices`; this file only
+//! builds Tauri menus and posts.
 
 use keyharbor_app::{
     Ctx,
-    commands::{self, MenuText},
+    commands::{self, MenuText, Seen},
 };
 use std::time::Duration;
 use tauri::{
@@ -66,9 +67,15 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let _ = tray.set_title(text.badge.as_deref());
     let handle = app.clone();
     std::thread::spawn(move || {
+        // The bundle identifier (tauri.conf.json): notices come from KeyHarbor, not from Terminal.
+        #[cfg(target_os = "macos")]
+        let _ = mac_notification_sys::set_application("io.github.leeswallow.keyharbor");
+        let mut seen = Seen::default();
+        notify(&handle, &mut seen);
         loop {
             std::thread::sleep(REFRESH);
             refresh(&handle, &tray);
+            notify(&handle, &mut seen);
         }
     });
     Ok(())
@@ -80,4 +87,19 @@ fn refresh(app: &AppHandle, tray: &TrayIcon) {
         let _ = tray.set_menu(Some(menu));
     }
     let _ = tray.set_title(text.badge.as_deref());
+}
+
+/// Posts a notification for what is new since the last look (`commands::notices`). A failed
+/// read skips this round; `seen` stays as it was, so nothing is lost.
+fn notify(app: &AppHandle, seen: &mut Seen) {
+    let ctx = app.state::<Ctx>();
+    let (Ok(now), Ok(kinds)) = (commands::snapshot(&ctx), commands::notice_kinds(&ctx)) else {
+        return;
+    };
+    for notice in commands::notices(seen, &now, kinds) {
+        #[cfg(target_os = "macos")]
+        let _ = mac_notification_sys::send_notification(&notice.title, None, &notice.body, None);
+        #[cfg(not(target_os = "macos"))]
+        let _ = notice;
+    }
 }
