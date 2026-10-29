@@ -32,4 +32,4 @@ KEYHARBOR_HOME=/tmp/kh cargo run                   # 개발용 창 (기본은 ~/
 | 에이전트와 정책 | 규칙 목록·추가·삭제. allow 추가와 deny 삭제는 확인 창 |
 | 설정 | 설정 값 보기·바꾸기. 약화(기록 끄기, 포착 바꾸기)는 확인 창 |
 
-앱은 네트워크 listener를 열지 않습니다. capability는 `core:default`뿐입니다.
+메뉴 막대에 아이콘이 있고(확인 대기 수, 상태, 열기, 종료), 창을 닫아도 앱은 메뉴 막대에 남습니다. 앱은 네트워크 listener를 열지 않습니다. capability는 `core:default`뿐입니다.
