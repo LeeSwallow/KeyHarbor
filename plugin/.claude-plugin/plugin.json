@@ -1,0 +1,15 @@
+{
+  "name": "keyharbor",
+  "displayName": "KeyHarbor",
+  "version": "0.1.0",
+  "description": "Sign in to websites, create accounts and run commands that need API keys, with passwords and keys kept in the user's local KeyHarbor vault: you type placeholders, never values.",
+  "author": {
+    "name": "LeeSwallow",
+    "url": "https://github.com/LeeSwallow"
+  },
+  "repository": "https://github.com/LeeSwallow/KeyHarbor",
+  "license": "MIT OR Apache-2.0",
+  "keywords": ["keyharbor", "secrets", "vault", "browser", "login", "mcp"],
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/claude-hooks.json"
+}

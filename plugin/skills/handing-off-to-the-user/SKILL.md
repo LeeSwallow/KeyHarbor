@@ -1,0 +1,18 @@
+---
+name: handing-off-to-the-user
+description: Use when a page needs a person - a CAPTCHA, a 2FA code, accepting terms, confirming a payment, an unusual sign-in check. Hands the browser window to the user, waits until they say they are done, then continues.
+---
+
+# Handing off to the user
+
+1. `session_wait_auth {id, origin?}` returns a `request_id`. The session is now the user's:
+   your input tools are refused until they resume.
+2. Tell the user exactly what to do in the browser window and how to resume:
+   `keyharbor resume <session-id> <request_id>`.
+3. `session_wait_for_resume {id, request_id, timeout_seconds}` (1-300). On a timeout, ask
+   whether they need more time and wait again; the request stays open.
+4. Check the page with `browser_snapshot`; resuming does not prove the step succeeded.
+
+- Never try to solve a CAPTCHA or guess a code.
+- If the user signed in by typing their password, KeyHarbor may keep it as a draft (when
+  capture is on). Record `site_state_set ... logged_in` afterwards.

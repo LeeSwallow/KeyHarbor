@@ -1,0 +1,28 @@
+{
+  "name": "keyharbor",
+  "version": "0.1.0",
+  "description": "Sign in to websites, create accounts and run commands that need API keys, with secrets kept in the user's local KeyHarbor vault.",
+  "author": {
+    "name": "LeeSwallow",
+    "url": "https://github.com/LeeSwallow"
+  },
+  "repository": "https://github.com/LeeSwallow/KeyHarbor",
+  "keywords": ["keyharbor", "secrets", "vault", "browser", "login", "mcp"],
+  "skills": "./skills/",
+  "hooks": "./hooks/codex-hooks.json",
+  "interface": {
+    "displayName": "KeyHarbor",
+    "shortDescription": "Agents sign in and use secrets without seeing them",
+    "longDescription": "KeyHarbor keeps passwords, API keys and cards in a local encrypted vault on the user's Mac. The agent drives a dedicated browser profile and types {{secret:item.field}} placeholders; KeyHarbor fills the values on the right site and masks them in everything the agent reads back. This plugin teaches the agent the sign-in, sign-up, env secret and handoff flows.",
+    "developerName": "LeeSwallow",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://leeswallow.github.io/KeyHarbor/",
+    "defaultPrompt": [
+      "Sign in to GitHub in my work session and open my notifications.",
+      "Run the tests with the myapp env secrets.",
+      "Create an account on this site with a generated password."
+    ],
+    "brandColor": "#05A8A8"
+  }
+}

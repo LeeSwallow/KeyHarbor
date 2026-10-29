@@ -1,0 +1,16 @@
+{
+  "name": "keyharbor",
+  "owner": {
+    "name": "LeeSwallow",
+    "url": "https://github.com/LeeSwallow"
+  },
+  "description": "KeyHarbor: agents sign in and use secrets without ever seeing them",
+  "plugins": [
+    {
+      "name": "keyharbor",
+      "source": "./plugin",
+      "description": "The KeyHarbor MCP server, skills for signing in, sign-ups, env secrets and handoffs, and a session hook",
+      "version": "0.1.0"
+    }
+  ]
+}

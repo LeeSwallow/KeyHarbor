@@ -13,6 +13,7 @@ mod run_cmd;
 mod session_cmd;
 mod settings_cmd;
 mod site_cmd;
+mod status_cmd;
 mod tty_confirm;
 mod vault_cmd;
 
@@ -30,6 +31,8 @@ struct Cli {
 enum Command {
     #[command(flatten)]
     Session(session_cmd::SessionCmd),
+    /// Counts at a glance: vault ready, sessions open, requests waiting, drafts (no names)
+    Status,
     /// Serve MCP tools over stdio for an AI agent
     Mcp {
         /// Expose and allow only this session
@@ -43,6 +46,9 @@ enum Command {
         agent: Option<String>,
         #[arg(long)]
         browser: Option<PathBuf>,
+        /// Print the tool names and exit (used to check the plugin's skills)
+        #[arg(long, hide = true)]
+        list_tools: bool,
     },
     /// Manage the local encrypted vault
     #[command(subcommand)]
@@ -104,6 +110,7 @@ fn main() -> Result<()> {
         Command::Settings(command) => settings_cmd::run(&*app.store()?, command),
         Command::Site(command) => site_cmd::run(&app, command),
         Command::Grant(command) => grant_cmd::run(&app, command),
+        Command::Status => status_cmd::run(&app),
         Command::Browser(command) => browser_cmd::run(&app, command),
         Command::Run(args) => {
             let code = run_cmd::run(&app, args)?;
@@ -111,10 +118,21 @@ fn main() -> Result<()> {
         }
         Command::Session(command) => session_cmd::run(&app, command),
         Command::Mcp {
+            list_tools: true,
+            allow_cdp,
+            ..
+        } => {
+            for name in keyharbor_mcp::tool_names(allow_cdp) {
+                println!("{name}");
+            }
+            Ok(())
+        }
+        Command::Mcp {
             session,
             allow_cdp,
             agent,
             browser,
+            list_tools: false,
         } => keyharbor_mcp::run(
             keyharbor_mcp::Options {
                 data: app.root().to_path_buf(),

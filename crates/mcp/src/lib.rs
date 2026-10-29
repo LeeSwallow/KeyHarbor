@@ -45,6 +45,11 @@ pub struct Deps {
     pub clock: Arc<dyn Clock>,
 }
 
+/// Every tool a server offers, sorted; `session_endpoint` only with `allow_cdp`.
+pub fn tool_names(allow_cdp: bool) -> Vec<String> {
+    server::tool_names(allow_cdp)
+}
+
 /// Runs the server on stdin/stdout until the client disconnects.
 pub fn run(options: Options, deps: Deps) -> Result<()> {
     let agent = match &options.agent {

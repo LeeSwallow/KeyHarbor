@@ -1,0 +1,17 @@
+{
+  "$comment": "At the start of a session, say whether KeyHarbor is ready and what waits for the user (counts only).",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
