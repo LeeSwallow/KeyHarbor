@@ -5,17 +5,15 @@
 
 mod common;
 
-use common::{chrome, mcp::Mcp, on_terminal, short_tempdir};
+use common::{chrome, mcp::Mcp, on_terminal, person::Person, short_tempdir};
 use serde_json::{Value, json};
 use std::{
     io::Write,
-    net::TcpStream,
     path::Path,
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
-use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
 
 fn cli(data: &Path, keys: &Path, args: &[&str], stdin: &str) -> String {
     let mut child = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
@@ -41,71 +39,6 @@ fn cli(data: &Path, keys: &Path, args: &[&str], stdin: &str) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8(out.stdout).unwrap()
-}
-
-/// The person at the browser: a raw CDP connection attached to the first page.
-struct Person {
-    socket: WebSocket<MaybeTlsStream<TcpStream>>,
-    session: String,
-    next: u64,
-}
-
-impl Person {
-    fn connect(endpoint: &str) -> Self {
-        let (socket, _) = tungstenite::connect(endpoint).unwrap();
-        let mut person = Self {
-            socket,
-            session: String::new(),
-            next: 0,
-        };
-        let targets = person.call("Target.getTargets", json!({}), false);
-        let page = targets["targetInfos"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|t| t["type"] == "page")
-            .unwrap()["targetId"]
-            .clone();
-        let attached = person.call(
-            "Target.attachToTarget",
-            json!({"targetId": page, "flatten": true}),
-            false,
-        );
-        person.session = attached["sessionId"].as_str().unwrap().to_owned();
-        person
-    }
-    fn call(&mut self, method: &str, params: Value, in_page: bool) -> Value {
-        self.next += 1;
-        let mut request = json!({"id": self.next, "method": method, "params": params});
-        if in_page {
-            request["sessionId"] = json!(self.session);
-        }
-        self.socket
-            .send(Message::text(request.to_string()))
-            .unwrap();
-        loop {
-            let Message::Text(text) = self.socket.read().unwrap() else {
-                continue;
-            };
-            let reply: Value = serde_json::from_str(&text).unwrap();
-            if reply["id"] == self.next {
-                assert!(reply.get("error").is_none(), "{method}: {reply}");
-                return reply["result"].clone();
-            }
-        }
-    }
-    /// Focuses `selector` and types `text` as keyboard input.
-    fn type_into(&mut self, selector: &str, text: &str) {
-        let focus = format!("document.querySelector('{selector}').focus()");
-        self.call("Runtime.evaluate", json!({"expression": focus}), true);
-        self.call("Input.insertText", json!({"text": text}), true);
-    }
-    fn press_enter(&mut self) {
-        for kind in ["keyDown", "keyUp"] {
-            let key = json!({"type": kind, "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13, "text": "\r"});
-            self.call("Input.dispatchKeyEvent", key, true);
-        }
-    }
 }
 
 fn wait_until(mut done: impl FnMut() -> bool) {

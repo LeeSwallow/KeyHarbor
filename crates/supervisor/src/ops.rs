@@ -48,6 +48,14 @@ impl Command {
     /// Commands that act on the page. While the session is handed to the user they are
     /// refused: the person at the browser is the only one typing, so what capture sees is
     /// theirs (J-80). Reading the page (snapshot, tabs, screenshot, wait) still works.
+    /// The document a command loads, if it names one.
+    fn document(&self) -> Option<&str> {
+        match self {
+            Self::Navigate(url) | Self::NewTab(Some(url)) => Some(url),
+            _ => None,
+        }
+    }
+
     fn is_input(&self) -> bool {
         matches!(
             self,
@@ -61,6 +69,16 @@ impl Command {
                 | Self::Login { .. }
         )
     }
+}
+
+/// Whether the session's grants let it load `url` (R-43). The page watcher enforces the
+/// same rule for every document; checking here gives the agent a plain refusal.
+fn in_grants(shared: &Shared, url: &str) -> Result<bool> {
+    let store = shared
+        .store
+        .lock()
+        .map_err(|_| anyhow!("store lock poisoned"))?;
+    keyharbor_core::grant::allows(&**store, &*shared.clock, shared.id, url)
 }
 
 /// Whether the session is waiting for the user (a handoff is open).
@@ -124,6 +142,11 @@ impl Ops {
             Ok(parsed) => parsed,
             Err(error) => return guard.redact_outcome(Err(error)),
         };
+        if let Some(url) = command.document()
+            && !in_grants(shared, url)?
+        {
+            return guard.redact_outcome(Err(anyhow!("denied: navigation (out-of-grant)")));
+        }
         if command.is_input() && with_user(shared)? {
             return guard.redact_outcome(Err(anyhow!(
                 "the browser is with the user until they resume; call session_wait_for_resume"

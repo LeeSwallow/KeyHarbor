@@ -3,6 +3,7 @@
 
 pub mod harness;
 pub mod mcp;
+pub mod person;
 
 use std::{
     io::{BufRead, BufReader, Write},

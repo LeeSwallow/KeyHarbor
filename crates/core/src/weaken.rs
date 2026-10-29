@@ -49,6 +49,11 @@ pub enum WeakeningOp {
         key: &'static str,
         value: String,
     },
+    /// Letting a session into a site (R-43).
+    Grant {
+        session: String,
+        origin: String,
+    },
 }
 
 impl fmt::Display for WeakeningOp {
@@ -66,6 +71,9 @@ impl fmt::Display for WeakeningOp {
             Self::PolicyAllow(rule) => write!(f, "policy allow {}", target(rule)),
             Self::PolicyRemoveDeny(rule) => write!(f, "removing the rule {}", target(rule)),
             Self::Setting { key, value } => write!(f, "settings set {key} {value}"),
+            Self::Grant { session, origin } => {
+                write!(f, "granting session {session} the site {origin}")
+            }
         }
     }
 }

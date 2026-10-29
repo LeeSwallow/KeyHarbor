@@ -6,6 +6,7 @@ mod audit_cmd;
 mod compose;
 mod description_args;
 mod expiry_args;
+mod grant_cmd;
 mod policy_cmd;
 mod run_cmd;
 mod session_cmd;
@@ -56,6 +57,9 @@ enum Command {
     /// A session's recorded sign-in state per site
     #[command(subcommand)]
     Site(site_cmd::SiteCmd),
+    /// Which sites a session may load (grants)
+    #[command(subcommand)]
+    Grant(grant_cmd::GrantCmd),
     /// Run a command with env items injected; its output is masked
     Run(run_cmd::RunArgs),
 }
@@ -95,6 +99,7 @@ fn main() -> Result<()> {
         Command::Audit(args) => audit_cmd::run(&*app.store()?, args),
         Command::Settings(command) => settings_cmd::run(&*app.store()?, command),
         Command::Site(command) => site_cmd::run(&app, command),
+        Command::Grant(command) => grant_cmd::run(&app, command),
         Command::Run(args) => {
             let code = run_cmd::run(&app, args)?;
             std::process::exit(code)
