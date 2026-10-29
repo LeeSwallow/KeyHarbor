@@ -20,17 +20,31 @@ use keyharbor_domain::{
 };
 use zeroize::Zeroizing;
 
-/// What to inject: whole env items and `.env`-style templates (the contents of
-/// `--env-file`s, which the CLI reads).
+/// What to hand a child (developer secrets spec §3): whole env items and `.env`-style
+/// templates as variables (①), single fields and filled templates as files (②), and
+/// references in its arguments (③). The CLI reads files and writes the child's files.
 pub struct Request<'a> {
     pub agent: &'a str,
     pub items: &'a [String],
+    /// The contents of `--env-file`s.
     pub files: &'a [Zeroizing<String>],
+    /// `--file VAR=item.field`: the field becomes a file whose path is in VAR.
+    pub secret_files: &'a [(String, PlaceholderRef)],
+    /// `--template VAR=PATH` (variable, contents): filled, it becomes a file in VAR.
+    pub templates: &'a [(String, Zeroizing<String>)],
+    /// The command's arguments after the program, which may hold placeholders.
+    pub args: &'a [String],
 }
 
 /// The checked, resolved variables for one child process and the masker for its output.
 pub struct Injection {
     pub vars: Vec<(String, Zeroizing<String>)>,
+    /// Files to write for the child: (variable for its path, contents).
+    pub files: Vec<(String, Zeroizing<String>)>,
+    /// The arguments with their placeholders filled.
+    pub args: Vec<Zeroizing<String>>,
+    /// Whether any argument held a value (visible to other processes through `ps`).
+    pub args_hold_values: bool,
     pub masker: Masker,
     agent: String,
     items: Vec<ItemName>,
@@ -131,6 +145,23 @@ pub fn prepare(store: &dyn Store, vault: &Vault, request: &Request<'_>) -> Resul
             templates.push((name, template));
         }
     }
+    let check_refs = |checker: &mut Checker<'_>, text: &str| -> Result<bool> {
+        let refs = parse_placeholders(text).map_err(|e| anyhow!("{e}"))?;
+        for reference in &refs {
+            checker.check(&reference.item, &[reference.field.as_str()], false)?;
+        }
+        Ok(!refs.is_empty())
+    };
+    for (_, reference) in request.secret_files {
+        checker.check(&reference.item, &[reference.field.as_str()], false)?;
+    }
+    for (_, text) in request.templates {
+        check_refs(&mut checker, text)?;
+    }
+    let mut args_hold_values = false;
+    for arg in request.args {
+        args_hold_values |= check_refs(&mut checker, arg)?;
+    }
 
     // Every check passed: this is where the guard grants plaintext.
     let access = PlaintextAccess::issue();
@@ -148,8 +179,30 @@ pub fn prepare(store: &dyn Store, vault: &Vault, request: &Request<'_>) -> Resul
         let value = fill_template(template, |r| vault.resolve(&access, r))?;
         add_var(&mut vars, name.as_str(), value)?;
     }
+    let mut files: Vec<(String, Zeroizing<String>)> = Vec::new();
+    for (var, reference) in request.secret_files {
+        add_var(&mut files, var, vault.resolve(&access, reference)?)?;
+    }
+    for (var, text) in request.templates {
+        add_var(
+            &mut files,
+            var,
+            fill_template(text, |r| vault.resolve(&access, r))?,
+        )?;
+    }
+    if let Some((var, _)) = files.iter().find(|(f, _)| vars.iter().any(|(v, _)| v == f)) {
+        bail!("variable {var} given twice");
+    }
+    let args = request
+        .args
+        .iter()
+        .map(|arg| fill_template(arg, |r| vault.resolve(&access, r)))
+        .collect::<Result<Vec<_>>>()?;
     Ok(Injection {
         vars,
+        files,
+        args,
+        args_hold_values,
         masker: mask::masker(vault)?,
         agent: request.agent.to_owned(),
         items: checker.checked,
