@@ -13,6 +13,11 @@ pub const DEFAULT_ITEM_TTL: &str = "default_item_ttl";
 /// How long an unconfirmed draft is kept before `prune-drafts` removes it (08 §8.3). `none`:
 /// until a person confirms or discards it.
 pub const DRAFT_TTL: &str = "draft_ttl";
+/// Seconds a value copied in the admin app stays on the clipboard (09 §9.4.7). Longer weakens.
+pub const CLIPBOARD_CLEAR_SECONDS: &str = "clipboard_clear_seconds";
+/// The range `clipboard_clear_seconds` takes: long enough to paste, short enough to matter.
+const CLEAR_SECONDS_RANGE: std::ops::RangeInclusive<u64> = 5..=300;
+const CLEAR_SECONDS_DEFAULT: u64 = 30;
 /// The `default_item_ttl` value meaning "never expire".
 pub const NO_TTL: &str = "none";
 
@@ -23,6 +28,8 @@ pub enum SettingFormat {
     Boolean,
     /// `<N>d` or `none`.
     Ttl,
+    /// Whole seconds within [`CLEAR_SECONDS_RANGE`].
+    ClearSeconds,
 }
 
 /// Which change to a setting weakens a protection and needs a person.
@@ -30,6 +37,8 @@ pub enum SettingFormat {
 pub enum SettingWeakening {
     /// Setting this value turns the protection down.
     WhenSetTo(&'static str),
+    /// A number above the default turns the protection down.
+    AboveDefault,
     /// Any change, either way (capture: on collects more, off is still a change of mode).
     AnyChange,
     Never,
@@ -70,6 +79,12 @@ pub const SETTINGS: &[SettingSpec] = &[
         format: SettingFormat::Ttl,
         weakening: SettingWeakening::Never,
     },
+    SettingSpec {
+        key: CLIPBOARD_CLEAR_SECONDS,
+        default: "30", // CLEAR_SECONDS_DEFAULT
+        format: SettingFormat::ClearSeconds,
+        weakening: SettingWeakening::AboveDefault,
+    },
 ];
 
 /// A value a setting does not take. The message names the format, never the value.
@@ -96,6 +111,14 @@ impl SettingSpec {
             SettingFormat::Ttl => Ttl::parse(value)
                 .map(|_| ())
                 .map_err(|e| InvalidSetting(format!("{e}, or none"))),
+            SettingFormat::ClearSeconds => match clear_seconds(value) {
+                Some(_) => Ok(()),
+                None => Err(InvalidSetting(format!(
+                    "must be whole seconds from {} to {}",
+                    CLEAR_SECONDS_RANGE.start(),
+                    CLEAR_SECONDS_RANGE.end()
+                ))),
+            },
         }
     }
 
@@ -103,10 +126,26 @@ impl SettingSpec {
     pub fn weakens(&self, value: &str) -> bool {
         match self.weakening {
             SettingWeakening::WhenSetTo(off) => value == off,
+            SettingWeakening::AboveDefault => {
+                value.parse::<u64>().ok() > self.default.parse::<u64>().ok()
+            }
             SettingWeakening::AnyChange => true,
             SettingWeakening::Never => false,
         }
     }
+}
+
+/// `value` as seconds, if it is a whole number in range.
+fn clear_seconds(value: &str) -> Option<u64> {
+    let seconds = value.parse::<u64>().ok()?;
+    CLEAR_SECONDS_RANGE.contains(&seconds).then_some(seconds)
+}
+
+/// How long a copied value stays for a stored `clipboard_clear_seconds`. A value the setting
+/// does not take (only a tampered store holds one) falls back to the default.
+pub fn clipboard_clear_after(stored: Option<&str>) -> std::time::Duration {
+    let seconds = stored.and_then(clear_seconds);
+    std::time::Duration::from_secs(seconds.unwrap_or(CLEAR_SECONDS_DEFAULT))
 }
 
 /// Whether capture is on for a stored `capture_enabled`: only an explicit `true` (off by
@@ -147,6 +186,27 @@ mod tests {
         );
         assert!(!ttl.weakens("1d"));
         assert!(SettingSpec::find("nope").is_none());
+    }
+
+    #[test]
+    fn the_clipboard_time_is_bounded_and_raising_it_weakens() {
+        let clear = SettingSpec::find(CLIPBOARD_CLEAR_SECONDS).unwrap();
+        assert_eq!(clear.default, "30");
+        assert_eq!(clear.default, CLEAR_SECONDS_DEFAULT.to_string());
+        for ok in ["5", "30", "300"] {
+            assert!(clear.check(ok).is_ok(), "{ok}");
+        }
+        for bad in ["4", "301", "30s", "-1", ""] {
+            assert_eq!(
+                clear.check(bad).unwrap_err().to_string(),
+                "must be whole seconds from 5 to 300",
+                "{bad}"
+            );
+        }
+        assert!(clear.weakens("31") && !clear.weakens("30") && !clear.weakens("10"));
+        assert_eq!(clipboard_clear_after(None).as_secs(), 30);
+        assert_eq!(clipboard_clear_after(Some("10")).as_secs(), 10);
+        assert_eq!(clipboard_clear_after(Some("9999")).as_secs(), 30);
     }
 
     #[test]
