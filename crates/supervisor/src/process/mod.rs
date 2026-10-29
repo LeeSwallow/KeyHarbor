@@ -172,6 +172,7 @@ async fn supervise(
         close: tokio::sync::Notify::new(),
         close_requested: false.into(),
     });
+    capture_logins(&shared, &link);
     let watcher = shared.clone();
     tokio::spawn(async move {
         // On macOS Chrome keeps running with no windows; closing the last tab closes it.
@@ -242,4 +243,19 @@ async fn record_exit(shared: &Shared, status: ExitStatus) {
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
+}
+
+/// Hands every sign-in the browser reports to the guard, which keeps it only during a
+/// handoff with capture on (08 §8.2 ②). Values stay in this process.
+fn capture_logins(shared: &Arc<Shared>, link: &chrome::CdpLink) {
+    let (sender, mut captured) = tokio::sync::mpsc::channel(16);
+    let link = link.clone();
+    tokio::spawn(async move { link.capture_logins(sender).await });
+    let shared = shared.clone();
+    tokio::spawn(async move {
+        while let Some(login) = captured.recv().await {
+            let shared = shared.clone();
+            let _ = tokio::task::spawn_blocking(move || shared.guard.capture(login)).await;
+        }
+    });
 }

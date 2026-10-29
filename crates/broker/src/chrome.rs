@@ -36,6 +36,10 @@ pub struct Chrome {
 pub struct CdpLink(Arc<Cdp>);
 
 impl CdpLink {
+    pub(crate) fn cdp(&self) -> Arc<Cdp> {
+        self.0.clone()
+    }
+
     /// The raw browser adapter over this pipe. Must be called inside a Tokio runtime.
     /// Screenshots are written into `shots`, a private directory that already exists, as
     /// `<prefix>-<n>.png`.

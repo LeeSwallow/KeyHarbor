@@ -109,6 +109,12 @@ impl SettingSpec {
     }
 }
 
+/// Whether capture is on for a stored `capture_enabled`: only an explicit `true` (off by
+/// default, R-36).
+pub fn capture_enabled(stored: Option<&str>) -> bool {
+    stored == Some("true")
+}
+
 /// Whether the usage record is on for a stored `audit_enabled` (`None` when never set): only
 /// an explicit `false` turns it off, so an odd stored value fails safe (J-73).
 pub fn audit_enabled(stored: Option<&str>) -> bool {

@@ -11,6 +11,7 @@ use crate::vault::Origin;
 use anyhow::Result;
 use serde_json::Value;
 use std::{collections::BTreeSet, future::Future};
+use zeroize::Zeroizing;
 
 /// The element a request acts on.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,6 +29,15 @@ impl Target {
             Self::Ref(_) => None,
         }
     }
+}
+
+/// A sign-in the user submitted in a session's browser (08 §8.2 ②): reported by the browser
+/// adapter to the supervisor only, which hands it to the guard to store as a draft. The
+/// origin is the frame's own (`location.origin` in an isolated world), still to be parsed.
+pub struct CapturedLogin {
+    pub origin: String,
+    pub username: Option<Zeroizing<String>>,
+    pub password: Zeroizing<String>,
 }
 
 /// What typing text into the page did, besides putting the text there.
