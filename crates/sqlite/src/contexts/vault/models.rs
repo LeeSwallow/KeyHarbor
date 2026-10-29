@@ -48,6 +48,8 @@ pub struct ItemModel {
     pub description: Option<String>,
     /// Space-joined, sorted.
     pub tags: String,
+    /// Space-joined, sorted.
+    pub plain_fields: String,
 }
 
 #[derive(Queryable, Selectable, Insertable)]

@@ -47,6 +47,7 @@ pub fn summary_json(item: &ItemSummary) -> serde_json::Value {
         "description": item.description,
         "field_descriptions": item.field_descriptions,
         "tags": item.tags,
+        "plain_values": item.plain_values,
         "expired": item.expired,
         "status": item.status.as_str(),
         "source": item.source.as_str(),

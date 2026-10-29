@@ -34,6 +34,8 @@ struct ItemOut<'a> {
     description: Option<&'a str>,
     field_descriptions: BTreeMap<&'a str, &'a str>,
     tags: &'a [String],
+    /// Fields that are not secret.
+    plain_fields: Vec<&'a str>,
     status: &'static str,
     source: &'static str,
     fields: BTreeMap<&'a str, &'a str>,
@@ -62,6 +64,8 @@ struct ItemIn {
     /// Absent in exports from before tags.
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(default)]
+    plain_fields: Vec<String>,
     status: String,
     fields: BTreeMap<String, String>,
 }
@@ -130,6 +134,7 @@ impl Vault {
                         .map(|(f, d)| (f.as_str(), d.as_str()))
                         .collect(),
                     tags: &s.tags,
+                    plain_fields: s.plain_values.keys().map(String::as_str).collect(),
                     status: s.status.as_str(),
                     source: s.source.as_str(),
                     fields: fields
@@ -216,6 +221,11 @@ impl Vault {
                         .tags
                         .iter()
                         .map(|t| keyharbor_domain::tag::Tag::parse(t).map_err(|e| anyhow!("{e}")))
+                        .collect::<Result<_>>()?,
+                    plain_fields: item
+                        .plain_fields
+                        .iter()
+                        .map(|f| FieldName::parse(f).map_err(|e| anyhow!("{e}")))
                         .collect::<Result<_>>()?,
                 },
             })?;

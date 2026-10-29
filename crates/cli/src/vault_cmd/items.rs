@@ -24,6 +24,7 @@ pub struct AddArgs {
     pub expiry: ExpiryArgs,
     pub about: DescriptionArgs,
     pub tags: Vec<String>,
+    pub plain: Vec<String>,
     pub draft: bool,
 }
 
@@ -39,6 +40,8 @@ pub struct EditArgs {
     pub about: DescriptionArgs,
     pub tags: Vec<String>,
     pub untag: Vec<String>,
+    pub plain: Vec<String>,
+    pub secret: Vec<String>,
     pub status: Option<StatusArg>,
 }
 
@@ -72,6 +75,11 @@ pub fn add(app: &App, args: &AddArgs) -> Result<()> {
             description: description.flatten(),
             field_descriptions,
             tags: tags(&args.tags)?,
+            plain_fields: args
+                .plain
+                .iter()
+                .map(|f| field_name(kind, f))
+                .collect::<Result<_>>()?,
         },
     };
     items::add(&vault, item, &args.about.texts())?;
@@ -111,6 +119,16 @@ pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
         status: args.status.map(ItemStatus::from),
         add_tags: tags(&args.tags)?,
         remove_tags: tags(&args.untag)?,
+        make_plain: args
+            .plain
+            .iter()
+            .map(|f| field_name(kind, f))
+            .collect::<Result<_>>()?,
+        make_secret: args
+            .secret
+            .iter()
+            .map(|f| field_name(kind, f))
+            .collect::<Result<_>>()?,
     };
     items::edit(&vault, &TtyConfirm, &name, change, &args.about.texts())?;
     println!("updated\t{}", name.as_str());

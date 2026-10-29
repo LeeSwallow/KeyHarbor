@@ -124,6 +124,7 @@ fn summary_json(item: &ItemSummary) -> Value {
         "domain": item.domain.as_str(),
         "field_descriptions": item.field_descriptions,
         "tags": item.tags,
+        "plain_values": item.plain_values,
         "fields": item.fields,
         "placeholders": placeholders,
         "origins": item.origins,

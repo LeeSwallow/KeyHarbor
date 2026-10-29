@@ -11,9 +11,23 @@ use keyharbor_domain::{
     date::{Expiry, Ttl},
     ports::{FieldRow, ItemRow},
     tag::{Tag, tag_set},
-    vault::{Description, Domain, ItemName},
+    vault::{Description, Domain, FieldName, ItemName},
 };
 use keyharbor_vault::keys::KeyId;
+
+/// The fields marked not secret, sorted and unique; each must be a field the item has.
+fn plain_set<'a>(marked: impl Iterator<Item = &'a str>, present: &[&str]) -> Result<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    for field in marked {
+        if !present.contains(&field) {
+            bail!("field {field} is not part of the item; it cannot be marked plain");
+        }
+        out.push(field.to_owned());
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
 
 /// `current` with `changes` applied (`None` removes), keeping only fields in `present`
 /// and refusing a description for a field the item does not have. Sorted by field.
@@ -90,6 +104,14 @@ impl Vault {
                 .iter()
                 .map(|t| t.as_str().to_owned())
                 .collect(),
+            plain_fields: plain_set(
+                item.details.plain_fields.iter().map(|f| f.as_str()),
+                &item
+                    .fields
+                    .iter()
+                    .map(|(f, _)| f.as_str())
+                    .collect::<Vec<_>>(),
+            )?,
             status: item.status.as_str().to_owned(),
             source: item.source.as_str().to_owned(),
             meta_mac: Vec::new(),
@@ -179,6 +201,15 @@ impl Vault {
             row.description = description.as_ref().map(|d| d.as_str().to_owned());
         }
         let present: Vec<&str> = kept.iter().map(|f| f.field.as_str()).collect();
+        // Already plain (minus those made secret, and fields that are gone), plus those made
+        // plain now, which must exist.
+        let still_plain = row.plain_fields.iter().map(String::as_str).filter(|f| {
+            present.contains(f) && !change.make_secret.iter().any(|s| s.as_str() == *f)
+        });
+        let marked: Vec<&str> = still_plain
+            .chain(change.make_plain.iter().map(FieldName::as_str))
+            .collect();
+        row.plain_fields = plain_set(marked.into_iter(), &present)?;
         row.field_descriptions = field_descriptions(
             change
                 .field_descriptions

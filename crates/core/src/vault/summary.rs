@@ -104,11 +104,17 @@ impl Vault {
     fn summary(&self, row: ItemRow, tampered: bool) -> Result<ItemSummary> {
         let (expires_at, expired) = (expiry(&row)?, is_expired(&row, self.clock.today())?);
         let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
-        let fields: Vec<String> = self
+        let stored = self
             .store
             .item_get(&row.name)?
-            .map(|(_, f)| f.into_iter().map(|f| f.field).collect())
+            .map(|(_, f)| f)
             .unwrap_or_default();
+        let plain_values = if tampered {
+            BTreeMap::new()
+        } else {
+            self.plain_values(&row, &stored)?
+        };
+        let fields: Vec<String> = stored.into_iter().map(|f| f.field).collect();
         let field_descriptions = effective_descriptions(kind, &fields, &row.field_descriptions);
         Ok(ItemSummary {
             name: row.name,
@@ -123,6 +129,7 @@ impl Vault {
             description: row.description,
             field_descriptions,
             tags: row.tags.clone(),
+            plain_values,
             status: ItemStatus::parse(&row.status).context("unknown status in database")?,
             source: ItemSource::parse(&row.source).context("unknown source in database")?,
             updated_at: row.updated_at,
