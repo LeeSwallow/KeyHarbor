@@ -2,6 +2,7 @@
 //! core and guard as the CLI. `main.rs` puts it behind Tauri.
 
 pub mod commands;
+pub mod confirm;
 mod context;
 
 pub use context::{Ctx, KeyStores, SystemClock};

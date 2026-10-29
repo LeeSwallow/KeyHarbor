@@ -5,10 +5,14 @@
 
 use keyharbor_app::{
     Ctx, SystemClock,
-    commands::{self, AuditDto, InboxDto, ItemDto, OverviewDto, SessionDto, message},
+    commands::{
+        self, AuditDto, HandoffDto, InboxDto, ItemDto, OverviewDto, RequestForm, RuleDto,
+        SessionDto, SettingDto, message,
+    },
+    confirm::Outcome,
 };
 use keyharbor_keystore::KeychainKeyStore;
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tauri::State;
 
 type Reply<T> = Result<T, String>;
@@ -48,6 +52,64 @@ fn confirm_draft(ctx: State<'_, Ctx>, name: String) -> Reply<String> {
 #[tauri::command]
 fn discard_draft(ctx: State<'_, Ctx>, name: String) -> Reply<()> {
     commands::discard_draft(&ctx, &name).map_err(message)
+}
+
+#[tauri::command]
+fn request_form(ctx: State<'_, Ctx>, id: String) -> Reply<RequestForm> {
+    commands::request_form(&ctx, &id).map_err(message)
+}
+#[tauri::command]
+fn fulfill_request(
+    ctx: State<'_, Ctx>,
+    id: String,
+    values: BTreeMap<String, String>,
+) -> Reply<String> {
+    commands::fulfill_request(&ctx, &id, values).map_err(message)
+}
+#[tauri::command]
+fn fulfill_with_item(ctx: State<'_, Ctx>, id: String, item: String) -> Reply<String> {
+    commands::fulfill_with_item(&ctx, &id, &item).map_err(message)
+}
+#[tauri::command]
+fn handoffs(ctx: State<'_, Ctx>) -> Reply<Vec<HandoffDto>> {
+    commands::handoffs(&ctx).map_err(message)
+}
+#[tauri::command]
+fn resume_handoff(ctx: State<'_, Ctx>, session: String, request: String) -> Reply<()> {
+    commands::resume_handoff(&ctx, &session, &request).map_err(message)
+}
+#[tauri::command]
+fn settings(ctx: State<'_, Ctx>) -> Reply<Vec<SettingDto>> {
+    commands::settings(&ctx).map_err(message)
+}
+#[tauri::command]
+fn set_setting(ctx: State<'_, Ctx>, key: String, value: String, confirmed: bool) -> Reply<Outcome> {
+    commands::set_setting(&ctx, &key, &value, confirmed).map_err(message)
+}
+#[tauri::command]
+fn policies(ctx: State<'_, Ctx>) -> Reply<Vec<RuleDto>> {
+    commands::policies(&ctx).map_err(message)
+}
+#[tauri::command]
+fn set_policy(
+    ctx: State<'_, Ctx>,
+    agent: String,
+    resource: String,
+    target: String,
+    effect: String,
+    confirmed: bool,
+) -> Reply<Outcome> {
+    commands::set_policy(&ctx, (&agent, &resource, &target, &effect), confirmed).map_err(message)
+}
+#[tauri::command]
+fn remove_policy(
+    ctx: State<'_, Ctx>,
+    agent: String,
+    resource: String,
+    target: String,
+    confirmed: bool,
+) -> Reply<Outcome> {
+    commands::remove_policy(&ctx, &agent, &resource, &target, confirmed).map_err(message)
 }
 
 /// The data folder the CLI uses: `KEYHARBOR_HOME`, else the macOS application data folder.
@@ -90,7 +152,17 @@ fn main() {
             audit,
             decline_request,
             confirm_draft,
-            discard_draft
+            discard_draft,
+            request_form,
+            fulfill_request,
+            fulfill_with_item,
+            handoffs,
+            resume_handoff,
+            settings,
+            set_setting,
+            policies,
+            set_policy,
+            remove_policy
         ])
         .run(tauri::generate_context!())
         .expect("KeyHarbor app failed to start");
