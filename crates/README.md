@@ -134,7 +134,7 @@ cargo run -p keyharbor -- vault list
 | `policy allow\|deny --agent A --resource R [--target T]` · `policy rm …` | R은 `session`·`item`·`domain`·`create_session`·`raw_cdp`, T는 세션 id·항목 이름·도메인(`credentials`·`payment`·`personal`·`developer`) 또는 `*`(기본). A가 `*`면 모든 에이전트 |
 | `audit [--limit N] [--json]` | 사용 기록. `seq at agent kind item origin session result`. 값은 없다 |
 | `settings get\|set KEY [VALUE]` | `audit_enabled true\|false`(`false`로 끄면 거부를 포함해 아무것도 기록하지 않는다. 그 밖의 값은 켜짐), `capture_enabled true\|false`(4단계), `default_item_ttl <N>d\|none` |
-| `run [--agent A] (--env ITEM \| --env-file PATH)… -- CMD ARGS…` | `run_allowed` 항목(secret·env 기본 허용)만. env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣고, 그 stdout·stderr를 줄 단위로 가려서 내보낸다. 종료 코드를 그대로 전달하고(신호면 128+번호), 자식의 core dump를 끈다 |
+| `run [--agent A] (--env ITEM \| --env-file PATH)… -- CMD ARGS…` | `run_allowed` 항목(secret·env 기본 허용)만. env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣고, 그 stdout·stderr를 조각 단위로 가려서 내보낸다(줄바꿈 없는 출력도 잠시 멈추면 보이고, 값 중간에서 끊지 않는다, J-83). SIGTERM·SIGHUP은 자식에게 전달하고(Ctrl-C는 터미널이 자식에게 직접 보낸다), 종료 코드를 그대로 전달하며(신호면 128+번호), 자식의 core dump를 끈다 |
 
 정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`, `substitution_locked`, `mask_probe`, `secret_denied_suppressed`(초당 10건을 넘은 거부 수), `first_use_origin`(identity·address가 처음 쓰인 origin), `site_state_changed`(사이트 로그인 상태 기록), `vault_requested`·`vault_request_answered`(정보 요청과 답), `credential_captured`(인계 중 포착, 에이전트 이름 `user`), `grant_changed`(`added`·`revoked`·`cleared`), `navigation_denied`(grant 밖 문서), `site_handed_off`(넘겨받은 쿠키 수).
 
@@ -195,7 +195,7 @@ keyharbor browser install-host                         # Chrome·Chromium·Firef
 
 - **에이전트 이름은 기록용 표시다.** 같은 OS 사용자는 다른 이름으로 MCP 서버를 띄울 수 있다. 정책은 오작동 방지이지 보안 경계가 아니다.
 - **`keyharbor run`의 자식은 평문을 갖는다.** 값을 파일이나 네트워크로 보내는 것은 막지 못한다(T13). 그래서 origin 바인딩이 켜진 항목과 `run_allowed`가 꺼진 항목은 주입하지 않는다. MCP 서버 설정은 명령을 `keyharbor run --env … -- <server>`로 감싸면 키를 설정 파일에 두지 않아도 된다.
-- 4–6자리 PIN처럼 짧은 값은 세션을 여러 번 열어 마스커 거부로 조금씩 추측할 수 있다(세션당 세 번). 탐색 이벤트가 입력 뒤에 오면 확인~입력 사이 탐색을 놓칠 수 있다. 값을 받은 입력란 밖으로 페이지가 옮긴 편집 값은 가리지 못한다. 마스킹은 줄 단위라 여러 줄에 걸친 값은 놓칠 수 있다.
+- 4–6자리 PIN처럼 짧은 값은 세션을 여러 번 열어 마스커 거부로 조금씩 추측할 수 있다(세션당 세 번). 탐색 이벤트가 입력 뒤에 오면 확인~입력 사이 탐색을 놓칠 수 있다. 값을 받은 입력란 밖으로 페이지가 옮긴 편집 값은 가리지 못한다. `run` 출력에서 자식이 값의 앞부분만 찍고 끝나면 그 조각은 값이 아니므로 가려지지 않는다.
 - 다른 사이트의 iframe(예: 실제 결제사 도메인의 카드 입력란)은 별도 CDP target이라 snapshot에 나오지 않고 입력할 수 없다.
 - 스크린샷의 픽셀, base64 같은 다른 인코딩, 여러 요소에 쪼개진 값은 가리지 못한다. 3자 이하 값(3자리 CVC, 월 등)은 가리지 않는다.
 - 마스킹 오토마톤이 가진 값 사본과 자식 프로세스 환경 변수 사본은 메모리에서 지워지지 않는다.

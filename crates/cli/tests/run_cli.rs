@@ -241,3 +241,99 @@ fn refused_items_never_start_the_child() {
     );
     assert!(!c.transcript.borrow().contains(&key));
 }
+
+impl Cli {
+    /// Starts `keyharbor run --env app -- sh -c <script>` without waiting for it.
+    fn start(&self, script: &str) -> std::process::Child {
+        Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+            .arg("--data-dir")
+            .arg(&self.data)
+            .args(["run", "--env", "app", "--", "sh", "-c", script])
+            .env("KEYHARBOR_TEST_KEYSTORE_DIR", self.tmp.path().join("keys"))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    }
+    fn with_key(&self) -> String {
+        let key = self.synth("key");
+        self.ok(
+            &["vault", "add", "app", "--kind", "env", "--stdin"],
+            Some(&serde_json::json!({"API_KEY": key}).to_string()),
+        );
+        key
+    }
+}
+
+/// Reads `out` on its own thread, chunk by chunk, until it closes.
+fn reader(mut out: impl std::io::Read + Send + 'static) -> std::sync::mpsc::Receiver<Vec<u8>> {
+    let (sender, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buffer = [0u8; 256];
+        while let Ok(n) = out.read(&mut buffer) {
+            if n == 0 || sender.send(buffer[..n].to_vec()).is_err() {
+                return;
+            }
+        }
+    });
+    received
+}
+
+/// What `chunks` gives until `want` appears, `limit` passes, or the stream closes.
+fn read_until(
+    chunks: &std::sync::mpsc::Receiver<Vec<u8>>,
+    want: &str,
+    limit: std::time::Duration,
+) -> String {
+    let deadline = std::time::Instant::now() + limit;
+    let mut taken = Vec::new();
+    while !String::from_utf8_lossy(&taken).contains(want) {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        match chunks.recv_timeout(left) {
+            Ok(chunk) => taken.extend(chunk),
+            Err(_) => break,
+        }
+    }
+    String::from_utf8_lossy(&taken).into_owned()
+}
+
+/// J-83: a prompt without a newline shows while the child still runs, and a value written a
+/// byte at a time is still masked.
+#[test]
+fn output_without_a_newline_shows_while_the_child_runs_and_stays_masked() {
+    let c = Cli::new();
+    let key = c.with_key();
+    let mut child = c.start(
+        "printf 'Ready> '; printf '%s\\n' \"$API_KEY\" | fold -w1 | while read -r ch; do printf '%s' \"$ch\"; sleep 0.01; done; sleep 30",
+    );
+    let out = reader(child.stdout.take().unwrap());
+    let shown = read_until(
+        &out,
+        "{{secret:app.API_KEY}}",
+        std::time::Duration::from_secs(10),
+    );
+    assert!(shown.starts_with("Ready> "), "{shown:?}");
+    assert!(shown.contains("{{secret:app.API_KEY}}"), "{shown:?}");
+    assert!(!shown.contains(&key[..6]), "{shown:?}");
+    child.kill().unwrap();
+    child.wait().unwrap();
+}
+
+/// J-83: SIGTERM to `keyharbor run` reaches the child, which can clean up; its exit code is
+/// passed on.
+#[test]
+fn a_terminate_signal_is_passed_to_the_child() {
+    let c = Cli::new();
+    c.with_key();
+    let mut child =
+        c.start("trap 'echo cleaned up; exit 7' TERM; echo started; while :; do sleep 0.1; done");
+    let out = reader(child.stdout.take().unwrap());
+    assert!(read_until(&out, "started", std::time::Duration::from_secs(10)).contains("started"));
+    // SAFETY: kill only sends a signal to the process we started.
+    unsafe { libc::kill(child.id() as i32, libc::SIGTERM) };
+    let status = child.wait().unwrap();
+    let rest = read_until(&out, "cleaned up", std::time::Duration::from_secs(5));
+    assert_eq!(status.code(), Some(7), "{rest:?}");
+    assert!(rest.contains("cleaned up"), "{rest:?}");
+}

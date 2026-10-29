@@ -10,14 +10,32 @@ use anyhow::Result;
 use keyharbor_core::{PlaintextAccess, Vault};
 use keyharbor_domain::vault::PlaceholderRef;
 use serde_json::Value;
+use std::{
+    collections::HashSet,
+    hash::{BuildHasher, RandomState},
+};
 use zeroize::Zeroizing;
 
+mod stream;
 mod variants;
 
+pub use stream::StreamMasker;
+
 pub const MIN_MASKED_CHARS: usize = 4;
+/// A paused stream holds back a trailing piece of this many bytes or more that a value starts
+/// with. One: showing even two characters would leave the rest of the value unmatched, and so
+/// unmasked, when it follows (J-83). The cost is that a prompt ending in a character some
+/// value starts with shows that character only when more output comes or the stream ends.
+pub const MIN_HELD_PREFIX: usize = 1;
 
 pub struct Masker {
     automaton: Option<AhoCorasick>,
+    /// The longest pattern, in bytes: how much a stream must hold back.
+    longest: usize,
+    /// Keyed hashes of every proper prefix (at least [`MIN_HELD_PREFIX`] bytes) of every
+    /// pattern, so a paused stream can hold back the start of a value (J-83).
+    prefixes: HashSet<u64>,
+    hasher: RandomState,
     /// The placeholder for each pattern, by pattern index.
     replacements: Vec<String>,
     version: Option<i64>,
@@ -39,6 +57,9 @@ impl Masker {
     pub fn empty() -> Self {
         Self {
             automaton: None,
+            longest: 0,
+            prefixes: HashSet::new(),
+            hasher: RandomState::new(),
             replacements: Vec::new(),
             version: None,
         }
@@ -59,12 +80,21 @@ impl Masker {
         patterns.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
         patterns.dedup_by(|later, first| later.0 == first.0);
         let (keys, replacements): (Vec<_>, Vec<_>) = patterns.into_iter().unzip();
+        let longest = keys.iter().map(|k| k.len()).max().unwrap_or(0);
+        let hasher = RandomState::new();
+        let prefixes = keys
+            .iter()
+            .flat_map(|k| (MIN_HELD_PREFIX..k.len()).map(|n| hasher.hash_one(&k.as_bytes()[..n])))
+            .collect();
         let automaton = AhoCorasick::builder()
             .match_kind(MatchKind::LeftmostLongest)
             .build(keys.iter().map(|k| k.as_bytes()))
             .expect("patterns build an automaton");
         Self {
             automaton: Some(automaton),
+            longest,
+            prefixes,
+            hasher,
             replacements,
             version: None,
         }
@@ -78,6 +108,41 @@ impl Masker {
     /// The vault version the values were read at.
     pub fn version(&self) -> Option<i64> {
         self.version
+    }
+
+    /// The length of the longest masked form, in bytes.
+    pub fn longest(&self) -> usize {
+        self.longest
+    }
+
+    /// How many bytes at the end of `bytes` could be the start of a masked value.
+    /// A whole value that ends the bytes is not held (it is masked as it is, even if a longer
+    /// form of it might still follow).
+    pub(crate) fn value_start_at_end(&self, bytes: &[u8]) -> usize {
+        let ends_in_value = self
+            .automaton
+            .as_ref()
+            .is_some_and(|ac| ac.find_iter(bytes).any(|m| m.end() == bytes.len()));
+        if ends_in_value {
+            return 0;
+        }
+        let most = self.longest.saturating_sub(1).min(bytes.len());
+        (MIN_HELD_PREFIX..=most)
+            .rev()
+            .find(|&n| {
+                let tail = &bytes[bytes.len() - n..];
+                self.prefixes.contains(&self.hasher.hash_one(tail))
+            })
+            .unwrap_or(0)
+    }
+
+    /// The start of a match in `bytes` that begins before `at` and ends after it.
+    pub(crate) fn match_spanning(&self, bytes: &[u8], at: usize) -> Option<usize> {
+        let ac = self.automaton.as_ref()?;
+        ac.find_iter(bytes)
+            .take_while(|m| m.start() < at)
+            .find(|m| m.end() > at)
+            .map(|m| m.start())
     }
 
     pub fn redact(&self, text: &str) -> String {
