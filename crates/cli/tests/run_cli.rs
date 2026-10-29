@@ -337,3 +337,112 @@ fn a_terminate_signal_is_passed_to_the_child() {
     assert_eq!(status.code(), Some(7), "{rest:?}");
     assert!(rest.contains("cleaned up"), "{rest:?}");
 }
+
+/// Channel ②: a field as a private file, gone after the run; its contents are still masked
+/// if the child prints them.
+#[test]
+fn a_field_can_be_handed_over_as_a_private_file() {
+    let c = Cli::new();
+    c.with_key();
+    let out = c.run(
+        &[
+            "run", "--file", "CRED=app.API_KEY", "--", "sh", "-c",
+            "echo \"$CRED\"; cat \"$CRED\"; echo; mode=$(stat -c %a \"$CRED\" 2>/dev/null || stat -f %Lp \"$CRED\"); echo \"mode=$mode\"; d=$(dirname \"$CRED\"); dmode=$(stat -c %a \"$d\" 2>/dev/null || stat -f %Lp \"$d\"); echo \"dir=$dmode\"",
+        ],
+        None,
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = stdout(&out);
+    let mut lines = text.lines();
+    let path = lines.next().unwrap().to_owned();
+    assert_eq!(lines.next(), Some("{{secret:app.API_KEY}}"), "{text}");
+    assert_eq!(lines.next(), Some("mode=600"), "{text}");
+    assert_eq!(lines.next(), Some("dir=700"), "{text}");
+    assert!(!std::path::Path::new(&path).exists(), "{path} left behind");
+}
+
+/// Channel ③: a filled copy of a template file, and placeholders in arguments (with a
+/// warning that arguments are visible to other processes).
+#[test]
+fn templates_and_arguments_get_their_placeholders_filled() {
+    let c = Cli::new();
+    let key = c.with_key();
+    let template = c.tmp.path().join("app.yml");
+    std::fs::write(&template, "token: {{secret:app.API_KEY}}\n").unwrap();
+    let out = c.run(
+        &[
+            "run",
+            "--template",
+            &format!("CONF={}", template.display()),
+            "--",
+            "sh",
+            "-c",
+            "cat \"$CONF\"; test \"$1\" = \"$2\" && echo same",
+            "_",
+            "{{secret:app.API_KEY}}",
+            &key,
+        ],
+        None,
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "token: {{secret:app.API_KEY}}\nsame\n");
+    assert!(
+        stderr(&out).contains("arguments can be read"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&template).unwrap(),
+        "token: {{secret:app.API_KEY}}\n",
+        "the template itself is not changed"
+    );
+}
+
+/// Every channel goes through the same checks: a login item (not `run_allowed`) is refused
+/// whether it is asked for as a file, in a template or in an argument, and nothing starts.
+#[test]
+fn every_channel_refuses_items_run_may_not_use() {
+    let c = Cli::new();
+    c.ok(
+        &[
+            "vault",
+            "add",
+            "site",
+            "--kind",
+            "login",
+            "--origin",
+            "https://example.com",
+            "--stdin",
+        ],
+        Some(r#"{"password":"pw-SECRET-1234"}"#),
+    );
+    let template = c.tmp.path().join("t.txt");
+    std::fs::write(&template, "{{secret:site.password}}").unwrap();
+    let marker = c.tmp.path().join("started");
+    let touch = format!("touch {}", marker.display());
+    for channel in [
+        vec!["--file", "P=site.password"],
+        vec!["--template", &*format!("T={}", template.display()).leak()],
+    ] {
+        let mut args = vec!["run"];
+        args.extend(channel);
+        args.extend(["--", "sh", "-c", &touch]);
+        let out = c.run(&args, None);
+        assert!(!out.status.success(), "{args:?}");
+        assert!(stderr(&out).contains("denied: site"), "{}", stderr(&out));
+    }
+    let out = c.run(
+        &[
+            "run",
+            "--",
+            "sh",
+            "-c",
+            &touch,
+            "_",
+            "{{secret:site.password}}",
+        ],
+        None,
+    );
+    assert!(stderr(&out).contains("denied: site"), "{}", stderr(&out));
+    assert!(!marker.exists());
+}

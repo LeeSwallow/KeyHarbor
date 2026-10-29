@@ -16,7 +16,7 @@ cargo run -p keyharbor -- list
 
 | 계층 | crate | 하는 일 | 주요 모듈 |
 |---|---|---|---|
-| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립(`compose` 한 곳: 저장소·키 저장소·시계·감독자), 파일 읽기·쓰기, `run`의 프로세스 실행 | `compose`, `session_cmd`, `grant_cmd`, `browser_cmd/{host, install}`, `vault_cmd/{input, items, output, files}`, `policy_cmd`, `audit_cmd`, `settings_cmd`, `site_cmd`, `run_cmd`, `tty_confirm` |
+| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립(`compose` 한 곳: 저장소·키 저장소·시계·감독자), 파일 읽기·쓰기, `run`의 프로세스 실행 | `compose`, `session_cmd`, `grant_cmd`, `browser_cmd/{host, install}`, `vault_cmd/{input, items, output, files}`, `policy_cmd`, `audit_cmd`, `settings_cmd`, `site_cmd`, `run_cmd/{child, files, output, signals}`, `tty_confirm` |
 | | `keyharbor-mcp` | stdio MCP 서버. 저장소·금고 opener·런타임은 생성자로 받는다 | `server`, `scope`, `tools/{session, browser, site, vault}` |
 | adapters | `keyharbor-supervisor` | 세션 감독자 프로세스: 잠금, Chrome을 guard로 감싸 제어 socket 처리, 상태 기록(`core::session::supervision`), 제어 프로토콜 wire 타입과 client, `__supervise` argv(`SuperviseArgs`), `SessionRuntime`(`ProcessRuntime`) | `process/{mod, prepare}`, `control/{wire, server, client}`, `ops`, `argv`, `runtime`, `lock`, `paths` |
 | | `keyharbor-broker` | Chrome 어댑터: Chrome 실행과 CDP pipe, `BrowserPort`·`PageInput`·`FrameInspector` 구현(`CdpBrowser`), 모든 페이지 감시(`pages/{capture, gate, cookies}`: 로그인 포착, grant 밖 문서 차단, 끝난 grant의 쿠키 삭제). domain에만 의존하고 supervisor만 이것에 의존한다 | `chrome`, `cdp/{client, protocol}`(crate 내부), `browser/{navigate, snapshot, input, tabs, screenshot, wait, frames}`(crate 내부) |
@@ -134,7 +134,7 @@ cargo run -p keyharbor -- vault list
 | `policy allow\|deny --agent A --resource R [--target T]` · `policy rm …` | R은 `session`·`item`·`domain`·`create_session`·`raw_cdp`, T는 세션 id·항목 이름·도메인(`credentials`·`payment`·`personal`·`developer`) 또는 `*`(기본). A가 `*`면 모든 에이전트 |
 | `audit [--limit N] [--json]` | 사용 기록. `seq at agent kind item origin session result`. 값은 없다 |
 | `settings get\|set KEY [VALUE]` | `audit_enabled true\|false`(`false`로 끄면 거부를 포함해 아무것도 기록하지 않는다. 그 밖의 값은 켜짐), `capture_enabled true\|false`(4단계), `default_item_ttl <N>d\|none` |
-| `run [--agent A] (--env ITEM \| --env-file PATH)… -- CMD ARGS…` | `run_allowed` 항목(secret·env 기본 허용)만. env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣고, 그 stdout·stderr를 조각 단위로 가려서 내보낸다(줄바꿈 없는 출력도 잠시 멈추면 보이고, 값 중간에서 끊지 않는다, J-83). SIGTERM·SIGHUP은 자식에게 전달하고(Ctrl-C는 터미널이 자식에게 직접 보낸다), 종료 코드를 그대로 전달하며(신호면 128+번호), 자식의 core dump를 끈다 |
+| `run [--agent A] (--env ITEM \| --env-file PATH \| --file VAR=ITEM.FIELD \| --template VAR=PATH)… -- CMD ARGS…` | `run_allowed` 항목(secret·env 기본 허용)만. env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣는다. `--file`은 필드 하나를, `--template`은 placeholder를 채운 파일 사본을 0700 임시 폴더의 0600 파일로 만들어 그 경로를 VAR에 넣고 `run`이 끝나면 지운다. 인자의 `{{secret:…}}`도 채우되 `ps`로 보인다는 경고를 낸다(J-84). 자식의 그 stdout·stderr를 조각 단위로 가려서 내보낸다(줄바꿈 없는 출력도 잠시 멈추면 보이고, 값 중간에서 끊지 않는다, J-83). SIGTERM·SIGHUP은 자식에게 전달하고(Ctrl-C는 터미널이 자식에게 직접 보낸다), 종료 코드를 그대로 전달하며(신호면 128+번호), 자식의 core dump를 끈다 |
 
 정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`, `substitution_locked`, `mask_probe`, `secret_denied_suppressed`(초당 10건을 넘은 거부 수), `first_use_origin`(identity·address가 처음 쓰인 origin), `site_state_changed`(사이트 로그인 상태 기록), `vault_requested`·`vault_request_answered`(정보 요청과 답), `credential_captured`(인계 중 포착, 에이전트 이름 `user`), `grant_changed`(`added`·`revoked`·`cleared`), `navigation_denied`(grant 밖 문서), `site_handed_off`(넘겨받은 쿠키 수).
 
@@ -147,6 +147,8 @@ keyharbor vault import-env myapp-dev ./.env
 keyharbor run --agent codex --env myapp-dev -- npm test
 printf 'DATABASE_URL={{secret:myapp-dev.DATABASE_URL}}\n' > .env.keyharbor   # 비밀이 없어 커밋해도 된다
 keyharbor run --env-file .env.keyharbor -- ./serve
+keyharbor run --file GOOGLE_APPLICATION_CREDENTIALS=gcp.key -- ./deploy.sh   # 값을 파일로 (끝나면 지움)
+keyharbor run --template CONF=app.yml.tmpl -- ./serve --config "\$CONF"   # placeholder를 채운 사본
 keyharbor policy deny --agent codex --resource domain --target payment
 ```
 

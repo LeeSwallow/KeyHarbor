@@ -19,6 +19,7 @@ libc.workspace = true
 rpassword.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
