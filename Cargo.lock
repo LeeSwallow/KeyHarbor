@@ -1431,6 +1431,7 @@ dependencies = [
  "keyharbor-supervisor",
  "libc",
  "rpassword",
+ "serde",
  "serde_json",
  "tempfile",
  "tungstenite",
@@ -1573,6 +1574,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]

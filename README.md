@@ -36,6 +36,7 @@ keyharbor audit --limit 20                             # 누가 어떤 항목을
 keyharbor site list <session-id>                      # 세션의 사이트별 로그인 상태 (에이전트가 남긴 메모)
 keyharbor vault requests                               # 에이전트가 요청한 정보 (fulfill <id> 로 답하기)
 keyharbor grant add <session-id> https://github.com --ttl 8h   # 이 세션이 열 수 있는 사이트 (사람 확인)
+keyharbor browser install-host                         # 확장으로 평소 Chrome의 사이트 로그인을 세션에 넘기기
 ```
 
 에이전트는 MCP 도구 `browser_fill`에 `{{secret:blog.password}}`처럼 placeholder를 넘기거나, `browser_login {item: "blog"}`으로 로그인 폼을 한 번에 채웁니다. 등록된 사이트(origin)의 입력란일 때만 값이 들어가고(비밀번호는 비밀번호 칸에만), 에이전트가 받는 결과에서는 값이 다시 placeholder로 바뀝니다.

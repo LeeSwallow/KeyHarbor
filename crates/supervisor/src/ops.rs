@@ -11,16 +11,21 @@ use crate::{
 };
 use anyhow::{Context, Result, anyhow};
 use keyharbor_broker::CdpBrowser;
+use keyharbor_core::grant;
 use keyharbor_domain::{
+    audit::{AuditEvent, AuditKind},
+    handoff_site::{self, SiteCookie},
     policy::AgentName,
     ports::{
         BrowserPort,
         browser::{Target, WaitFor},
     },
-    vault::ItemName,
+    vault::{ItemName, Origin},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
+use zeroize::Zeroizing;
 
 /// A control request in our words.
 enum Command {
@@ -39,6 +44,13 @@ enum Command {
     Login {
         item: ItemName,
         submit: bool,
+    },
+    /// A site handed over by the native host (R-42).
+    ReceiveSite {
+        origin: Origin,
+        cookies: Vec<SiteCookie>,
+        local_storage: Option<BTreeMap<String, Zeroizing<String>>>,
+        ttl_seconds: u64,
     },
     Close,
     Status,
@@ -121,6 +133,27 @@ fn parse(request: &Value) -> Result<(String, Command)> {
             item: ItemName::parse(&item).map_err(|e| anyhow!("{e}"))?,
             submit: login_submits(submit),
         },
+        ControlRequest::ReceiveSite {
+            origin,
+            cookies,
+            local_storage,
+            ttl_seconds,
+        } => {
+            let origin = Origin::parse(&origin).map_err(|e| anyhow!("{e}"))?;
+            let cookies: Vec<SiteCookie> = cookies.into_iter().map(Into::into).collect();
+            handoff_site::check(&origin, &cookies, ttl_seconds).map_err(|e| anyhow!("{e}"))?;
+            Command::ReceiveSite {
+                origin,
+                cookies,
+                local_storage: local_storage.map(|items| {
+                    items
+                        .into_iter()
+                        .map(|(k, v)| (k, Zeroizing::new(v)))
+                        .collect()
+                }),
+                ttl_seconds,
+            }
+        }
         ControlRequest::Close => Command::Close,
         ControlRequest::Status => Command::Status,
     };
@@ -152,6 +185,25 @@ impl Ops {
                 "the browser is with the user until they resume; call session_wait_for_resume"
             )));
         }
+        // Not an agent's page operation: it talks to the browser directly (cookies, not text).
+        if let Command::ReceiveSite {
+            origin,
+            cookies,
+            local_storage,
+            ttl_seconds,
+        } = command
+        {
+            let received = self
+                .receive_site(
+                    shared,
+                    origin,
+                    &cookies,
+                    local_storage.as_ref(),
+                    ttl_seconds,
+                )
+                .await;
+            return guard.redact_outcome(received);
+        }
         let mut browser = guard.browser(&mut self.browser, &agent);
         match command {
             Command::Navigate(url) => browser.navigate(&url).await,
@@ -176,7 +228,47 @@ impl Ops {
                 closed.map(|()| json!({}))
             }
             Command::Status => guard.redact_outcome(status(shared)),
+            Command::ReceiveSite { .. } => Err(anyhow!("receive_site is handled above")),
         }
+    }
+}
+
+impl Ops {
+    /// Grants the site for `ttl_seconds`, puts its cookies (and `localStorage`) into the
+    /// profile and opens it (R-42). The grant comes first so the gate lets the origin load.
+    async fn receive_site(
+        &mut self,
+        shared: &Shared,
+        origin: Origin,
+        cookies: &[SiteCookie],
+        local_storage: Option<&BTreeMap<String, Zeroizing<String>>>,
+        ttl_seconds: u64,
+    ) -> Result<Value> {
+        {
+            let store = shared
+                .store
+                .lock()
+                .map_err(|_| anyhow!("store lock poisoned"))?;
+            grant::add_for_handoff(
+                &**store,
+                &*shared.clock,
+                shared.id,
+                origin.clone(),
+                ttl_seconds,
+            )?;
+        }
+        let count = self
+            .browser
+            .receive_site(origin.as_str(), cookies, local_storage)
+            .await?;
+        if let Ok(store) = shared.store.lock() {
+            let _ = store.record(
+                &AuditEvent::new(grant::HANDOFF, AuditKind::SiteHandedOff, &count.to_string())
+                    .session(shared.id)
+                    .origin(Some(origin.as_str())),
+            );
+        }
+        Ok(json!({"cookies": count}))
     }
 }
 

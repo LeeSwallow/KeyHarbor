@@ -127,7 +127,7 @@ npm run check     # lint + test (CI가 이것을 돈다)
 
 ### native host 매니페스트 (4단계)
 
-`native-host/`의 두 파일이 틀이다. `path`는 4단계에서 만들 `keyharbor-native-host` 실행 파일이고, `keyharbor browser install-host`가 이 파일을 아래 위치에 쓸 것이다. 지금은 손으로 설치하지 않는다.
+`native-host/`의 두 파일은 모양을 보여 주는 예시다. 실제 매니페스트는 `keyharbor browser install-host [--browser chrome|chromium|firefox|all]`가 아래 위치에 쓴다. `path`는 데이터 폴더의 `native-host` 스크립트(0700)이고, 이 스크립트가 `keyharbor --data-dir <데이터 폴더> browser host`를 실행한다(브라우저는 매니페스트의 실행 파일에 우리 인자를 넘기지 않는다).
 
 | 브라우저 | macOS 위치 | 허용 |
 |---|---|---|
@@ -135,9 +135,8 @@ npm run check     # lint + test (CI가 이것을 돈다)
 | Chromium | `~/Library/Application Support/Chromium/NativeMessagingHosts/` | 같음 |
 | Firefox | `~/Library/Application Support/Mozilla/NativeMessagingHosts/dev.keyharbor.host.json` | `allowed_extensions: ["browser-extension@keyharbor.dev"]` |
 
-## 4단계에 남은 것
+## 받는 쪽 (4단계, Rust)
 
-- Rust native host(`keyharbor-native-host`): stdin/stdout 길이 접두 JSON, `receive_site` v1 검증, 감독자 control socket으로 전달. 값은 로그·오류·응답에 쓰지 않는다(누출 테스트 포함).
-- `keyharbor browser install-host`: 위 매니페스트를 쓰고 지우기.
-- 감독자: `Network.setCookies`, origin 열기, `localStorage` 주입, grant `{session, origins, until}` 등록과 `site_handed_off` 사용 기록.
-- `keyharbor session receive` 대기 명령, 관리 앱의 끌어다 놓기 대상(5단계).
+- native host는 `keyharbor browser host`다. stdin/stdout의 길이 접두 JSON 하나를 받고, `receive_site` v1과 쿠키가 그 사이트 것인지 검사한 뒤 실행 중인 세션의 감독자에게 넘긴다. 응답의 오류 코드는 `bad_request`·`no_session`·`not_running`·`refused`(다른 사이트 쿠키, TTL 범위 밖)·`failed`이고, 값은 응답·오류·사용 기록·DB에 없다(`crates/cli/tests/browser_host.rs`).
+- 감독자가 grant(`created_by = handoff`, `ttl_seconds` 동안)를 먼저 기록하고 쿠키를 넣은 뒤(`Storage.setCookies`), `localStorage`가 있으면 그 origin에 넣고 origin을 연다. 사용 기록은 `site_handed_off`. 이 세션은 그때부터 grant 안의 사이트만 연다([J-81](../../docs/design/06-requirements-log.md)).
+- 남은 것: `keyharbor session receive` 대기 명령과 관리 앱의 끌어다 놓기 대상(5단계).

@@ -8,6 +8,7 @@ mod input;
 mod login;
 mod navigate;
 mod navigation;
+mod receive;
 mod screenshot;
 mod snapshot;
 mod tabs;

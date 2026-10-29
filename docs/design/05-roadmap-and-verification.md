@@ -121,6 +121,7 @@ flowchart LR
 | draft 확정·폐기·정리 | 생성 draft는 `logged_in`에서 확정, 에이전트가 put한 draft는 확정되지 않음, 번호 draft 확정은 원래 항목 대체, `prune-drafts`와 `draft_ttl` ✅ (`tests/vault_drafts.rs`) |
 | 로그인 포착 | 인계 중 사람이 친 비밀번호만 draft로 저장(에이전트가 친 값은 아님), 인계 중 에이전트 입력 거절, 기존 값 유지, 로그인 성공 시 확정 ✅ (`tests/capture_chrome.rs`) |
 | grant | 추가는 사람 확인, grant 밖 문서(직접 탐색·링크 클릭)는 막고 하위 리소스는 허용, 회수하면 탐색 거부와 쿠키 삭제 ✅ (`tests/grants_chrome.rs`) |
+| 사이트 넘기기 | native host 등록(우리 확장만 허용), 잘못된 메시지·없는 세션·멈춘 세션·다른 사이트 쿠키 거부, 넘긴 쿠키가 프로필에 들어가고 grant로 그 사이트에 묶임, 값이 응답·사용 기록·DB에 없음 ✅ (`tests/browser_host.rs`) |
 
 ### 5단계 — 관리 앱
 
