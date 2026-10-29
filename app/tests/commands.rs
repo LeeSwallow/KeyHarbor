@@ -5,14 +5,16 @@ use std::sync::Mutex;
 
 /// A clipboard in memory: tests must not touch the real one.
 #[derive(Default)]
-struct Board(Mutex<Vec<(String, bool)>>);
+struct Board(Mutex<Vec<(String, bool)>>, Mutex<Vec<i64>>);
 impl keyharbor_app::clipboard::Clipboard for Board {
     fn copy(&self, text: &str, concealed: bool) -> anyhow::Result<i64> {
         let mut copies = self.0.lock().unwrap();
         copies.push((text.to_owned(), concealed));
         Ok(copies.len() as i64)
     }
-    fn clear_if_unchanged(&self, _token: i64) {}
+    fn clear_if_unchanged(&self, token: i64) {
+        self.1.lock().unwrap().push(token);
+    }
 }
 use keyharbor_core::{ItemSource, ItemStatus, NewItem, Vault, request};
 use keyharbor_domain::{
@@ -259,6 +261,10 @@ fn weakening_changes_ask_first_and_stricter_ones_do_not() {
         (get("audit_enabled"), get("draft_ttl")),
         ("true".to_owned(), "3d".to_owned())
     );
+    assert!(matches!(
+        commands::set_setting(&c, "clipboard_clear_seconds", "60", false).unwrap(),
+        Outcome::Ask { .. }
+    ));
     assert!(
         commands::set_setting(&c, "draft_ttl", "soon", true).is_err(),
         "a bad value is an error, not a question"
@@ -389,4 +395,30 @@ fn items_are_added_changed_and_removed_through_the_guard() {
     commands::remove_item(&c, "shop").unwrap();
     assert!(commands::items(&c).unwrap().is_empty());
     assert!(commands::remove_item(&c, "shop").is_err());
+}
+
+#[test]
+fn a_copied_value_is_cleared_after_the_set_time() {
+    let tmp = tempfile::tempdir().unwrap();
+    let board = Arc::new(Board::default());
+    let c = ctx_with(tmp.path(), board.clone());
+    init_vault(tmp.path())
+        .add(login("github", ItemStatus::Active))
+        .unwrap();
+    // Shorter than the default is stricter, so it needs no confirmation.
+    assert_eq!(
+        commands::set_setting(&c, "clipboard_clear_seconds", "5", false).unwrap(),
+        keyharbor_app::confirm::Outcome::Done
+    );
+    let start = std::time::Instant::now();
+    commands::copy_value(&c, "github", "password").unwrap();
+    while board.1.lock().unwrap().is_empty() && start.elapsed().as_secs() < 15 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert_eq!(
+        *board.1.lock().unwrap(),
+        [1],
+        "cleared well before the default 30 s"
+    );
+    assert!(start.elapsed().as_secs() >= 5);
 }

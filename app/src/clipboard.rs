@@ -1,14 +1,11 @@
 //! Copying (09 §9.9). The clipboard is readable by every process of the user, agents' `pbpaste`
 //! included, so a copied value is marked `org.nspasteboard.ConcealedType` (clipboard managers
-//! that respect it keep no history) and cleared after [`CLEAR_AFTER`] if nothing was copied
-//! since. Whether something was copied since is told by the pasteboard's change count, so
+//! that respect it keep no history) and cleared after the `clipboard_clear_seconds` setting
+//! (09 §9.4.7) if nothing was copied since. Whether something was copied since is told by the pasteboard's change count, so
 //! clearing never reads the clipboard.
 
 use anyhow::Result;
 use std::time::Duration;
-
-/// How long a copied value stays. Fixed for now (09 §9.4.7 shows it as a setting to come).
-pub const CLEAR_AFTER: Duration = Duration::from_secs(30);
 
 /// The system clipboard, as the app uses it.
 pub trait Clipboard: Send + Sync {
@@ -19,11 +16,15 @@ pub trait Clipboard: Send + Sync {
     fn clear_if_unchanged(&self, token: i64);
 }
 
-/// Copies a value and clears it after [`CLEAR_AFTER`] on a background thread.
-pub fn copy_secret(clipboard: std::sync::Arc<dyn Clipboard>, text: &str) -> Result<()> {
+/// Copies a value and clears it `after` that long, on a background thread.
+pub fn copy_secret(
+    clipboard: std::sync::Arc<dyn Clipboard>,
+    text: &str,
+    after: Duration,
+) -> Result<()> {
     let token = clipboard.copy(text, true)?;
     std::thread::spawn(move || {
-        std::thread::sleep(CLEAR_AFTER);
+        std::thread::sleep(after);
         clipboard.clear_if_unchanged(token);
     });
     Ok(())

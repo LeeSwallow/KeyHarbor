@@ -2,7 +2,10 @@
 
 use crate::Ctx;
 use anyhow::{Result, anyhow};
-use keyharbor_domain::vault::{FieldName, ItemName, placeholder};
+use keyharbor_domain::{
+    settings::{CLIPBOARD_CLEAR_SECONDS, clipboard_clear_after},
+    vault::{FieldName, ItemName, placeholder},
+};
 use keyharbor_guard::reveal as guard_reveal;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -64,11 +67,16 @@ pub fn reveal(ctx: &Ctx, item: &str, field: &str) -> Result<String> {
     Ok(value.as_str().to_owned())
 }
 
-/// Copies a value for the person (recorded as a reveal), marked secret and cleared after 30
-/// seconds (09 §9.9).
+/// Copies a value for the person (recorded as a reveal), marked secret and cleared after the
+/// `clipboard_clear_seconds` setting (09 §9.9).
 pub fn copy_value(ctx: &Ctx, item: &str, field: &str) -> Result<()> {
     let value = zeroize::Zeroizing::new(reveal(ctx, item, field)?);
-    crate::clipboard::copy_secret(ctx.clipboard(), &value)
+    let stored = ctx.store()?.setting_get(CLIPBOARD_CLEAR_SECONDS)?;
+    crate::clipboard::copy_secret(
+        ctx.clipboard(),
+        &value,
+        clipboard_clear_after(stored.as_deref()),
+    )
 }
 
 /// Copies a placeholder (not a value, so not concealed): `text` must be exactly one.
