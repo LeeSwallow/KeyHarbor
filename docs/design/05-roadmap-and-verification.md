@@ -116,6 +116,7 @@ flowchart LR
 |---|---|
 | `SITE_STATE` 테이블, `site_state_get/set` | 세션·origin별 왕복, 잘못된 origin 거부 ✅ (`tests/site_state.rs`) |
 | `session_account` 대체 | 기존 도구 제거와 README 이전 안내 |
+| `vault_generate`·`vault_put` | draft로만 저장, 같은 이름은 `~draft-N`, 응답에 값 없음, draft를 placeholder로 바로 입력 ✅ (`tests/vault_drafts.rs`) |
 
 ### 5단계 — 관리 앱
 

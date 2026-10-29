@@ -1,7 +1,7 @@
 //! Adding, changing and removing items. Every change is recorded (without values).
 
 use super::{
-    DEFAULT_ITEM_TTL, ExpiryChoice, ItemChange, NO_TTL, NewItem, Vault, check_fields,
+    DEFAULT_ITEM_TTL, ExpiryChoice, ItemChange, ItemStatus, NO_TTL, NewItem, Vault, check_fields,
     sorted_origins,
 };
 use crate::{LOCAL_AGENT, expires_in};
@@ -44,6 +44,14 @@ impl Vault {
     /// `add`, sealing and signing in `domain`; anything but the kind's domain only builds
     /// vaults as earlier releases left them, for tests.
     pub(crate) fn add_in_domain(&self, item: NewItem, domain: Domain) -> Result<()> {
+        self.insert(item, domain, LOCAL_AGENT)
+    }
+
+    /// Seals, signs and stores `item` in `domain`, recording `agent` as who added it.
+    pub(super) fn insert(&self, item: NewItem, domain: Domain, agent: &str) -> Result<()> {
+        if item.name.is_draft() && item.status != ItemStatus::Draft {
+            bail!("a name with ~draft- is reserved for drafts");
+        }
         check_fields(item.kind, &item.fields)?;
         let id = *KeyId::new().as_bytes();
         let mut row = ItemRow {
@@ -89,7 +97,7 @@ impl Vault {
             .map(|(name, value)| self.seal(&id, domain, name, value))
             .collect();
         self.store.item_insert(&self.guard(domain), &row, &fields)?;
-        self.note_change(&item.name, "added");
+        self.note_change_by(agent, &item.name, "added");
         Ok(())
     }
 
@@ -110,8 +118,11 @@ impl Vault {
 
     /// Records a vault change. Best effort: the change itself is already committed.
     fn note_change(&self, name: &ItemName, result: &str) {
+        self.note_change_by(LOCAL_AGENT, name, result);
+    }
+    fn note_change_by(&self, agent: &str, name: &ItemName, result: &str) {
         let _ = self.store.record(
-            &AuditEvent::new(LOCAL_AGENT, AuditKind::VaultItemChanged, result).item(name.as_str()),
+            &AuditEvent::new(agent, AuditKind::VaultItemChanged, result).item(name.as_str()),
         );
     }
 

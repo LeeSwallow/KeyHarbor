@@ -299,8 +299,27 @@ pub static KINDS: &[KindSpec] = &[
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct ItemName(String);
+
+/// Joins an item's name and a draft number: `github~draft-2` (08 §8.3). `~` is not allowed in
+/// a chosen name, so only a draft can carry it.
+pub const DRAFT_MARK: &str = "~draft-";
+
 impl ItemName {
+    /// A stored or referenced name: a chosen name, or a draft of one.
     pub fn parse(value: &str) -> Result<Self, InvalidValue> {
+        match value.split_once(DRAFT_MARK) {
+            Some((base, number)) => {
+                Self::parse_new(base)?;
+                match number.parse::<u32>() {
+                    Ok(n) if n > 0 && number == n.to_string() => Ok(Self(value.to_owned())),
+                    _ => Err(InvalidValue("draft number must be a positive integer")),
+                }
+            }
+            None => Self::parse_new(value),
+        }
+    }
+    /// A name a person or an agent chooses for a new item: never a draft's name.
+    pub fn parse_new(value: &str) -> Result<Self, InvalidValue> {
         let count = value.chars().count();
         if count == 0
             || count > 64
@@ -316,6 +335,20 @@ impl ItemName {
     }
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+    /// The chosen name this draft belongs to (itself if it is not a draft).
+    pub fn base(&self) -> ItemName {
+        match self.0.split_once(DRAFT_MARK) {
+            Some((base, _)) => Self(base.to_owned()),
+            None => self.clone(),
+        }
+    }
+    pub fn is_draft(&self) -> bool {
+        self.0.contains(DRAFT_MARK)
+    }
+    /// Draft number `n` of this name's base.
+    pub fn draft(&self, n: u32) -> ItemName {
+        Self(format!("{}{DRAFT_MARK}{n}", self.base().0))
     }
 }
 
@@ -512,6 +545,29 @@ mod tests {
         for good in ["github", "my-visa", "회사_메일", max.as_str()] {
             assert!(ItemName::parse(good).is_ok(), "{good:?}");
         }
+    }
+    #[test]
+    fn drafts_are_named_after_their_item_and_cannot_be_chosen() {
+        let github = ItemName::parse("github").unwrap();
+        let draft = github.draft(2);
+        assert_eq!(draft.as_str(), "github~draft-2");
+        assert_eq!(ItemName::parse("github~draft-2"), Ok(draft.clone()));
+        assert!(draft.is_draft() && !github.is_draft());
+        assert_eq!(draft.base(), github);
+        assert_eq!(draft.draft(3).as_str(), "github~draft-3");
+        assert!(ItemName::parse_new("github~draft-2").is_err());
+        for bad in [
+            "github~draft-0",
+            "github~draft-",
+            "github~draft-02",
+            "~draft-1",
+            "a~draft-1~draft-2",
+            "github~draft-x",
+        ] {
+            assert!(ItemName::parse(bad).is_err(), "{bad:?}");
+        }
+        let refs = parse_placeholders("{{secret:github~draft-2.password}}").unwrap();
+        assert_eq!(refs[0].item, draft);
     }
     #[test]
     fn descriptions_are_short_plain_text() {

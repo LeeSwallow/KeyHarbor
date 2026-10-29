@@ -6,9 +6,11 @@
 mod developer;
 mod items;
 mod open;
+mod register;
 mod resolve;
 mod summary;
 
+pub use register::{DraftItem, GeneratedLogin, MAX_DRAFTS};
 pub use resolve::fill_template;
 pub use summary::{CatalogEntry, ItemUse, catalog, effective_descriptions};
 
