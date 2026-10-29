@@ -118,6 +118,7 @@ flowchart LR
 | `session_account` 대체 | 기존 도구 제거와 README 이전 안내 |
 | `vault_generate`·`vault_put` | draft로만 저장, 같은 이름은 `~draft-N`, 응답에 값 없음, draft를 placeholder로 바로 입력 ✅ (`tests/vault_drafts.rs`) |
 | `vault_request`·`vault_wait`, CLI `vault requests/fulfill/decline` | 시간이 다 된 대기는 요청을 남기고, 거절은 `declined`, 답에는 값이 없다 ✅ (`tests/vault_requests.rs`) |
+| draft 확정·폐기·정리 | 생성 draft는 `logged_in`에서 확정, 에이전트가 put한 draft는 확정되지 않음, 번호 draft 확정은 원래 항목 대체, `prune-drafts`와 `draft_ttl` ✅ (`tests/vault_drafts.rs`) |
 
 ### 5단계 — 관리 앱
 

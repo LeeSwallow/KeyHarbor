@@ -2,6 +2,7 @@
 //! Arguments are here, reading input in [`input`], printing in [`output`], adding and
 //! changing items in [`items`], export and import files in [`files`].
 
+mod drafts;
 mod files;
 mod input;
 mod items;
@@ -95,6 +96,8 @@ pub enum VaultCmd {
     },
     #[command(flatten)]
     Request(requests::RequestCmd),
+    #[command(flatten)]
+    Draft(drafts::DraftCmd),
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -228,6 +231,7 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
         }
         VaultCmd::List { json } => list(app, json)?,
         VaultCmd::Request(command) => requests::run(app, command)?,
+        VaultCmd::Draft(command) => drafts::run(app, command)?,
         VaultCmd::ImportEnv { name, path } => {
             let name = item_name(&name)?;
             let text = Zeroizing::new(

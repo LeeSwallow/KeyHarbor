@@ -61,7 +61,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Record the session's sign-in state at an origin after you checked the page, e.g. logged_in after signing in or expired when a site asks to sign in again."
+        description = "Record the session's sign-in state at an origin after you checked the page, e.g. logged_in after signing in or expired when a site asks to sign in again. logged_in also confirms the login draft you signed in with (from vault_generate or a captured sign-in), named by item or the newest for the origin; confirmed names it."
     )]
     async fn site_state_set(
         &self,
@@ -90,8 +90,14 @@ impl Server {
         outcome(
             self.blocking(move |inner| {
                 inner.allow(SessionOp::SiteState(id))?;
-                let record = site::set(&**inner.store()?, &*inner.clock, inner.agent(), change)?;
-                Ok(json!({"session": id.to_string(), "origin": record.origin.as_str(), "state": record.state.as_str()}))
+                let (record, confirmed) = site::set_and_confirm(
+                    &**inner.store()?,
+                    || (inner.open_vault)(),
+                    &*inner.clock,
+                    inner.agent(),
+                    change,
+                )?;
+                Ok(json!({"session": id.to_string(), "origin": record.origin.as_str(), "state": record.state.as_str(), "confirmed": confirmed.as_ref().map(ItemName::as_str)}))
             })
             .await,
         )

@@ -68,7 +68,7 @@ cargo run -p keyharbor -- list
 | 금고 | `vault_list` — 이름·종류·도메인·필드 이름·필드별 placeholder·설명(항목·필드)·origin·바인딩·`run_allowed`·`expires_at`·`expired`·상태·출처만. 메타 MAC이 맞지 않는 항목은 이름과 `tampered: true`만 |
 | 금고 등록 | `vault_generate {name, origin, username?, password_rule? {length 8–128, symbols, forbid}}`, `vault_put {name, kind, fields, origins?}` — draft로만 저장한다. 이름이 이미 있으면 `<이름>~draft-N`이 되고 기존 항목은 바뀌지 않는다. 응답은 이름·`draft: true`·placeholder뿐이다 |
 | 정보 요청 | `vault_request {kind, name, reason, origin?}` → `request_id`, `vault_wait {request_id, timeout_seconds 1–300}` → `fulfilled`(이름·placeholder)·`declined`·`expired`·`pending`(대기만 끝남, 요청은 남음). 사용자는 `keyharbor vault requests`·`fulfill <id> [--stdin \| --use ITEM]`·`decline <id>`로 답한다 |
-| 사이트 상태 | `site_state_get {session, origin}` → `logged_in`·`expired`·`unknown`(기록 없음), `site_state_set {session, origin, state, item?}` — 에이전트가 페이지를 보고 남기는 메모다. KeyHarbor가 확인하지 않는다 |
+| 사이트 상태 | `site_state_get {session, origin}` → `logged_in`·`expired`·`unknown`(기록 없음), `site_state_set {session, origin, state, item?}` — 에이전트가 페이지를 보고 남기는 메모다. KeyHarbor가 확인하지 않는다. `logged_in`이면 그 origin의 생성·포착 draft를 확정하고 `confirmed`에 이름을 돌려준다(에이전트가 put한 draft는 사람이 확정) |
 
 `browser_login`은 페이지(최상위 또는 같은 origin frame)의 username·password 칸을 포커스와 상관없이 찾아 login 항목의 값을 `browser_fill`과 같은 검사로 넣고, `submit`(기본 참)이면 Enter를 누른다. 칸을 못 찾으면 아무것도 넣지 않고 `not found: password field`처럼 실패한다. browser-use와 함께 쓰는 방법은 [docs/guides/browser-use.md](../docs/guides/browser-use.md).
 
@@ -165,6 +165,14 @@ keyharbor site set <session-id> https://github.com expired
 keyharbor vault requests                               # id  agent  kind  name  origin  reason
 keyharbor vault fulfill <id>                           # 숨김 입력 (또는 --stdin, --use 기존항목)
 keyharbor vault decline <id>
+```
+
+draft(에이전트가 생성·저장했거나 포착한 항목)는 확정 전에도 placeholder로 쓸 수 있다. 번호 붙은 draft(`github~draft-1`)를 확정하면 원래 항목을 대체한다.
+
+```sh
+keyharbor vault confirm github~draft-1                # github을 이 값으로 바꾼다
+keyharbor vault discard github~draft-2
+keyharbor vault prune-drafts                           # 폐기된 항목과 draft_ttl(기본 7d)이 지난 draft 지우기
 ```
 
 ### 3단계의 한계

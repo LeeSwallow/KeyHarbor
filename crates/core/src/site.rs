@@ -2,7 +2,7 @@
 //! for the CLI and the MCP server. The state is what the agent says it saw; nothing here
 //! visits the site.
 
-use crate::session::session;
+use crate::{Vault, session::session};
 use anyhow::Result;
 use keyharbor_domain::{
     SessionId,
@@ -63,6 +63,30 @@ pub fn set(
     Ok(record)
 }
 
+/// [`set`], then, for `logged_in`, confirms the login draft the sign-in used (the named
+/// item if it is one, else the newest generated or captured draft for the origin; 08 §8.3).
+/// Returns the record and the confirmed item, if any. Without a vault nothing is confirmed.
+pub fn set_and_confirm(
+    store: &dyn Store,
+    open_vault: impl FnOnce() -> Result<Vault>,
+    clock: &dyn Clock,
+    agent: &str,
+    change: SiteChange,
+) -> Result<(SiteRecord, Option<ItemName>)> {
+    let mut record = set(store, clock, agent, change)?;
+    if record.state != SiteState::LoggedIn || store.vault_get()?.is_none() {
+        return Ok((record, None));
+    }
+    let vault = open_vault()?;
+    let Some(draft) = vault.login_draft_for(&record.origin, record.item.as_ref())? else {
+        return Ok((record, None));
+    };
+    let confirmed = vault.confirm(&draft, agent)?;
+    record.item = Some(confirmed.clone());
+    store.site_set(&record)?;
+    Ok((record, Some(confirmed)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,6 +137,66 @@ mod tests {
         assert_eq!(event.result, "logged_in");
         assert_eq!(event.item_name.as_deref(), Some("github"));
         assert_eq!(event.origin.as_deref(), Some("https://github.com"));
+    }
+
+    #[test]
+    fn signing_in_confirms_the_generated_draft_for_the_origin() {
+        let e = crate::tests::env();
+        let vault = crate::tests::init(&e);
+        let store = crate::tests::open_store(&e.data);
+        let id = store
+            .create(SessionName::parse("work").unwrap())
+            .unwrap()
+            .id;
+        vault.add(crate::tests::login("github", "old")).unwrap();
+        let draft = vault
+            .generate_login(
+                crate::GeneratedLogin {
+                    name: ItemName::parse("github").unwrap(),
+                    origin: github(),
+                    username: None,
+                    rule: Default::default(),
+                },
+                "claude",
+            )
+            .unwrap();
+        assert_eq!(draft.as_str(), "github~draft-1");
+        let clock = ManualClock::at_unix_seconds(1_793_232_000);
+        let change = |state| SiteChange {
+            session: id,
+            origin: github(),
+            state,
+            item: None,
+        };
+        let (_, none) = set_and_confirm(
+            &store,
+            || crate::tests::reopen(&e).map(|v| v.0),
+            &clock,
+            "claude",
+            change(SiteState::Expired),
+        )
+        .unwrap();
+        assert_eq!(none, None);
+        let (record, confirmed) = set_and_confirm(
+            &store,
+            || crate::tests::reopen(&e).map(|v| v.0),
+            &clock,
+            "claude",
+            change(SiteState::LoggedIn),
+        )
+        .unwrap();
+        assert_eq!(confirmed, Some(ItemName::parse("github").unwrap()));
+        assert_eq!(record.item, confirmed);
+        assert_eq!(list(&store, id).unwrap()[0].item, confirmed);
+        let items = vault.list().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].status, crate::ItemStatus::Active);
+        assert_ne!(
+            *vault
+                .resolve(&crate::tests::pref("github", "password"))
+                .unwrap(),
+            "old"
+        );
     }
 
     #[test]

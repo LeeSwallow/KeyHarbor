@@ -176,3 +176,116 @@ fn a_generated_draft_is_typed_by_placeholder_with_chrome() {
     mcp.ok("session_stop", json!({"id": id}));
     mcp.finish();
 }
+
+fn cli_out(data: &Path, keys: &Path, args: &[&str]) -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+        .arg("--data-dir")
+        .arg(data)
+        .args(args)
+        .env("KEYHARBOR_TEST_KEYSTORE_DIR", keys)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// A sign-in confirms a generated draft, never one the agent put (J-79).
+#[test]
+fn logging_in_confirms_a_generated_draft_but_not_an_agent_put_one() {
+    let tmp = short_tempdir();
+    let (data, keys) = (tmp.path().join("data"), tmp.path().join("keys"));
+    vault(&data, &keys, &["vault", "init"], "");
+    vault(
+        &data,
+        &keys,
+        &[
+            "vault",
+            "add",
+            "github",
+            "--kind",
+            "login",
+            "--origin",
+            "https://github.com",
+            "--stdin",
+        ],
+        r#"{"password":"original"}"#,
+    );
+    let mut mcp = Mcp::start(&data, tmp.path(), &["--agent", "claude"]);
+    let session = mcp.ok("session_create", json!({"name": "work"}))["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let signed_in =
+        json!({"session": session, "origin": "https://github.com", "state": "logged_in"});
+
+    mcp.ok(
+        "vault_put",
+        json!({"name": "github", "kind": "login", "fields": {"password": "injected"}, "origins": ["https://github.com"]}),
+    );
+    assert_eq!(
+        mcp.ok("site_state_set", signed_in.clone())["confirmed"],
+        Value::Null
+    );
+    let named = json!({"session": session, "origin": "https://github.com", "state": "logged_in", "item": "github~draft-1"});
+    assert_eq!(mcp.ok("site_state_set", named)["confirmed"], Value::Null);
+    assert_eq!(
+        listed(&mcp.ok("vault_list", json!({})), "github")["source"],
+        "user"
+    );
+
+    mcp.ok(
+        "vault_generate",
+        json!({"name": "github", "origin": "https://github.com"}),
+    );
+    let set = mcp.ok("site_state_set", signed_in);
+    assert_eq!(set["confirmed"], "github");
+    let items = mcp.ok("vault_list", json!({}));
+    assert_eq!(listed(&items, "github")["source"], "generated");
+    assert_eq!(listed(&items, "github")["status"], "active");
+    assert_eq!(listed(&items, "github~draft-1")["status"], "draft");
+    mcp.finish();
+
+    let sites = cli_out(&data, &keys, &["site", "list", &session]);
+    assert!(
+        sites.starts_with("https://github.com\tlogged_in\tgithub\t"),
+        "{sites}"
+    );
+}
+
+#[test]
+fn the_user_confirms_discards_and_prunes_drafts() {
+    let tmp = short_tempdir();
+    let (data, keys) = (tmp.path().join("data"), tmp.path().join("keys"));
+    vault(&data, &keys, &["vault", "init"], "");
+    let mut mcp = Mcp::start(&data, tmp.path(), &["--agent", "claude"]);
+    for value in ["one-SECRET", "two-SECRET", "three-SECRET"] {
+        mcp.ok(
+            "vault_put",
+            json!({"name": "openai", "kind": "secret", "fields": {"value": value}}),
+        );
+    }
+    mcp.finish();
+    let mut transcript = String::new();
+    transcript += &cli_out(&data, &keys, &["vault", "confirm", "openai~draft-2"]);
+    transcript += &cli_out(&data, &keys, &["vault", "discard", "openai~draft-1"]);
+    transcript += &cli_out(&data, &keys, &["vault", "prune-drafts"]);
+    assert_eq!(
+        transcript,
+        "openai\tactive\nopenai~draft-1\tdiscarded\nopenai~draft-1\tremoved\n"
+    );
+    let listed = cli_out(&data, &keys, &["vault", "list", "--json"]);
+    assert!(!listed.contains("SECRET"));
+    let items: Value = serde_json::from_str(&listed).unwrap();
+    let names: Vec<_> = items
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["name"].clone())
+        .collect();
+    assert_eq!(names, [json!("openai")]);
+}
