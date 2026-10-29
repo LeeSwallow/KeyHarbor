@@ -8,7 +8,10 @@ mod prepare;
 use crate::{argv::SuperviseArgs, control, lock::acquire_lock_within, ops::Ops, paths};
 use anyhow::{Context, Result, bail};
 use keyharbor_broker::chrome::{self, ChromeLaunch};
-use keyharbor_core::session::supervision::{self, BrowserExit};
+use keyharbor_core::{
+    grant,
+    session::supervision::{self, BrowserExit},
+};
 use keyharbor_domain::{
     Generation, SessionId,
     ports::{Clock, Store, StoreFactory},
@@ -42,6 +45,7 @@ pub(crate) struct Shared {
     pub id: SessionId,
     pub generation: Generation,
     pub store: SharedStore,
+    pub clock: Arc<dyn Clock>,
     /// The enforcement point every browser request goes through.
     pub guard: Guard,
     /// Requests run one at a time (02 §2.6.1).
@@ -87,6 +91,15 @@ pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
         Ok(url) => url,
         Err(error) => return Err(fail(&*store, anyhow::anyhow!("{error}"))),
     };
+    // The page watcher attaches after Chrome loads its start page, so check that one here.
+    if let Some(url) = &url
+        && !grant::allows(&*store, &*adapters.clock, id, url)?
+    {
+        return Err(fail(
+            &*store,
+            anyhow::anyhow!("denied: navigation (out-of-grant)"),
+        ));
+    }
     let prepared = match prepare(data, &id, cdp) {
         Ok(prepared) => prepared,
         Err(error) => return Err(fail(&*store, error)),
@@ -166,13 +179,15 @@ async fn supervise(
     let shared = Arc::new(Shared {
         id,
         generation,
-        guard: Guard::new(id, store.clone(), open_vault, clock),
+        clock: clock.clone(),
+        guard: Guard::new(id, store.clone(), open_vault, clock.clone()),
         store,
         ops: tokio::sync::Mutex::new(Ops::new(browser)),
         close: tokio::sync::Notify::new(),
         close_requested: false.into(),
     });
-    capture_logins(&shared, &link);
+    watch_pages(&shared, &link, clock.clone());
+    sweep_ended_grants(&shared, &link, clock);
     let watcher = shared.clone();
     tokio::spawn(async move {
         // On macOS Chrome keeps running with no windows; closing the last tab closes it.
@@ -245,17 +260,58 @@ async fn record_exit(shared: &Shared, status: ExitStatus) {
     }
 }
 
-/// Hands every sign-in the browser reports to the guard, which keeps it only during a
-/// handoff with capture on (08 §8.2 ②). Values stay in this process.
-fn capture_logins(shared: &Arc<Shared>, link: &chrome::CdpLink) {
+/// Watches every page: document loads are held to the session's grants (R-43), and every
+/// sign-in the browser reports goes to the guard, which keeps it only during a handoff with
+/// capture on (08 §8.2 ②). Values stay in this process.
+fn watch_pages(shared: &Arc<Shared>, link: &chrome::CdpLink, clock: Arc<dyn Clock>) {
     let (sender, mut captured) = tokio::sync::mpsc::channel(16);
+    let rule_shared = shared.clone();
+    let documents: keyharbor_broker::DocumentRule = Arc::new(move |url: &str| {
+        let store = rule_shared
+            .store
+            .lock()
+            .map_err(|_| anyhow::anyhow!("store lock poisoned"))?;
+        grant::allows(&**store, &*clock, rule_shared.id, url)
+    });
+    let hooks = keyharbor_broker::PageHooks {
+        captured: sender,
+        documents,
+    };
     let link = link.clone();
-    tokio::spawn(async move { link.capture_logins(sender).await });
+    tokio::spawn(async move { link.watch_pages(hooks).await });
     let shared = shared.clone();
     tokio::spawn(async move {
         while let Some(login) = captured.recv().await {
             let shared = shared.clone();
             let _ = tokio::task::spawn_blocking(move || shared.guard.capture(login)).await;
+        }
+    });
+}
+
+/// How often ended grants are looked for. Fixed: a grant's end is minutes or more away, and
+/// navigation is refused from the moment it ends; this only bounds how long its cookies stay.
+const GRANT_SWEEP: Duration = Duration::from_secs(5);
+
+/// Removes the cookies of every grant of this session that has ended (R-43).
+fn sweep_ended_grants(shared: &Arc<Shared>, link: &chrome::CdpLink, clock: Arc<dyn Clock>) {
+    let (shared, link) = (shared.clone(), link.clone());
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(GRANT_SWEEP).await;
+            let ended = match shared.store.lock() {
+                Ok(store) => {
+                    grant::ended_uncleared(&**store, &*clock, shared.id).unwrap_or_default()
+                }
+                Err(_) => return,
+            };
+            for ended in ended {
+                let Some(host) = ended.host() else { continue };
+                if link.clear_cookies(&host).await.is_ok()
+                    && let Ok(store) = shared.store.lock()
+                {
+                    let _ = grant::cleared(&**store, &ended);
+                }
+            }
         }
     });
 }

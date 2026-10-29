@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 keyharbor-crypto = { path = "../crypto" }
+url = "2.5"
 keyharbor-domain = { path = "../domain" }
 keyharbor-vault = { path = "../vault" }
 serde.workspace = true

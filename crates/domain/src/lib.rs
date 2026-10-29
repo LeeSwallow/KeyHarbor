@@ -279,6 +279,7 @@ mod tests {
 pub mod audit;
 pub mod date;
 pub mod denial;
+pub mod grant;
 pub mod password;
 pub mod policy;
 pub mod ports;

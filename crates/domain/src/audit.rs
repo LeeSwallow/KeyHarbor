@@ -31,9 +31,13 @@ pub enum AuditKind {
     /// A sign-in the user typed during a handoff: `draft` (stored for confirmation) or
     /// `known` (the vault already had it).
     CredentialCaptured,
+    /// A grant was added, revoked, or its cookies cleared after it ended (R-43).
+    GrantChanged,
+    /// A document outside the session's grants was not loaded.
+    NavigationDenied,
 }
 impl AuditKind {
-    pub const ALL: [AuditKind; 18] = [
+    pub const ALL: [AuditKind; 20] = [
         Self::SecretUsed,
         Self::SecretDenied,
         Self::OriginChangedAfterFill,
@@ -52,6 +56,8 @@ impl AuditKind {
         Self::VaultRequested,
         Self::VaultRequestAnswered,
         Self::CredentialCaptured,
+        Self::GrantChanged,
+        Self::NavigationDenied,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -73,6 +79,8 @@ impl AuditKind {
             Self::VaultRequested => "vault_requested",
             Self::VaultRequestAnswered => "vault_request_answered",
             Self::CredentialCaptured => "credential_captured",
+            Self::GrantChanged => "grant_changed",
+            Self::NavigationDenied => "navigation_denied",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {

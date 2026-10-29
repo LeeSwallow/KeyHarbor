@@ -16,7 +16,7 @@ pub mod session;
 pub mod site;
 pub mod vault;
 
-pub use access::PolicyStore;
+pub use access::{GrantStore, PolicyStore};
 pub use audit::{AUDIT_ENABLED, AuditStore, SettingsStore};
 pub use browser::{BrowserPort, FrameInspector, PageInput};
 pub use clock::{Clock, ManualClock};
@@ -38,6 +38,7 @@ pub trait Store:
     + SiteStore
     + VaultRequestStore
     + PolicyStore
+    + GrantStore
     + AuditStore
     + SettingsStore
 {
@@ -49,6 +50,7 @@ impl<
         + SiteStore
         + VaultRequestStore
         + PolicyStore
+        + GrantStore
         + AuditStore
         + SettingsStore,
 > Store for T
