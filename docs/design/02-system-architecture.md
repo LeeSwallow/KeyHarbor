@@ -386,7 +386,7 @@ erDiagram
     text session_id FK
     text origin
     text state "logged_in | expired | unknown"
-    text item_id FK
+    text item_name "항목 이름 (값 없음)"
     text checked_at
     text recorded_by "에이전트 이름"
   }
@@ -513,7 +513,7 @@ flowchart LR
 - 마이그레이션 디렉터리: `crates/sqlite/migrations/<context>/<timestamp>_<context>_<name>/up.sql`. 버전(타임스탬프)은 모든 컨텍스트에서 유일해야 한다. 초기 마이그레이션은 `CREATE TABLE IF NOT EXISTS`라 마이그레이션 이전에 만든 DB도 그대로 열리고, `__diesel_schema_migrations`만 더해진다.
 - 쓰기는 모두 `immediate_transaction`(BEGIN IMMEDIATE). generation CAS는 `UPDATE … WHERE state = from AND EXISTS(generation)`의 영향 행 수, 금고 키 교체는 `version = expected` 조건의 영향 행 수로 판정한다.
 - 컨텍스트끼리는 models·mappers·repo를 가져다 쓰지 않는다. 다른 컨텍스트의 데이터가 필요하면 그 컨텍스트의 `mod.rs` 인터페이스를 부른다(예: audit → `config::audit_enabled`). 테이블을 한 쿼리에 섞는 `allow_tables_to_appear_in_same_query!`는 컨텍스트 안에서 실제로 join하는 곳(vault, session)에만 둔다.
-- **컨텍스트 추가**(예: 4단계 `site_states`, `vault_requests`): 모듈 하나 + 마이그레이션 디렉터리 하나 + `CONTEXTS`에 한 줄. 포트는 `keyharbor-domain::ports`에 더한다.
+- **컨텍스트 추가**(예: 4단계 `vault_requests`): 모듈 하나 + 마이그레이션 디렉터리 하나 + `CONTEXTS`에 한 줄. 포트는 `keyharbor-domain::ports`에 더한다.
 - 원시 SQL은 `migrations/`에만 있다. 운영 코드에서 `sql_query`는 금지이고 테스트 전용 도우미(`#[cfg(test)]`, `test-support` 기능)만 쓴다. [J-50]
 
 ### 2.7.4 항목 종류 레지스트리 (R-33)
@@ -565,7 +565,7 @@ flowchart TD
 
 - **기본값은 모두 허용**이다(P2, P3). 사용자가 규칙을 추가하면 그때부터 제한된다. [설계자 판단]
 - origin 바인딩은 정책과 별개로 **항목 속성**이다. 기본값은 켜짐이고, 항목마다 끌 수 있다. [설계자 판단]
-- 세션 수준 검사는 guard `session::SessionOp` 표 하나가 정한다. 세션 하나에 대한 작업(`session_open`, 모든 `browser_*`, `session_stop`, `session_wait_auth`, `session_wait_for_resume`)은 `session` 규칙을, `session_create`는 `create_session`을, `cdp: true`로 열기와 `session_endpoint`는 `session`과 `raw_cdp`를 본다. `session_list`는 이름·상태·설명만 보이므로 검사하지 않는다. CLI는 사람(`cli`)이 쓰므로 세션 정책을 보지 않는다. [J-71]
+- 세션 수준 검사는 guard `session::SessionOp` 표 하나가 정한다. 세션 하나에 대한 작업(`session_open`, 모든 `browser_*`, `session_stop`, `session_wait_auth`, `session_wait_for_resume`, `site_state_get`, `site_state_set`)은 `session` 규칙을, `session_create`는 `create_session`을, `cdp: true`로 열기와 `session_endpoint`는 `session`과 `raw_cdp`를 본다. `session_list`는 이름·상태·설명만 보이므로 검사하지 않는다. CLI는 사람(`cli`)이 쓰므로 세션 정책을 보지 않는다. [J-71]
 - `--agent` 이름은 MCP 등록 인자로 정한다. 같은 OS 사용자는 이름을 사칭할 수 있으므로, 이것은 **오작동 방지와 기록용 경계이지 보안 경계가 아니다**.
 
 ## 2.9 MCP 도구 표면
@@ -578,7 +578,7 @@ flowchart TD
 | 금고 | `vault_list` | 이름·종류·필드 이름·origin·draft 여부·출처만. 메타 MAC이 맞지 않는 항목은 `{"name", "tampered": true}`만 보인다. **값 조회 도구 없음** |
 | 금고 등록 | `vault_generate`, `vault_request`, `vault_wait`, `vault_put` | [08](08-registration-flows.md). 반환값에 값 없음 |
 | CLI 전용 | `keyharbor run --env …` | MCP 도구가 아니라 에이전트가 셸로 실행 ([§2.5.5](#255-env-변수-주입-실행-keyharbor-run)) |
-| 상태 | `site_state_get`, `site_state_set` | 신규 |
+| 상태 | `site_state_get`, `site_state_set` | 세션 정책(`SessionOp::SiteState`)을 따른다. 상태는 에이전트의 메모이고 확인하지 않는다 |
 
 `session_account`(기존 OpenKeylet 이름 참조)는 `vault_list`와 `site_state`로 대체한다.
 

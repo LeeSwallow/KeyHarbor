@@ -283,4 +283,5 @@ pub mod policy;
 pub mod ports;
 pub mod secret;
 pub mod settings;
+pub mod site;
 pub mod vault;

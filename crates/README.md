@@ -16,21 +16,21 @@ cargo run -p keyharbor -- list
 
 | 계층 | crate | 하는 일 | 주요 모듈 |
 |---|---|---|---|
-| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립(`compose` 한 곳: 저장소·키 저장소·시계·감독자), 파일 읽기·쓰기, `run`의 프로세스 실행 | `compose`, `session_cmd`, `vault_cmd/{input, items, output, files}`, `policy_cmd`, `audit_cmd`, `settings_cmd`, `run_cmd`, `tty_confirm` |
-| | `keyharbor-mcp` | stdio MCP 서버. 저장소·금고 opener·런타임은 생성자로 받는다 | `server`, `scope`, `tools/{session, browser, vault}` |
+| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립(`compose` 한 곳: 저장소·키 저장소·시계·감독자), 파일 읽기·쓰기, `run`의 프로세스 실행 | `compose`, `session_cmd`, `vault_cmd/{input, items, output, files}`, `policy_cmd`, `audit_cmd`, `settings_cmd`, `site_cmd`, `run_cmd`, `tty_confirm` |
+| | `keyharbor-mcp` | stdio MCP 서버. 저장소·금고 opener·런타임은 생성자로 받는다 | `server`, `scope`, `tools/{session, browser, site, vault}` |
 | adapters | `keyharbor-supervisor` | 세션 감독자 프로세스: 잠금, Chrome을 guard로 감싸 제어 socket 처리, 상태 기록(`core::session::supervision`), 제어 프로토콜 wire 타입과 client, `__supervise` argv(`SuperviseArgs`), `SessionRuntime`(`ProcessRuntime`) | `process/{mod, prepare}`, `control/{wire, server, client}`, `ops`, `argv`, `runtime`, `lock`, `paths` |
 | | `keyharbor-broker` | Chrome 어댑터: Chrome 실행과 CDP pipe, `BrowserPort`·`PageInput`·`FrameInspector` 구현(`CdpBrowser`). domain에만 의존하고 supervisor만 이것에 의존한다 | `chrome`, `cdp/{client, protocol}`(crate 내부), `browser/{navigate, snapshot, input, tabs, screenshot, wait, frames}`(crate 내부) |
-| | `keyharbor-sqlite` | Diesel 저장소, 저장소 포트와 `RotationLock`(`vault.lock`) 구현 | `connection`, `rotation_lock`, `contexts/{vault, session, access, audit, config}/{schema, models, mappers, repo}` |
+| | `keyharbor-sqlite` | Diesel 저장소, 저장소 포트와 `RotationLock`(`vault.lock`) 구현 | `connection`, `rotation_lock`, `contexts/{vault, session, site, access, audit, config}/{schema, models, mappers, repo}` |
 | | `keyharbor-keystore` | `KeyStore` 어댑터: macOS login keychain(`KeychainKeyStore`, 다른 OS에서는 오류), 테스트용 파일 저장소(`FileKeyStore`) | `keychain`, `file` |
 | inner | `keyharbor-vault` | 금고 레코드 형식·메타 MAC 입력·키 분리·키 ID, I/O 없음 | `record`, `meta`, `keys` |
 | crypto | `keyharbor-crypto` | 모든 암호 원시 연산과 난수(id 포함), I/O 없음 ([ADR-0016](../docs/design/adr/0016-crypto-crate.md)) | `aead`, `envelope`, `kdf`, `mac`, `random`, `export` |
 | security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser`, 항목 add/edit 순서, 세션 작업 → 정책 Action 표 | `pdp/checks/<검사>`, `pep/{substitute, mask/variants/<변형>, origin, selector}`, `audit`, `run`, `items`, `session`, `guard`, `browser` |
-| application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess`, 약화 작업 판정(`weaken`) | `vault/{open, items, summary, resolve, developer}`, `session/{manage, lifecycle, handoff, supervision}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `dotenv`, `weaken` |
-| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 설정 레지스트리 `SETTINGS`, placeholder 문법, 요청자 이름 `AgentName`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `settings`, `ports/{vault, session, access, audit, keys, browser, clock, confirm, runtime}` |
+| application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess`, 약화 작업 판정(`weaken`) | `vault/{open, items, summary, resolve, developer}`, `session/{manage, lifecycle, handoff, supervision}`, `site`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `dotenv`, `weaken` |
+| domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 설정 레지스트리 `SETTINGS`, placeholder 문법, 요청자 이름 `AgentName`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `settings`, `site`, `ports/{vault, session, site, access, audit, keys, browser, clock, confirm, runtime}` |
 | dev tool | `keyharbor-design-check` | `design-system/` 디자인 시스템 검사(계층·테마·대비·아이콘·클래스), 쇼케이스 서버 `design-serve`. 출시물에 들어가지 않고 아무도 의존하지 않는다([ADR-0015](../docs/design/adr/0015-design-system-layers.md)) | `scanner`, `model`, `layers`, `rules/*`, `color`, `theme`, `report`, `serve` |
 
 - 평문 값은 `Vault::resolve`·`Vault::mask_values`에서만 나오고, 둘 다 guard가 검사 뒤 발급하는 `PlaintextAccess`를 요구한다. 브라우저 조작은 제어 socket → `ops` → `GuardedBrowser`로만 간다.
-- **스키마 확장**: 저장소는 바운디드 컨텍스트별로 나뉘어 있다. 새 컨텍스트(예: 4단계 `site_states`)는 `crates/sqlite/src/contexts/<이름>/`(schema·models·mappers·repo) + `crates/sqlite/migrations/<이름>/<timestamp>_<이름>_<설명>/up.sql` + `contexts::CONTEXTS`에 한 줄이면 된다. 버전 타임스탬프는 모든 컨텍스트에서 유일해야 한다. 원시 SQL은 마이그레이션과 테스트에만 쓴다.
+- **스키마 확장**: 저장소는 바운디드 컨텍스트별로 나뉘어 있다. 새 컨텍스트(예: 4단계 `vault_requests`)는 `crates/sqlite/src/contexts/<이름>/`(schema·models·mappers·repo) + `crates/sqlite/migrations/<이름>/<timestamp>_<이름>_<설명>/up.sql` + `contexts::CONTEXTS`에 한 줄이면 된다. 버전 타임스탬프는 모든 컨텍스트에서 유일해야 한다. 원시 SQL은 마이그레이션과 테스트에만 쓴다.
 - **항목 종류 확장**: `keyharbor_domain::vault::KINDS`에 `KindSpec` 하나(필드마다 `secret`·`maskable`·`input`·기본 `description`, 종류마다 origin 바인딩·`run` 허용 기본값)와 `ItemKind` 변형 하나를 더한다. 스키마·기본값·CLI의 비밀 필드 거부·필드 이름 검사·마스킹이 이 표를 읽는다.
 - **검사·변형 확장**: 사용 검사는 `crates/guard/src/pdp/checks/<검사>.rs` 하나 + `checks::BROWSER`/`PROCESS`에 한 줄, 거부 사유는 `DenialReason` 변형 하나, 마스킹 형태는 `crates/guard/src/pep/mask/variants/<변형>.rs` 하나 + `VARIANTS`에 한 줄, 약화 작업은 `core::weaken::WeakeningOp` 변형 하나다.
 - 테스트 전용 기능: `keyharbor-keystore/insecure-test-keystore`, `keyharbor-sqlite/test-support`. 릴리스 빌드에 켜지지 않는지 `scripts/check-release-features.sh`가 확인한다.
@@ -66,6 +66,7 @@ cargo run -p keyharbor -- list
 | 세션 (선택) | `session_endpoint` — `--allow-cdp`일 때만 등록 |
 | 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_type`, `browser_login {item, submit?}`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` — 모두 `session` 인자 |
 | 금고 | `vault_list` — 이름·종류·도메인·필드 이름·필드별 placeholder·설명(항목·필드)·origin·바인딩·`run_allowed`·`expires_at`·`expired`·상태·출처만. 메타 MAC이 맞지 않는 항목은 이름과 `tampered: true`만 |
+| 사이트 상태 | `site_state_get {session, origin}` → `logged_in`·`expired`·`unknown`(기록 없음), `site_state_set {session, origin, state, item?}` — 에이전트가 페이지를 보고 남기는 메모다. KeyHarbor가 확인하지 않는다 |
 
 `browser_login`은 페이지(최상위 또는 같은 origin frame)의 username·password 칸을 포커스와 상관없이 찾아 login 항목의 값을 `browser_fill`과 같은 검사로 넣고, `submit`(기본 참)이면 Enter를 누른다. 칸을 못 찾으면 아무것도 넣지 않고 `not found: password field`처럼 실패한다. browser-use와 함께 쓰는 방법은 [docs/guides/browser-use.md](../docs/guides/browser-use.md).
 
@@ -133,7 +134,7 @@ cargo run -p keyharbor -- vault list
 | `settings get\|set KEY [VALUE]` | `audit_enabled true\|false`(`false`로 끄면 거부를 포함해 아무것도 기록하지 않는다. 그 밖의 값은 켜짐), `capture_enabled true\|false`(4단계), `default_item_ttl <N>d\|none` |
 | `run [--agent A] (--env ITEM \| --env-file PATH)… -- CMD ARGS…` | `run_allowed` 항목(secret·env 기본 허용)만. env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣고, 그 stdout·stderr를 줄 단위로 가려서 내보낸다. 종료 코드를 그대로 전달하고(신호면 128+번호), 자식의 core dump를 끈다 |
 
-정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`, `substitution_locked`, `mask_probe`, `secret_denied_suppressed`(초당 10건을 넘은 거부 수), `first_use_origin`(identity·address가 처음 쓰인 origin).
+정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`, `substitution_locked`, `mask_probe`, `secret_denied_suppressed`(초당 10건을 넘은 거부 수), `first_use_origin`(identity·address가 처음 쓰인 origin), `site_state_changed`(사이트 로그인 상태 기록).
 
 **보호를 약하게 하는 작업은 사람이 확인한다**(R-35): `vault edit`의 origin 바인딩 끄기·origin 추가·`--run-allowed on`·만료 연장/제거, `policy allow`, deny 규칙의 `policy rm`, `settings set audit_enabled false`, `capture_enabled` 변경. stdin과 stderr가 모두 터미널이면 `/dev/tty`에서 `yes`를 받고, 아니면 `… needs confirmation from a person at a terminal (or the admin app)`으로 거부한다. pty를 흉내 내는 프로그램은 대신 답할 수 있으므로 **약한 경계**다([03 §3.12.1](../docs/design/03-security-whitepaper.md#3121-약화-작업은-사람이-확인한다-r-35)).
 
@@ -145,6 +146,15 @@ keyharbor run --agent codex --env myapp-dev -- npm test
 printf 'DATABASE_URL={{secret:myapp-dev.DATABASE_URL}}\n' > .env.keyharbor   # 비밀이 없어 커밋해도 된다
 keyharbor run --env-file .env.keyharbor -- ./serve
 keyharbor policy deny --agent codex --resource domain --target payment
+```
+
+## 사이트 로그인 상태 (4단계)
+
+세션마다 origin별 로그인 상태(`logged_in`·`expired`·`unknown`)와 로그인에 쓴 항목 이름, 기록한 시각과 기록한 쪽(에이전트 이름, CLI는 `cli`)을 남긴다(`site_states`, 세션을 지우면 함께 지워진다). 값은 없다. 상태는 에이전트가 페이지를 보고 남긴 메모이고 KeyHarbor가 사이트에 가서 확인하지 않는다. 세션 정책을 따르고(`SessionOp::SiteState`), 범위 지정 서버는 자기 세션만 본다.
+
+```sh
+keyharbor site list <session-id>                      # origin  state  item  checked_at  recorded_by
+keyharbor site set <session-id> https://github.com expired
 ```
 
 ### 3단계의 한계

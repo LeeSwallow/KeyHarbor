@@ -2,4 +2,5 @@
 
 pub(crate) mod browser;
 pub(crate) mod session;
+pub(crate) mod site;
 pub(crate) mod vault;

@@ -118,7 +118,10 @@ impl Server {
 
 /// Every tool; `session_endpoint` only with `--allow-cdp`.
 fn router(allow_cdp: bool) -> ToolRouter<Server> {
-    let mut router = Server::session_tools() + Server::browser_tools() + Server::vault_tools();
+    let mut router = Server::session_tools()
+        + Server::browser_tools()
+        + Server::site_tools()
+        + Server::vault_tools();
     if !allow_cdp {
         router.remove_route("session_endpoint");
     }

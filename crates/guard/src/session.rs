@@ -24,6 +24,9 @@ pub enum SessionOp {
     WaitAuth(SessionId),
     WaitForResume(SessionId),
     Endpoint(SessionId),
+    /// Reading or recording a site's sign-in state: it tells an agent where the session is
+    /// signed in, so it needs the session.
+    SiteState(SessionId),
 }
 
 impl SessionOp {
@@ -35,7 +38,11 @@ impl SessionOp {
             Self::Open { id, cdp: true } | Self::Endpoint(id) => {
                 vec![Action::OpenSession(id), Action::RawCdp]
             }
-            Self::Browser(id) | Self::Stop(id) | Self::WaitAuth(id) | Self::WaitForResume(id) => {
+            Self::Browser(id)
+            | Self::Stop(id)
+            | Self::WaitAuth(id)
+            | Self::WaitForResume(id)
+            | Self::SiteState(id) => {
                 vec![Action::OpenSession(id)]
             }
         }
@@ -66,6 +73,7 @@ mod tests {
             SessionOp::Stop(id),
             SessionOp::WaitAuth(id),
             SessionOp::WaitForResume(id),
+            SessionOp::SiteState(id),
         ] {
             assert_eq!(op.actions(), vec![Action::OpenSession(id)], "{op:?}");
         }
