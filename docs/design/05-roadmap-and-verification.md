@@ -114,7 +114,7 @@ flowchart LR
 
 | 범위 | 완료 조건 |
 |---|---|
-| `SITE_STATE` 테이블, `site_state_get/set` | 세션·origin별 왕복, 잘못된 origin 거부 |
+| `SITE_STATE` 테이블, `site_state_get/set` | 세션·origin별 왕복, 잘못된 origin 거부 ✅ (`tests/site_state.rs`) |
 | `session_account` 대체 | 기존 도구 제거와 README 이전 안내 |
 
 ### 5단계 — 관리 앱

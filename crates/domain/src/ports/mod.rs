@@ -12,6 +12,7 @@ pub mod confirm;
 pub mod keys;
 pub mod runtime;
 pub mod session;
+pub mod site;
 pub mod vault;
 
 pub use access::PolicyStore;
@@ -22,17 +23,19 @@ pub use confirm::{Answer, Confirm};
 pub use keys::KeyStore;
 pub use runtime::SessionRuntime;
 pub use session::{SessionRow, SessionStore};
+pub use site::SiteStore;
 pub use vault::{
     DomainKeyRow, FieldRow, ItemRow, KeyGuard, RotationGuard, RotationLock, VaultRow, VaultStore,
 };
 
 /// Everything the local database provides, as one object.
 pub trait Store:
-    VaultStore + RotationLock + SessionStore + PolicyStore + AuditStore + SettingsStore
+    VaultStore + RotationLock + SessionStore + SiteStore + PolicyStore + AuditStore + SettingsStore
 {
 }
-impl<T: VaultStore + RotationLock + SessionStore + PolicyStore + AuditStore + SettingsStore> Store
-    for T
+impl<
+    T: VaultStore + RotationLock + SessionStore + SiteStore + PolicyStore + AuditStore + SettingsStore,
+> Store for T
 {
 }
 

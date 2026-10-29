@@ -12,6 +12,7 @@ pub mod policy;
 mod rotate;
 pub mod session;
 pub mod settings;
+pub mod site;
 #[cfg(test)]
 mod test_support;
 mod transfer;

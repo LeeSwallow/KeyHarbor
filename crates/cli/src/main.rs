@@ -10,6 +10,7 @@ mod policy_cmd;
 mod run_cmd;
 mod session_cmd;
 mod settings_cmd;
+mod site_cmd;
 mod tty_confirm;
 mod vault_cmd;
 
@@ -52,6 +53,9 @@ enum Command {
     /// Read or change settings
     #[command(subcommand)]
     Settings(settings_cmd::SettingsCmd),
+    /// A session's recorded sign-in state per site
+    #[command(subcommand)]
+    Site(site_cmd::SiteCmd),
     /// Run a command with env items injected; its output is masked
     Run(run_cmd::RunArgs),
 }
@@ -90,6 +94,7 @@ fn main() -> Result<()> {
         Command::Policy(command) => policy_cmd::run(&*app.store()?, command),
         Command::Audit(args) => audit_cmd::run(&*app.store()?, args),
         Command::Settings(command) => settings_cmd::run(&*app.store()?, command),
+        Command::Site(command) => site_cmd::run(&app, command),
         Command::Run(args) => {
             let code = run_cmd::run(&app, args)?;
             std::process::exit(code)

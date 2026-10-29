@@ -71,6 +71,8 @@ fn session_tools_with_fake_browser() {
         "browser_switch_tab",
         "browser_wait",
         "vault_list",
+        "site_state_get",
+        "site_state_set",
     ] {
         assert!(tools.iter().any(|t| t == name), "{name} missing: {tools:?}");
     }

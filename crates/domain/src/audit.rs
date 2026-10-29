@@ -22,9 +22,11 @@ pub enum AuditKind {
     DeniedSuppressed,
     /// A personal item was typed into an origin it had not been typed into before (R-36).
     FirstUseOrigin,
+    /// An agent or the user recorded a session's sign-in state at a site.
+    SiteStateChanged,
 }
 impl AuditKind {
-    pub const ALL: [AuditKind; 14] = [
+    pub const ALL: [AuditKind; 15] = [
         Self::SecretUsed,
         Self::SecretDenied,
         Self::OriginChangedAfterFill,
@@ -39,6 +41,7 @@ impl AuditKind {
         Self::MaskProbe,
         Self::DeniedSuppressed,
         Self::FirstUseOrigin,
+        Self::SiteStateChanged,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -56,6 +59,7 @@ impl AuditKind {
             Self::MaskProbe => "mask_probe",
             Self::DeniedSuppressed => "secret_denied_suppressed",
             Self::FirstUseOrigin => "first_use_origin",
+            Self::SiteStateChanged => "site_state_changed",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {

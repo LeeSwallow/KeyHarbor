@@ -6,7 +6,7 @@
 //! Contexts share no models; a query that needs another context's data goes through that
 //! context's `mod.rs` interface.
 //!
-//! Adding a context (e.g. phase 4 `site_states`): create the module and its migrations
+//! Adding a context (e.g. phase 4 `vault_requests`): create the module and its migrations
 //! directory, then add one line to [`CONTEXTS`]. Migration versions are timestamps and must
 //! be unique across all contexts.
 
@@ -16,6 +16,7 @@ pub(crate) mod access;
 pub(crate) mod audit;
 pub(crate) mod config;
 pub(crate) mod session;
+pub(crate) mod site;
 pub(crate) mod vault;
 
 /// One bounded context of the schema.
@@ -33,6 +34,10 @@ pub(crate) const CONTEXTS: &[ContextSpec] = &[
     ContextSpec {
         name: "session",
         migrations: embed_migrations!("migrations/session"),
+    },
+    ContextSpec {
+        name: "site",
+        migrations: embed_migrations!("migrations/site"),
     },
     ContextSpec {
         name: "access",

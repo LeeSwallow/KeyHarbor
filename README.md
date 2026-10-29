@@ -33,6 +33,7 @@ keyharbor vault export ~/keyharbor-backup.age          # age 형식 암호화 �
 keyharbor run --env myapp -- npm test                  # 자식에만 변수 주입, 출력의 값은 가려짐
 keyharbor policy deny --agent codex --resource domain --target payment
 keyharbor audit --limit 20                             # 누가 어떤 항목을 어디에 썼는지 (값 없음)
+keyharbor site list <session-id>                      # 세션의 사이트별 로그인 상태 (에이전트가 남긴 메모)
 ```
 
 에이전트는 MCP 도구 `browser_fill`에 `{{secret:blog.password}}`처럼 placeholder를 넘기거나, `browser_login {item: "blog"}`으로 로그인 폼을 한 번에 채웁니다. 등록된 사이트(origin)의 입력란일 때만 값이 들어가고(비밀번호는 비밀번호 칸에만), 에이전트가 받는 결과에서는 값이 다시 placeholder로 바뀝니다.
