@@ -28,9 +28,12 @@ pub enum AuditKind {
     VaultRequested,
     /// The user answered a request: `fulfilled` or `declined`.
     VaultRequestAnswered,
+    /// A sign-in the user typed during a handoff: `draft` (stored for confirmation) or
+    /// `known` (the vault already had it).
+    CredentialCaptured,
 }
 impl AuditKind {
-    pub const ALL: [AuditKind; 17] = [
+    pub const ALL: [AuditKind; 18] = [
         Self::SecretUsed,
         Self::SecretDenied,
         Self::OriginChangedAfterFill,
@@ -48,6 +51,7 @@ impl AuditKind {
         Self::SiteStateChanged,
         Self::VaultRequested,
         Self::VaultRequestAnswered,
+        Self::CredentialCaptured,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -68,6 +72,7 @@ impl AuditKind {
             Self::SiteStateChanged => "site_state_changed",
             Self::VaultRequested => "vault_requested",
             Self::VaultRequestAnswered => "vault_request_answered",
+            Self::CredentialCaptured => "credential_captured",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {

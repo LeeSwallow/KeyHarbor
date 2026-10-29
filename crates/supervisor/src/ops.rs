@@ -44,6 +44,36 @@ enum Command {
     Status,
 }
 
+impl Command {
+    /// Commands that act on the page. While the session is handed to the user they are
+    /// refused: the person at the browser is the only one typing, so what capture sees is
+    /// theirs (J-80). Reading the page (snapshot, tabs, screenshot, wait) still works.
+    fn is_input(&self) -> bool {
+        matches!(
+            self,
+            Self::Navigate(_)
+                | Self::Click(_)
+                | Self::Fill(..)
+                | Self::Type(_)
+                | Self::Press(_)
+                | Self::NewTab(_)
+                | Self::SwitchTab(_)
+                | Self::Login { .. }
+        )
+    }
+}
+
+/// Whether the session is waiting for the user (a handoff is open).
+fn with_user(shared: &Shared) -> Result<bool> {
+    let store = shared
+        .store
+        .lock()
+        .map_err(|_| anyhow!("store lock poisoned"))?;
+    Ok(store
+        .get(shared.id)?
+        .is_some_and(|row| row.state == keyharbor_domain::State::AwaitingUser))
+}
+
 /// The agent (`cli` when absent) and the command a request asks for.
 fn parse(request: &Value) -> Result<(String, Command)> {
     let envelope = ControlEnvelope::deserialize(request).context("invalid request")?;
@@ -94,6 +124,11 @@ impl Ops {
             Ok(parsed) => parsed,
             Err(error) => return guard.redact_outcome(Err(error)),
         };
+        if command.is_input() && with_user(shared)? {
+            return guard.redact_outcome(Err(anyhow!(
+                "the browser is with the user until they resume; call session_wait_for_resume"
+            )));
+        }
         let mut browser = guard.browser(&mut self.browser, &agent);
         match command {
             Command::Navigate(url) => browser.navigate(&url).await,

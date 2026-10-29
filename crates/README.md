@@ -19,12 +19,12 @@ cargo run -p keyharbor -- list
 | interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립(`compose` 한 곳: 저장소·키 저장소·시계·감독자), 파일 읽기·쓰기, `run`의 프로세스 실행 | `compose`, `session_cmd`, `vault_cmd/{input, items, output, files}`, `policy_cmd`, `audit_cmd`, `settings_cmd`, `site_cmd`, `run_cmd`, `tty_confirm` |
 | | `keyharbor-mcp` | stdio MCP 서버. 저장소·금고 opener·런타임은 생성자로 받는다 | `server`, `scope`, `tools/{session, browser, site, vault}` |
 | adapters | `keyharbor-supervisor` | 세션 감독자 프로세스: 잠금, Chrome을 guard로 감싸 제어 socket 처리, 상태 기록(`core::session::supervision`), 제어 프로토콜 wire 타입과 client, `__supervise` argv(`SuperviseArgs`), `SessionRuntime`(`ProcessRuntime`) | `process/{mod, prepare}`, `control/{wire, server, client}`, `ops`, `argv`, `runtime`, `lock`, `paths` |
-| | `keyharbor-broker` | Chrome 어댑터: Chrome 실행과 CDP pipe, `BrowserPort`·`PageInput`·`FrameInspector` 구현(`CdpBrowser`). domain에만 의존하고 supervisor만 이것에 의존한다 | `chrome`, `cdp/{client, protocol}`(crate 내부), `browser/{navigate, snapshot, input, tabs, screenshot, wait, frames}`(crate 내부) |
+| | `keyharbor-broker` | Chrome 어댑터: Chrome 실행과 CDP pipe, `BrowserPort`·`PageInput`·`FrameInspector` 구현(`CdpBrowser`), 로그인 포착 스크립트(`capture`). domain에만 의존하고 supervisor만 이것에 의존한다 | `chrome`, `cdp/{client, protocol}`(crate 내부), `browser/{navigate, snapshot, input, tabs, screenshot, wait, frames}`(crate 내부) |
 | | `keyharbor-sqlite` | Diesel 저장소, 저장소 포트와 `RotationLock`(`vault.lock`) 구현 | `connection`, `rotation_lock`, `contexts/{vault, session, site, access, audit, config}/{schema, models, mappers, repo}` |
 | | `keyharbor-keystore` | `KeyStore` 어댑터: macOS login keychain(`KeychainKeyStore`, 다른 OS에서는 오류), 테스트용 파일 저장소(`FileKeyStore`) | `keychain`, `file` |
 | inner | `keyharbor-vault` | 금고 레코드 형식·메타 MAC 입력·키 분리·키 ID, I/O 없음 | `record`, `meta`, `keys` |
 | crypto | `keyharbor-crypto` | 모든 암호 원시 연산과 난수(id 포함), I/O 없음 ([ADR-0016](../docs/design/adr/0016-crypto-crate.md)) | `aead`, `envelope`, `kdf`, `mac`, `random`, `export` |
-| security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser`, 항목 add/edit 순서, 세션 작업 → 정책 Action 표 | `pdp/checks/<검사>`, `pep/{substitute, mask/variants/<변형>, origin, selector}`, `audit`, `run`, `items`, `session`, `guard`, `browser` |
+| security | `keyharbor-guard` | 평문의 판정과 집행: PDP·PEP·사용 기록·`GuardedBrowser`, 항목 add/edit 순서, 세션 작업 → 정책 Action 표 | `pdp/checks/<검사>`, `pep/{substitute, mask/variants/<변형>, origin, selector}`, `audit`, `run`, `items`, `session`, `capture`, `guard`, `browser` |
 | application | `keyharbor-core` | 유스케이스(포트만 사용), `PlaintextAccess`, 약화 작업 판정(`weaken`) | `vault/{open, items, summary, resolve, developer}`, `session/{manage, lifecycle, handoff, supervision}`, `site`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `dotenv`, `weaken` |
 | domain | `keyharbor-domain` | 엔티티·값 객체·규칙, 항목 종류 레지스트리 `KINDS`, 설정 레지스트리 `SETTINGS`, placeholder 문법, 요청자 이름 `AgentName`, 거부 사유 `DenialReason`, 포트(trait) | `vault`, `policy`, `audit`, `denial`, `secret`, `settings`, `site`, `ports/{vault, session, site, access, audit, keys, browser, clock, confirm, runtime}` |
 | dev tool | `keyharbor-design-check` | `design-system/` 디자인 시스템 검사(계층·테마·대비·아이콘·클래스), 쇼케이스 서버 `design-serve`. 출시물에 들어가지 않고 아무도 의존하지 않는다([ADR-0015](../docs/design/adr/0015-design-system-layers.md)) | `scanner`, `model`, `layers`, `rules/*`, `color`, `theme`, `report`, `serve` |
@@ -136,7 +136,7 @@ cargo run -p keyharbor -- vault list
 | `settings get\|set KEY [VALUE]` | `audit_enabled true\|false`(`false`로 끄면 거부를 포함해 아무것도 기록하지 않는다. 그 밖의 값은 켜짐), `capture_enabled true\|false`(4단계), `default_item_ttl <N>d\|none` |
 | `run [--agent A] (--env ITEM \| --env-file PATH)… -- CMD ARGS…` | `run_allowed` 항목(secret·env 기본 허용)만. env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣고, 그 stdout·stderr를 줄 단위로 가려서 내보낸다. 종료 코드를 그대로 전달하고(신호면 128+번호), 자식의 core dump를 끈다 |
 
-정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`, `substitution_locked`, `mask_probe`, `secret_denied_suppressed`(초당 10건을 넘은 거부 수), `first_use_origin`(identity·address가 처음 쓰인 origin), `site_state_changed`(사이트 로그인 상태 기록), `vault_requested`·`vault_request_answered`(정보 요청과 답).
+정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`, `substitution_locked`, `mask_probe`, `secret_denied_suppressed`(초당 10건을 넘은 거부 수), `first_use_origin`(identity·address가 처음 쓰인 origin), `site_state_changed`(사이트 로그인 상태 기록), `vault_requested`·`vault_request_answered`(정보 요청과 답), `credential_captured`(인계 중 포착, 에이전트 이름 `user`).
 
 **보호를 약하게 하는 작업은 사람이 확인한다**(R-35): `vault edit`의 origin 바인딩 끄기·origin 추가·`--run-allowed on`·만료 연장/제거, `policy allow`, deny 규칙의 `policy rm`, `settings set audit_enabled false`, `capture_enabled` 변경. stdin과 stderr가 모두 터미널이면 `/dev/tty`에서 `yes`를 받고, 아니면 `… needs confirmation from a person at a terminal (or the admin app)`으로 거부한다. pty를 흉내 내는 프로그램은 대신 답할 수 있으므로 **약한 경계**다([03 §3.12.1](../docs/design/03-security-whitepaper.md#3121-약화-작업은-사람이-확인한다-r-35)).
 
@@ -174,6 +174,8 @@ keyharbor vault confirm github~draft-1                # github을 이 값으로 
 keyharbor vault discard github~draft-2
 keyharbor vault prune-drafts                           # 폐기된 항목과 draft_ttl(기본 7d)이 지난 draft 지우기
 ```
+
+**로그인 포착**(기본 꺼짐, `keyharbor settings set capture_enabled true`로 켠다): 인계(`session_wait_auth`) 중에 사람이 브라우저에서 로그인 폼을 제출하면, 감독자가 그 아이디·비밀번호를 draft로 저장한다. 금고에 같은 값이 있으면 아무것도 하지 않는다. 비밀번호가 다르면 `<이름>~draft-N`, 처음 보는 계정이면 호스트 이름으로 저장한다. 인계 중에는 에이전트의 입력 도구가 거절되므로 포착된 값은 사람이 친 것이다. 페이지 스크립트가 직접 제출한 폼은 세지 않는다. 다른 사이트 iframe과 submit 이벤트 없이 보내는 폼은 놓친다.
 
 ### 3단계의 한계
 

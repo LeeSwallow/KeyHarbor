@@ -9,6 +9,7 @@
 //! - [`describe`] — descriptions must not hold vault values.
 //! - [`items`] — adding and changing items in the safe order (values, then weakening).
 //! - [`session`] — which policy actions each session operation needs.
+//! - [`capture`] — storing a sign-in the user typed during a handoff as a draft.
 //! - [`GuardedBrowser`] — a `BrowserPort` decorator: input goes through `substitute`, every
 //!   result and error through `mask`. The supervisor hands control requests only to it.
 //!
@@ -17,6 +18,7 @@
 
 pub mod audit;
 mod browser;
+pub mod capture;
 pub mod describe;
 mod guard;
 pub mod items;

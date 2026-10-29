@@ -21,6 +21,7 @@ serde_json.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+tungstenite.workspace = true
 keyharbor-sqlite = { path = "../sqlite", features = ["test-support"] }
 keyharbor-keystore = { path = "../keystore", features = ["insecure-test-keystore"] }
 tempfile.workspace = true

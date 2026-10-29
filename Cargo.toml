@@ -33,3 +33,5 @@ rpassword = "7.5"
 tokio = { version = "1.54", features = ["rt-multi-thread", "process", "net", "io-util", "time", "sync", "macros"] }
 libc = "0.2"
 base64 = "0.23"
+# Tests only: plays the person at the browser over raw CDP (capture needs trusted input).
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }

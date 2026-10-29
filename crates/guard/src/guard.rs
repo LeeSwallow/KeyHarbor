@@ -34,9 +34,9 @@ pub type SharedStore = Arc<Mutex<Box<dyn Store>>>;
 pub type VaultOpener = Box<dyn Fn() -> Result<Vault> + Send + Sync>;
 
 /// The vault as of one version, and the masker for its values once a response needed it.
-struct Loaded {
+pub(crate) struct Loaded {
     version: i64,
-    vault: Vault,
+    pub(crate) vault: Vault,
     masker: Option<Masker>,
 }
 
@@ -144,7 +144,7 @@ impl Guard {
     /// Runs `work` with the vault at its current version, or `None` if it was never
     /// initialized. The root key is read only here, the first time a placeholder or a response
     /// needs it.
-    fn with_vault<T>(&self, work: impl FnOnce(Option<&mut Loaded>) -> T) -> Result<T> {
+    pub(crate) fn with_vault<T>(&self, work: impl FnOnce(Option<&mut Loaded>) -> T) -> Result<T> {
         let row = self
             .store
             .lock()
@@ -198,6 +198,10 @@ impl Guard {
 
     pub(crate) fn session(&self) -> SessionId {
         self.session
+    }
+
+    pub(crate) fn store(&self) -> &SharedStore {
+        &self.store
     }
 
     /// What the vault says about `item` for `agent`'s request, refusing (and recording) a
