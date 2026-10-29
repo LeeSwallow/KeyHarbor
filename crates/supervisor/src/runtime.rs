@@ -117,16 +117,51 @@ impl SessionRuntime for ProcessRuntime {
     fn debug_endpoint(&self, id: SessionId) -> Result<String> {
         let file = paths::profile_dir(&self.data, &id).join(DEVTOOLS_ACTIVE_PORT);
         let deadline = Instant::now() + ENDPOINT_WAIT;
-        let text = loop {
-            match std::fs::symlink_metadata(&file) {
+        loop {
+            // Chrome creates the file before it writes the port, so a half-written file is
+            // "not yet", not "invalid", until the deadline (#31 CI).
+            let parsed = match std::fs::symlink_metadata(&file) {
                 Ok(meta) if meta.is_file() && meta.len() <= 256 => {
-                    break std::fs::read_to_string(&file)?;
+                    parse_devtools_active_port(&std::fs::read_to_string(&file)?)
                 }
                 Ok(_) => bail!("invalid DevToolsActivePort file"),
-                Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
-                Err(_) => bail!("browser debugging endpoint is not ready"),
+                Err(_) => Err(anyhow::anyhow!("browser debugging endpoint is not ready")),
+            };
+            match parsed {
+                Ok(endpoint) => return Ok(endpoint),
+                Err(e) if Instant::now() >= deadline => return Err(e),
+                Err(_) => thread::sleep(Duration::from_millis(50)),
             }
-        };
-        parse_devtools_active_port(&text)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ID: &str = "11111111-1111-4111-8111-111111111111";
+    const PORT_FILE: &str = "12345\n/devtools/browser/11111111-1111-4111-8111-111111111111\n";
+
+    #[test]
+    fn endpoint_waits_while_chrome_is_still_writing_the_port_file() {
+        let data = tempfile::tempdir().unwrap();
+        let id = SessionId::parse(ID).unwrap();
+        let profile = paths::profile_dir(data.path(), &id);
+        std::fs::create_dir_all(&profile).unwrap();
+        let file = profile.join(DEVTOOLS_ACTIVE_PORT);
+        // Chrome creates the file before it writes the port (#31 CI: "invalid debug port").
+        std::fs::write(&file, "").unwrap();
+        let writer = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            std::fs::write(&file, PORT_FILE).unwrap();
+        });
+        let runtime = ProcessRuntime::new(data.path(), Path::new("unused"));
+        let endpoint = runtime.debug_endpoint(id).unwrap();
+        writer.join().unwrap();
+        assert_eq!(
+            endpoint,
+            "ws://127.0.0.1:12345/devtools/browser/11111111-1111-4111-8111-111111111111"
+        );
     }
 }
