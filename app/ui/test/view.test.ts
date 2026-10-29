@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "../src/api.js";
-import { asking, closeForm, go, hide, initial, openForm, select, show } from "../src/state.js";
+import { asking, closeForm, edit, go, hide, initial, openForm, select, show } from "../src/state.js";
+import { editorValues } from "../src/views/editor.js";
 import { formValues } from "../src/views/form.js";
 import { esc, render } from "../src/view.js";
 
@@ -110,5 +111,38 @@ describe("copying and sessions", () => {
     expect(view("stopped")).toContain('data-action="open-session"');
     expect(view("running")).toContain('data-action="stop-session"');
     expect(view("recovery_required")).toMatch(/data-closed="s1".*data-action="recover"/s);
+  });
+});
+
+describe("the item forms", () => {
+  const kinds = [
+    { kind: "login", domain: "credentials", fields: [["username", false], ["password", true]] as [string, boolean][], free_fields: false },
+    { kind: "env", domain: "developer", fields: [] as [string, boolean][], free_fields: true },
+  ];
+
+  it("offer the kind's fields, password inputs for secrets, and generation for logins", () => {
+    const html = render(edit({ ...withItems, kinds }, { mode: "new", kind: "login" }));
+    expect(html).toMatch(/name="v:password" type="password"/);
+    expect(html).toMatch(/name="v:username" type="text"/);
+    expect(html).toContain('name="generate"');
+    const env = render(edit({ ...withItems, kinds }, { mode: "new", kind: "env" }));
+    expect(env).toContain('name="__env"');
+    expect(env).not.toContain('name="generate"');
+  });
+
+  it("edit an item with its sites filled in and no value", () => {
+    const opened = edit(select(withItems, "github"), { mode: "edit", name: "github" });
+    const html = render(opened);
+    expect(html).toContain("https://github.com</textarea>");
+    expect(html).toContain("비우면 그대로");
+    expect(edit(opened, null).editor).toBeNull();
+    expect(select(opened, "other").editor).toBeNull();
+  });
+
+  it("read field values and sites from the form", () => {
+    const data = new FormData();
+    data.set("v:password", "pw");
+    data.set("origins", "https://a.example\n\n https://b.example ");
+    expect(editorValues(data)).toEqual({ values: { password: "pw" }, origins: ["https://a.example", "https://b.example"] });
   });
 });

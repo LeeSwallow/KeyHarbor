@@ -8,8 +8,8 @@ mod shell;
 use keyharbor_app::{
     Ctx, SystemClock,
     commands::{
-        self, AuditDto, HandoffDto, InboxDto, ItemDto, OverviewDto, RequestForm, RuleDto,
-        SessionDto, SettingDto, message,
+        self, AuditDto, ChangeForm, HandoffDto, InboxDto, ItemDto, KindForm, NewItemForm,
+        OverviewDto, RequestForm, RuleDto, SessionDto, SettingDto, message,
     },
     confirm::Outcome,
 };
@@ -135,6 +135,28 @@ fn recover_session(ctx: State<'_, Ctx>, id: String, browser_closed: bool) -> Rep
     commands::recover_session(&ctx, &id, browser_closed).map_err(message)
 }
 
+#[tauri::command]
+fn kinds() -> Vec<KindForm> {
+    commands::kinds()
+}
+#[tauri::command]
+fn add_item(ctx: State<'_, Ctx>, form: NewItemForm) -> Reply<String> {
+    commands::add_item(&ctx, form).map_err(message)
+}
+#[tauri::command]
+fn edit_item(
+    ctx: State<'_, Ctx>,
+    name: String,
+    form: ChangeForm,
+    confirmed: bool,
+) -> Reply<Outcome> {
+    commands::edit_item(&ctx, &name, form, confirmed).map_err(message)
+}
+#[tauri::command]
+fn remove_item(ctx: State<'_, Ctx>, name: String) -> Reply<()> {
+    commands::remove_item(&ctx, &name).map_err(message)
+}
+
 /// The data folder the CLI uses: `KEYHARBOR_HOME`, else the macOS application data folder.
 fn data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("KEYHARBOR_HOME") {
@@ -208,7 +230,11 @@ fn main() {
             copy_placeholder,
             open_session,
             stop_session,
-            recover_session
+            recover_session,
+            kinds,
+            add_item,
+            edit_item,
+            remove_item
         ])
         .run(tauri::generate_context!())
         .expect("KeyHarbor app failed to start");

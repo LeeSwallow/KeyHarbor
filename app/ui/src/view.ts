@@ -4,6 +4,7 @@
 import type { Item } from "./api.js";
 import type { State, View } from "./state.js";
 import { dialog, policies, settings } from "./views/admin.js";
+import { editor } from "./views/editor.js";
 import { form } from "./views/form.js";
 
 import { esc } from "./html.js";
@@ -92,7 +93,8 @@ function sessions(s: State): string {
 }
 
 function itemList(s: State): string {
-  return (
+  const add = `<button class="kh-btn" data-action="new-item">+ 새 항목</button>`;
+  return add + (
     s.items
       .map((i) => {
         const marks = [i.status === "draft" ? "draft" : "", i.tampered ? "변조 의심" : "", i.expired ? "만료" : ""]
@@ -121,12 +123,15 @@ function fieldRow(s: State, item: Item, field: string, placeholder: string): str
 }
 
 function detail(s: State): string {
+  if (s.editor) return editor(s.editor, s.kinds, s.items);
   const item = s.items.find((i) => i.name === s.selected);
   if (!item) return `<div class="kh-empty">항목을 고르세요</div>`;
   const warn = item.tampered ? `<p class="kh-help">⚠ 변조 의심 — 이 항목은 입력에 쓰이지 않습니다</p>` : "";
   const fields = item.fields.map((f, n) => fieldRow(s, item, f, item.placeholders[n] ?? "")).join("");
   const origins = item.origins.map(esc).join(", ") || "—";
-  return `<h2>${esc(item.name)}</h2>${warn}<div class="kv">${fields}<span>사이트</span><div>${origins}</div><span>태그</span><div>${item.tags.map(esc).join(", ") || "—"}</div></div>`;
+  return `<h2>${esc(item.name)}</h2>${warn}<div class="kv">${fields}<span>사이트</span><div>${origins}</div><span>태그</span><div>${item.tags.map(esc).join(", ") || "—"}</div></div>
+    <button class="kh-btn" data-action="edit-item" data-name="${esc(item.name)}">편집</button>
+    <button class="kh-btn" data-action="remove-item" data-name="${esc(item.name)}">삭제</button>`;
 }
 
 function audit(s: State): string {

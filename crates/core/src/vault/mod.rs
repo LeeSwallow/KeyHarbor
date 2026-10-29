@@ -13,7 +13,7 @@ mod register;
 mod resolve;
 mod summary;
 
-pub use register::{DraftItem, GeneratedLogin, MAX_DRAFTS};
+pub use register::{DraftItem, GeneratedLogin, MAX_DRAFTS, generate_password};
 pub use resolve::fill_template;
 pub use summary::{CatalogEntry, ItemFilter, ItemUse, catalog, effective_descriptions};
 

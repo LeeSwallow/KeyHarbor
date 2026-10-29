@@ -311,3 +311,82 @@ fn recovering_a_session_needs_the_browser_closed_first() {
             || commands::sessions(&c).unwrap()[0].state == "stopped"
     );
 }
+
+#[test]
+fn items_are_added_changed_and_removed_through_the_guard() {
+    use keyharbor_app::{
+        commands::{ChangeForm, NewItemForm},
+        confirm::Outcome,
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    init_vault(tmp.path());
+    let kinds = commands::kinds();
+    let login = kinds.iter().find(|k| k.kind == "login").unwrap();
+    assert!(login.fields.contains(&("password", true)));
+    assert!(kinds.iter().any(|k| k.kind == "env" && k.free_fields));
+
+    let form = NewItemForm {
+        name: "shop".into(),
+        kind: "login".into(),
+        origins: vec!["https://shop.example".into()],
+        values: [("username".to_owned(), "me".to_owned())].into(),
+        generate_password: true,
+    };
+    assert_eq!(commands::add_item(&c, form).unwrap(), "shop");
+    let generated = commands::reveal(&c, "shop", "password").unwrap();
+    assert_eq!(generated.chars().count(), 20);
+    let bad = NewItemForm {
+        name: "x".into(),
+        kind: "secret".into(),
+        origins: vec![],
+        values: Default::default(),
+        generate_password: true,
+    };
+    assert!(
+        commands::add_item(&c, bad).is_err(),
+        "only a login gets a generated password"
+    );
+
+    let new_value = ChangeForm {
+        values: [("password".to_owned(), "chosen-1234".to_owned())].into(),
+        origins: None,
+    };
+    assert_eq!(
+        commands::edit_item(&c, "shop", new_value, false).unwrap(),
+        Outcome::Done
+    );
+    assert_eq!(
+        commands::reveal(&c, "shop", "password").unwrap(),
+        "chosen-1234"
+    );
+    let more_sites = || ChangeForm {
+        values: Default::default(),
+        origins: Some(vec![
+            "https://shop.example".into(),
+            "https://pay.example".into(),
+        ]),
+    };
+    assert!(matches!(
+        commands::edit_item(&c, "shop", more_sites(), false).unwrap(),
+        Outcome::Ask { .. }
+    ));
+    let item = commands::items(&c)
+        .unwrap()
+        .into_iter()
+        .find(|i| i.name == "shop")
+        .unwrap();
+    assert_eq!(
+        item.origins,
+        ["https://shop.example"],
+        "nothing changed before the person confirmed"
+    );
+    assert_eq!(
+        commands::edit_item(&c, "shop", more_sites(), true).unwrap(),
+        Outcome::Done
+    );
+
+    commands::remove_item(&c, "shop").unwrap();
+    assert!(commands::items(&c).unwrap().is_empty());
+    assert!(commands::remove_item(&c, "shop").is_err());
+}

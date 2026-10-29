@@ -6,6 +6,7 @@ mod admin;
 mod answers;
 mod inbox;
 mod items;
+mod manage;
 mod overview;
 mod sessions;
 
@@ -16,6 +17,7 @@ pub use answers::{
 };
 pub use inbox::{InboxDto, confirm_draft, decline_request, discard_draft, inbox};
 pub use items::{ItemDto, copy_placeholder, copy_value, items, reveal};
+pub use manage::{ChangeForm, KindForm, NewItemForm, add_item, edit_item, kinds, remove_item};
 pub use overview::{AuditDto, MenuText, OverviewDto, audit, menu_text, overview};
 pub use sessions::{SessionDto, open_session, recover_session, sessions, stop_session};
 
