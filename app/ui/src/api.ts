@@ -44,6 +44,11 @@ export interface Api {
   policies(): Promise<Rule[]>;
   setPolicy(rule: Rule, confirmed: boolean): Promise<Outcome>;
   removePolicy(rule: Rule, confirmed: boolean): Promise<Outcome>;
+  copyValue(item: string, field: string): Promise<void>;
+  copyPlaceholder(text: string): Promise<void>;
+  openSession(id: string): Promise<void>;
+  stopSession(id: string): Promise<void>;
+  recoverSession(id: string, browserClosed: boolean): Promise<void>;
 }
 
 type Invoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -69,5 +74,10 @@ export function tauriApi(invoke: Invoke): Api {
     policies: () => call("policies"),
     setPolicy: (r, confirmed) => call("set_policy", { ...r, confirmed }),
     removePolicy: (r, confirmed) => call("remove_policy", { agent: r.agent, resource: r.resource, target: r.target, confirmed }),
+    copyValue: (item, field) => call("copy_value", { item, field }),
+    copyPlaceholder: (text) => call("copy_placeholder", { text }),
+    openSession: (id) => call("open_session", { id }),
+    stopSession: (id) => call("stop_session", { id }),
+    recoverSession: (id, browserClosed) => call("recover_session", { id, browserClosed }),
   };
 }

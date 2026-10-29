@@ -1,6 +1,19 @@
 //! The app's command layer over a temporary vault (file key store), without a window.
 
 use keyharbor_app::{Ctx, KeyStores, SystemClock, commands};
+use std::sync::Mutex;
+
+/// A clipboard in memory: tests must not touch the real one.
+#[derive(Default)]
+struct Board(Mutex<Vec<(String, bool)>>);
+impl keyharbor_app::clipboard::Clipboard for Board {
+    fn copy(&self, text: &str, concealed: bool) -> anyhow::Result<i64> {
+        let mut copies = self.0.lock().unwrap();
+        copies.push((text.to_owned(), concealed));
+        Ok(copies.len() as i64)
+    }
+    fn clear_if_unchanged(&self, _token: i64) {}
+}
 use keyharbor_core::{ItemSource, ItemStatus, NewItem, Vault, request};
 use keyharbor_domain::{
     SessionName,
@@ -13,7 +26,7 @@ use keyharbor_sqlite::SqliteStore;
 use std::{path::Path, sync::Arc};
 use zeroize::Zeroizing;
 
-fn ctx(dir: &Path) -> Ctx {
+fn ctx_with(dir: &Path, board: Arc<Board>) -> Ctx {
     let keys_dir = dir.join("keys");
     let keys: KeyStores = Arc::new(move || Box::new(FileKeyStore::new(keys_dir.clone())));
     Ctx::new(
@@ -21,7 +34,11 @@ fn ctx(dir: &Path) -> Ctx {
         keys,
         Arc::new(SystemClock),
         "keyharbor".into(),
+        board,
     )
+}
+fn ctx(dir: &Path) -> Ctx {
+    ctx_with(dir, Arc::default())
 }
 fn login(name: &str, status: ItemStatus) -> NewItem {
     NewItem {
@@ -245,5 +262,52 @@ fn weakening_changes_ask_first_and_stricter_ones_do_not() {
     assert!(
         commands::set_setting(&c, "draft_ttl", "soon", true).is_err(),
         "a bad value is an error, not a question"
+    );
+}
+
+#[test]
+fn a_copied_value_is_concealed_and_recorded_and_a_placeholder_is_not_a_value() {
+    let tmp = tempfile::tempdir().unwrap();
+    let board = Arc::new(Board::default());
+    let c = ctx_with(tmp.path(), board.clone());
+    init_vault(tmp.path())
+        .add(login("github", ItemStatus::Active))
+        .unwrap();
+    commands::copy_value(&c, "github", "password").unwrap();
+    commands::copy_placeholder(&c, "{{secret:github.password}}").unwrap();
+    assert!(commands::copy_placeholder(&c, "{{secret:github.password}} and more").is_err());
+    assert!(commands::copy_placeholder(&c, "plain text").is_err());
+    let copies = board.0.lock().unwrap().clone();
+    assert_eq!(
+        copies,
+        [
+            ("pw-SECRET-1".to_owned(), true),
+            ("{{secret:github.password}}".to_owned(), false)
+        ]
+    );
+    assert_eq!(commands::audit(&c, 1).unwrap()[0].kind, "value_revealed");
+}
+
+#[test]
+fn recovering_a_session_needs_the_browser_closed_first() {
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    let store = SqliteStore::open(&tmp.path().join("data")).unwrap();
+    let id = store
+        .create(SessionName::parse("work").unwrap())
+        .unwrap()
+        .id
+        .to_string();
+    let refused = commands::recover_session(&c, &id, false)
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("close the session's browser"), "{refused}");
+    assert!(
+        commands::recover_session(&c, &id, true).is_err(),
+        "a stopped session needs no recovery"
+    );
+    assert!(
+        commands::stop_session(&c, &id).is_err()
+            || commands::sessions(&c).unwrap()[0].state == "stopped"
     );
 }

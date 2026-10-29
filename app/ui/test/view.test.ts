@@ -94,3 +94,21 @@ describe("weakening changes", () => {
     expect(go(asked, "home").ask).toBeNull();
   });
 });
+
+describe("copying and sessions", () => {
+  it("offers value and placeholder copy, but no value copy for tampered or plain fields", () => {
+    const html = render(select(withItems, "github"));
+    expect(html).toContain('data-action="copy" data-name="github" data-field="password"');
+    expect(html).toContain('data-action="copy-placeholder" data-text="{{secret:github.password}}"');
+    const tampered = render(select({ ...withItems, items: [{ ...github, tampered: true }] }, "github"));
+    expect(tampered).not.toContain('data-action="copy"');
+  });
+
+  it("shows open, stop, or recovery behind a checkbox", () => {
+    const session = (state: string) => ({ id: "s1", name: "work", state, cdp: false, description: null, sites: [] });
+    const view = (state: string) => render({ ...initial, view: "sessions", sessions: [session(state)] });
+    expect(view("stopped")).toContain('data-action="open-session"');
+    expect(view("running")).toContain('data-action="stop-session"');
+    expect(view("recovery_required")).toMatch(/data-closed="s1".*data-action="recover"/s);
+  });
+});

@@ -70,12 +70,22 @@ function inbox(s: State): string {
   return all || `<div class="kh-empty">확인할 것이 없습니다</div>`;
 }
 
+/// [열기]/[중지], or [복구…] for a session whose supervisor is gone (after a checkbox).
+function sessionActions(id: string, state: string): string {
+  const button = (action: string, label: string) =>
+    `<button class="kh-btn" data-action="${action}" data-id="${esc(id)}">${label}</button>`;
+  if (state === "recovery_required") {
+    return `<label><input type="checkbox" data-closed="${esc(id)}"> 브라우저 창을 모두 닫았습니다</label>${button("recover", "복구…")}`;
+  }
+  return state === "stopped" ? button("open-session", "열기") : button("stop-session", "중지");
+}
+
 function sessions(s: State): string {
   return (
     s.sessions
       .map((x) => {
         const sites = x.sites.map((t) => `<div><small>${esc(t.origin)} · ${esc(t.state)}</small></div>`).join("");
-        return `<div class="kh-row"><div><strong>${esc(x.name)}</strong> · ${esc(x.state)}${x.cdp ? ` · <span class="kh-badge">raw CDP</span>` : ""}${sites}</div></div>`;
+        return `<div class="kh-row"><div><strong>${esc(x.name)}</strong> · ${esc(x.state)}${x.cdp ? ` · <span class="kh-badge">raw CDP</span>` : ""}${sites}</div>${sessionActions(x.id, x.state)}</div>`;
       })
       .join("") || `<div class="kh-empty">세션이 없습니다</div>`
   );
@@ -105,7 +115,9 @@ function fieldRow(s: State, item: Item, field: string, placeholder: string): str
       : shown === null
         ? `<button class="kh-btn" data-action="reveal" data-name="${esc(item.name)}" data-field="${esc(field)}">보기</button>`
         : `<button class="kh-btn" data-action="hide">가리기</button>`;
-  return `<span>${esc(field)}</span><div><code>${value === null || value === undefined ? "••••••••" : esc(value)}</code> ${control}<br><small>${esc(placeholder)}</small></div>`;
+  const copy = item.tampered || plain !== undefined ? "" : `<button class="kh-btn" data-action="copy" data-name="${esc(item.name)}" data-field="${esc(field)}">복사</button>`;
+  return `<span>${esc(field)}</span><div><code>${value === null || value === undefined ? "••••••••" : esc(value)}</code> ${control} ${copy}<br><small>${esc(placeholder)}</small>
+    <button class="kh-btn" data-action="copy-placeholder" data-text="${esc(placeholder)}" aria-label="placeholder 복사">⧉</button></div>`;
 }
 
 function detail(s: State): string {

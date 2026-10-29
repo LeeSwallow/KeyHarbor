@@ -15,9 +15,9 @@ pub use answers::{
     resume_handoff,
 };
 pub use inbox::{InboxDto, confirm_draft, decline_request, discard_draft, inbox};
-pub use items::{ItemDto, items, reveal};
+pub use items::{ItemDto, copy_placeholder, copy_value, items, reveal};
 pub use overview::{AuditDto, OverviewDto, audit, overview};
-pub use sessions::{SessionDto, sessions};
+pub use sessions::{SessionDto, open_session, recover_session, sessions, stop_session};
 
 /// Errors cross to the window as text: a short reason, never a value.
 pub fn message(error: anyhow::Error) -> String {

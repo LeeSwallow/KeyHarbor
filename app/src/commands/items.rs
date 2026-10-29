@@ -63,3 +63,19 @@ pub fn reveal(ctx: &Ctx, item: &str, field: &str) -> Result<String> {
     let value = guard_reveal::reveal(&*ctx.store()?, &ctx.vault()?, &item, &field)?;
     Ok(value.as_str().to_owned())
 }
+
+/// Copies a value for the person (recorded as a reveal), marked secret and cleared after 30
+/// seconds (09 §9.9).
+pub fn copy_value(ctx: &Ctx, item: &str, field: &str) -> Result<()> {
+    let value = zeroize::Zeroizing::new(reveal(ctx, item, field)?);
+    crate::clipboard::copy_secret(ctx.clipboard(), &value)
+}
+
+/// Copies a placeholder (not a value, so not concealed): `text` must be exactly one.
+pub fn copy_placeholder(ctx: &Ctx, text: &str) -> Result<()> {
+    let refs = keyharbor_domain::vault::parse_placeholders(text).map_err(|e| anyhow!("{e}"))?;
+    match refs.as_slice() {
+        [one] if one.to_string() == text => ctx.clipboard().copy(text, false).map(|_| ()),
+        _ => anyhow::bail!("only a placeholder can be copied this way"),
+    }
+}

@@ -60,6 +60,15 @@ export function mount(root: HTMLElement, api: Api): { state: () => State } {
         hideTimer = setTimeout(() => set(hide(state)), HIDE_AFTER_MS);
       });
     }
+    const { text } = button.dataset;
+    if (action === "copy" && name && field) void guard(() => api.copyValue(name, field));
+    if (action === "copy-placeholder" && text) void guard(() => api.copyPlaceholder(text));
+    if (action === "open-session" && id) void guard(() => api.openSession(id).then(load));
+    if (action === "stop-session" && id) void guard(() => api.stopSession(id).then(load));
+    if (action === "recover" && id) {
+      const box = root.querySelector<HTMLInputElement>(`[data-closed="${CSS.escape(id)}"]`);
+      void guard(() => api.recoverSession(id, box?.checked ?? false).then(load));
+    }
     if (action === "open-form" && id) void guard(async () => set(openForm(state, await api.requestForm(id))));
     if (action === "decline" && id) void guard(() => api.declineRequest(id).then(() => set(closeForm(state))).then(load));
     if (action === "resume" && session && id) void guard(() => api.resumeHandoff(session, id).then(load));
