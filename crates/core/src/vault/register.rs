@@ -11,6 +11,12 @@ use keyharbor_domain::{
 };
 use zeroize::Zeroizing;
 
+/// A new password following `rule`, for an interface that makes one for a person (the admin
+/// app's "비밀번호 생성"). Interfaces get randomness here, not from the crypto crate.
+pub fn generate_password(rule: &PasswordRule) -> Zeroizing<String> {
+    random::password(rule)
+}
+
 /// Drafts of one name an agent may pile up before a person sorts them out.
 pub const MAX_DRAFTS: u32 = 20;
 

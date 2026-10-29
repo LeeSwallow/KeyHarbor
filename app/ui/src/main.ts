@@ -5,9 +5,10 @@
 
 import { type Api, type Outcome, tauriApi } from "./api.js";
 import {
-  type State, type View, asking, closeForm, fail, go, hide, initial, openForm, select, show,
+  type State, type View, asking, closeForm, edit, fail, go, hide, initial, openForm, select, show,
 } from "./state.js";
 import { render } from "./view.js";
+import { editorValues } from "./views/editor.js";
 import { formValues } from "./views/form.js";
 
 const HIDE_AFTER_MS = 30_000;
@@ -28,11 +29,11 @@ export function mount(root: HTMLElement, api: Api): { state: () => State } {
   };
   const load = () =>
     guard(async () => {
-      const [overview, inbox, sessions, items, audit, handoffs, settings, policies] = await Promise.all([
+      const [overview, inbox, sessions, items, audit, handoffs, settings, policies, kinds] = await Promise.all([
         api.overview(), api.inbox(), api.sessions(), api.items(), api.audit(50),
-        api.handoffs(), api.settings(), api.policies(),
+        api.handoffs(), api.settings(), api.policies(), api.kinds(),
       ]);
-      set({ ...state, overview, inbox, sessions, items, audit, handoffs, settings, policies });
+      set({ ...state, overview, inbox, sessions, items, audit, handoffs, settings, policies, kinds });
     });
   /// Sends a change; if it needs a person, asks first and resends it confirmed on "확인".
   const change = (send: (confirmed: boolean) => Promise<Outcome>) =>
@@ -77,12 +78,27 @@ export function mount(root: HTMLElement, api: Api): { state: () => State } {
     if (action === "remove-rule" && agent && resource && target) {
       void change((confirmed) => api.removePolicy({ agent, resource, target, effect: "" }, confirmed));
     }
+    if (action === "new-item") set(edit(state, { mode: "new", kind: state.kinds[0]?.kind ?? "login" }));
+    if (action === "edit-item" && name) set(edit(state, { mode: "edit", name }));
+    if (action === "close-editor") set(edit(state, null));
+    if (action === "remove-item" && name) {
+      set(asking(state, {
+        title: "항목을 지웁니다",
+        question: `${name}을(를) 지웁니다. 되돌릴 수 없습니다.`,
+        retry: () => api.removeItem(name).then(() => set(go(state, "items"))).then(load),
+      }));
+    }
     if (action === "ask-cancel") set(asking(state, null));
     if (action === "ask-confirm" && state.ask) {
       const { retry } = state.ask;
       set(asking(state, null));
       void guard(retry);
     }
+  });
+
+  root.addEventListener("change", (event) => {
+    const picker = event.target as HTMLSelectElement;
+    if (picker.dataset.action === "pick-kind") set(edit(state, { mode: "new", kind: picker.value }));
   });
 
   root.addEventListener("submit", (event) => {
@@ -94,6 +110,19 @@ export function mount(root: HTMLElement, api: Api): { state: () => State } {
       const values = formValues(data);
       el.reset();
       void guard(() => api.fulfillRequest(id, values).then(() => set(closeForm(state))).then(load));
+    } else if (el.dataset.editor === "new") {
+      const { values, origins } = editorValues(data);
+      const item = {
+        name: String(data.get("name") ?? ""), kind: String(data.get("kind") ?? el.dataset.kind),
+        origins, values, generate_password: data.get("generate") === "on",
+      };
+      el.reset();
+      void guard(() => api.addItem(item).then((name) => load().then(() => set(select(state, name)))));
+    } else if (el.dataset.editor === "edit" && el.dataset.name) {
+      const name = el.dataset.name;
+      const { values, origins } = editorValues(data);
+      el.reset();
+      void change((confirmed) => api.editItem(name, { values, origins }, confirmed)).then(() => set(edit(state, null)));
     } else if (el.dataset.setting) {
       const key = el.dataset.setting;
       const value = String(data.get("value") ?? "");

@@ -39,7 +39,7 @@ export function policies(rules: Rule[]): string {
 export function dialog(ask: Ask | null): string {
   if (!ask) return "";
   return `<div class="kh-scrim"><div class="kh-dialog" role="alertdialog" aria-modal="true">
-    <h2>보호를 약하게 하는 변경입니다</h2><p>${esc(ask.question)}</p>
+    <h2>${esc(ask.title ?? "보호를 약하게 하는 변경입니다")}</h2><p>${esc(ask.question)}</p>
     <button class="kh-btn" data-action="ask-cancel">취소</button>
     <button class="kh-btn" data-action="ask-confirm">확인</button></div></div>`;
 }

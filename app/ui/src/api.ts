@@ -23,6 +23,9 @@ export interface Handoff { session: string; session_name: string; request_id: st
 export interface Setting { key: string; value: string; default: string }
 export interface Rule { agent: string; resource: string; target: string; effect: string }
 /// A change that may need a person: done, or the question to put to them.
+export interface KindForm { kind: string; domain: string; fields: [string, boolean][]; free_fields: boolean }
+export interface NewItemForm { name: string; kind: string; origins: string[]; values: Record<string, string>; generate_password: boolean }
+export interface ChangeForm { values: Record<string, string>; origins?: string[] }
 export type Outcome = { outcome: "done" } | { outcome: "ask"; question: string };
 
 export interface Api {
@@ -49,6 +52,10 @@ export interface Api {
   openSession(id: string): Promise<void>;
   stopSession(id: string): Promise<void>;
   recoverSession(id: string, browserClosed: boolean): Promise<void>;
+  kinds(): Promise<KindForm[]>;
+  addItem(form: NewItemForm): Promise<string>;
+  editItem(name: string, form: ChangeForm, confirmed: boolean): Promise<Outcome>;
+  removeItem(name: string): Promise<void>;
 }
 
 type Invoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -79,5 +86,9 @@ export function tauriApi(invoke: Invoke): Api {
     openSession: (id) => call("open_session", { id }),
     stopSession: (id) => call("stop_session", { id }),
     recoverSession: (id, browserClosed) => call("recover_session", { id, browserClosed }),
+    kinds: () => call("kinds"),
+    addItem: (form) => call("add_item", { form }),
+    editItem: (name, form, confirmed) => call("edit_item", { name, form, confirmed }),
+    removeItem: (name) => call("remove_item", { name }),
   };
 }
