@@ -3,6 +3,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod shell;
+
 use keyharbor_app::{
     Ctx, SystemClock,
     commands::{
@@ -171,6 +173,17 @@ fn main() {
     );
     tauri::Builder::default()
         .manage(ctx)
+        .setup(|app| {
+            shell::install(app.handle())?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window keeps KeyHarbor in the menu bar (09 §9.2).
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             overview,
             items,

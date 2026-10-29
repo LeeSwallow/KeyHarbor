@@ -132,7 +132,7 @@ flowchart LR
 | 인증 trait + `NoneAuth` | 설정 화면에 현재 방식과 안내 문구 |
 | 대기 중인 인계 재개 | CLI `resume`과 같은 조건 ✅ (앱 확인 대기의 [재개]) |
 | 보안 입력 창 · `vault_request`/`vault_wait` | 요청 → 창 → 저장 → placeholder 반환, 거절 경로 ✅ (`app/tests/commands.rs`, 폼은 비밀 필드 password·자동 완성 끔, 닫으면 DOM에서 사라짐). 별도 항상 위 창은 남음 |
-| 메뉴 막대 · 알림 · 명령 팔레트 | [09 §9.8](09-app-ux.md#98-전체-동작-목록)의 동작 목록을 체크리스트로 사용 |
+| 메뉴 막대 · 알림 · 명령 팔레트 | [09 §9.8](09-app-ux.md#98-전체-동작-목록)의 동작 목록을 체크리스트로 사용. 메뉴 막대(템플릿 아이콘, 확인 대기 개수, 상태·열기·종료, 창을 닫아도 남음) ✅. 알림·명령 팔레트는 남음 |
 | 클립보드 | ConcealedType 표시, 30초 자동 지우기 ✅ (`app/src/clipboard.rs`, 실제 NSPasteboard 테스트는 CI의 macOS `app` job에서 `--ignored`로) |
 
 ### 6단계 — 플러그인·문서
