@@ -13,12 +13,15 @@ flowchart LR
 ## 만들기와 실행
 
 ```sh
+cargo tauri build                                  # KeyHarbor.app과 .dmg (tauri-cli 2 필요: cargo install tauri-cli --locked --version ^2)
 npm --prefix ui ci && npm --prefix ui run build    # ui/dist (Tauri가 이것을 넣는다)
 cargo test                                         # 명령 계층, 창 없이
 KEYHARBOR_HOME=/tmp/kh cargo run                   # 개발용 창 (기본은 ~/Library/Application Support/KeyHarbor)
 ```
 
 세션을 열고 닫는 감독자는 CLI 바이너리가 띄웁니다: `KEYHARBOR_CLI`, 번들 안 `Contents/Helpers/keyharbor`, PATH 순으로 찾습니다.
+
+`cargo tauri build`는 UI와 CLI 릴리스 빌드를 먼저 하고(`beforeBuildCommand`), CLI를 `KeyHarbor.app/Contents/Helpers/keyharbor`에 넣습니다(R-45). DMG는 `KeyHarbor.app`과 `Applications` 바로가기를 담아 끌어다 놓아 설치합니다. 지금 빌드는 서명·공증하지 않으므로 처음 열 때 macOS가 확인을 묻습니다. 배포(태그·릴리스·서명)는 아직 하지 않았습니다.
 
 ## 지금 있는 것
 
