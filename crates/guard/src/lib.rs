@@ -10,6 +10,7 @@
 //! - [`items`] — adding and changing items in the safe order (values, then weakening).
 //! - [`session`] — which policy actions each session operation needs.
 //! - [`capture`] — storing a sign-in the user typed during a handoff as a draft.
+//! - [`reveal`] — a person looking at a value in the admin app (recorded).
 //! - [`GuardedBrowser`] — a `BrowserPort` decorator: input goes through `substitute`, every
 //!   result and error through `mask`. The supervisor hands control requests only to it.
 //!
@@ -25,6 +26,7 @@ pub mod items;
 mod login;
 pub mod pdp;
 pub mod pep;
+pub mod reveal;
 pub mod run;
 pub mod session;
 #[cfg(test)]

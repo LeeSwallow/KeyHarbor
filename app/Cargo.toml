@@ -1,0 +1,39 @@
+[package]
+name = "keyharbor-app"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "KeyHarbor admin app (Tauri): vault, sessions, requests and usage record for the person at the Mac"
+
+# A workspace of its own, like prototype/: Tauri's WebKitGTK system libraries are not needed by
+# the CLI's Linux CI (J-89). It links the same crates the CLI does, by path.
+[workspace]
+
+[lib]
+name = "keyharbor_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "keyharbor-app"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+keyharbor-core = { path = "../crates/core" }
+keyharbor-domain = { path = "../crates/domain" }
+keyharbor-guard = { path = "../crates/guard" }
+keyharbor-keystore = { path = "../crates/keystore" }
+keyharbor-sqlite = { path = "../crates/sqlite" }
+keyharbor-supervisor = { path = "../crates/supervisor" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.12", features = [] }
+zeroize = "1.9"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+keyharbor-keystore = { path = "../crates/keystore", features = ["insecure-test-keystore"] }
+tempfile = "3"
