@@ -9,7 +9,9 @@ mod lifecycle;
 mod manage;
 pub mod supervision;
 
-pub use handoff::{ResumeWait, pending_handoff, resume, resume_check, wait_auth, wait_for_resume};
+pub use handoff::{
+    ResumeWait, pending_handoff, poll, resume, resume_check, wait_auth, wait_for_resume,
+};
 pub use lifecycle::{OpenOptions, endpoint, open, recover, stop};
 pub use manage::{SessionView, create, describe, list};
 

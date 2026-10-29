@@ -15,6 +15,7 @@ use diesel_migrations::{EmbeddedMigrations, embed_migrations};
 pub(crate) mod access;
 pub(crate) mod audit;
 pub(crate) mod config;
+pub(crate) mod request;
 pub(crate) mod session;
 pub(crate) mod site;
 pub(crate) mod vault;
@@ -38,6 +39,10 @@ pub(crate) const CONTEXTS: &[ContextSpec] = &[
     ContextSpec {
         name: "site",
         migrations: embed_migrations!("migrations/site"),
+    },
+    ContextSpec {
+        name: "request",
+        migrations: embed_migrations!("migrations/request"),
     },
     ContextSpec {
         name: "access",

@@ -9,6 +9,7 @@ mod access;
 pub mod audit;
 mod dotenv;
 pub mod policy;
+pub mod request;
 mod rotate;
 pub mod session;
 pub mod settings;

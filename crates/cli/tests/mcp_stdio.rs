@@ -75,6 +75,8 @@ fn session_tools_with_fake_browser() {
         "site_state_set",
         "vault_generate",
         "vault_put",
+        "vault_request",
+        "vault_wait",
     ] {
         assert!(tools.iter().any(|t| t == name), "{name} missing: {tools:?}");
     }

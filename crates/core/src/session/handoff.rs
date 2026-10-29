@@ -1,7 +1,7 @@
 //! Handing the browser to the user: request, inspect and resume (02 §2.5.4).
 
 use super::{note, note_event, require_supervisor, session};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
     HandoffStatus, RequestId, SessionId, State,
     audit::{AuditEvent, AuditKind},
@@ -121,15 +121,27 @@ pub fn resume_check(
 pub fn wait_for_resume(
     wait: ResumeWait,
     mut check: impl FnMut() -> Result<bool>,
-    mut sleep: impl FnMut(Duration),
+    sleep: impl FnMut(Duration),
 ) -> Result<()> {
+    poll(wait, || Ok(check()?.then_some(())), sleep)?.ok_or_else(|| {
+        anyhow!("Timed out waiting for resume; the session may still be awaiting the user")
+    })
+}
+
+/// Looks with `check` every [`ResumeWait::POLL`], sleeping with `sleep`, until it gives an
+/// answer, fails, or `wait` has been slept (then `None`).
+pub fn poll<T>(
+    wait: ResumeWait,
+    mut check: impl FnMut() -> Result<Option<T>>,
+    mut sleep: impl FnMut(Duration),
+) -> Result<Option<T>> {
     let mut waited = Duration::ZERO;
     loop {
-        if check()? {
-            return Ok(());
+        if let Some(answer) = check()? {
+            return Ok(Some(answer));
         }
         if waited >= wait.0 {
-            bail!("Timed out waiting for resume; the session may still be awaiting the user");
+            return Ok(None);
         }
         let step = ResumeWait::POLL.min(wait.0 - waited);
         sleep(step);

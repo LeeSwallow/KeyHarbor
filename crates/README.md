@@ -67,6 +67,7 @@ cargo run -p keyharbor -- list
 | 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_type`, `browser_login {item, submit?}`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` — 모두 `session` 인자 |
 | 금고 | `vault_list` — 이름·종류·도메인·필드 이름·필드별 placeholder·설명(항목·필드)·origin·바인딩·`run_allowed`·`expires_at`·`expired`·상태·출처만. 메타 MAC이 맞지 않는 항목은 이름과 `tampered: true`만 |
 | 금고 등록 | `vault_generate {name, origin, username?, password_rule? {length 8–128, symbols, forbid}}`, `vault_put {name, kind, fields, origins?}` — draft로만 저장한다. 이름이 이미 있으면 `<이름>~draft-N`이 되고 기존 항목은 바뀌지 않는다. 응답은 이름·`draft: true`·placeholder뿐이다 |
+| 정보 요청 | `vault_request {kind, name, reason, origin?}` → `request_id`, `vault_wait {request_id, timeout_seconds 1–300}` → `fulfilled`(이름·placeholder)·`declined`·`expired`·`pending`(대기만 끝남, 요청은 남음). 사용자는 `keyharbor vault requests`·`fulfill <id> [--stdin \| --use ITEM]`·`decline <id>`로 답한다 |
 | 사이트 상태 | `site_state_get {session, origin}` → `logged_in`·`expired`·`unknown`(기록 없음), `site_state_set {session, origin, state, item?}` — 에이전트가 페이지를 보고 남기는 메모다. KeyHarbor가 확인하지 않는다 |
 
 `browser_login`은 페이지(최상위 또는 같은 origin frame)의 username·password 칸을 포커스와 상관없이 찾아 login 항목의 값을 `browser_fill`과 같은 검사로 넣고, `submit`(기본 참)이면 Enter를 누른다. 칸을 못 찾으면 아무것도 넣지 않고 `not found: password field`처럼 실패한다. browser-use와 함께 쓰는 방법은 [docs/guides/browser-use.md](../docs/guides/browser-use.md).
@@ -135,7 +136,7 @@ cargo run -p keyharbor -- vault list
 | `settings get\|set KEY [VALUE]` | `audit_enabled true\|false`(`false`로 끄면 거부를 포함해 아무것도 기록하지 않는다. 그 밖의 값은 켜짐), `capture_enabled true\|false`(4단계), `default_item_ttl <N>d\|none` |
 | `run [--agent A] (--env ITEM \| --env-file PATH)… -- CMD ARGS…` | `run_allowed` 항목(secret·env 기본 허용)만. env 항목의 변수(또는 템플릿 파일의 `KEY={{secret:…}}` 줄)를 자식 프로세스에만 넣고, 그 stdout·stderr를 줄 단위로 가려서 내보낸다. 종료 코드를 그대로 전달하고(신호면 128+번호), 자식의 core dump를 끈다 |
 
-정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`, `substitution_locked`, `mask_probe`, `secret_denied_suppressed`(초당 10건을 넘은 거부 수), `first_use_origin`(identity·address가 처음 쓰인 origin), `site_state_changed`(사이트 로그인 상태 기록).
+정책은 규칙이 없으면 모두 허용이다. 에이전트 규칙이 `*` 규칙을 이기고, 그다음 항목 > 도메인 > `*` 순으로 구체적인 규칙이 이기며, 같은 단계면 거부가 이긴다. MCP는 세션 도구(`session_open`·`session_create`·`session_endpoint`·`browser_*`)에, 감독자는 항목 사용에 정책을 적용한다. 기록되는 이벤트: `secret_used`, `secret_denied`, `origin_changed_after_fill`, `session_opened`, `session_stopped`, `handoff_requested`, `handoff_resumed`, `policy_changed`, `vault_item_changed`, `env_injected`, `substitution_locked`, `mask_probe`, `secret_denied_suppressed`(초당 10건을 넘은 거부 수), `first_use_origin`(identity·address가 처음 쓰인 origin), `site_state_changed`(사이트 로그인 상태 기록), `vault_requested`·`vault_request_answered`(정보 요청과 답).
 
 **보호를 약하게 하는 작업은 사람이 확인한다**(R-35): `vault edit`의 origin 바인딩 끄기·origin 추가·`--run-allowed on`·만료 연장/제거, `policy allow`, deny 규칙의 `policy rm`, `settings set audit_enabled false`, `capture_enabled` 변경. stdin과 stderr가 모두 터미널이면 `/dev/tty`에서 `yes`를 받고, 아니면 `… needs confirmation from a person at a terminal (or the admin app)`으로 거부한다. pty를 흉내 내는 프로그램은 대신 답할 수 있으므로 **약한 경계**다([03 §3.12.1](../docs/design/03-security-whitepaper.md#3121-약화-작업은-사람이-확인한다-r-35)).
 
@@ -156,6 +157,14 @@ keyharbor policy deny --agent codex --resource domain --target payment
 ```sh
 keyharbor site list <session-id>                      # origin  state  item  checked_at  recorded_by
 keyharbor site set <session-id> https://github.com expired
+```
+
+에이전트가 금고에 없는 정보(카드, 주소, 모르는 비밀번호)를 `vault_request`로 요청하면 사용자가 터미널에서 답한다. 값은 숨김 입력이나 `--stdin` JSON으로 받아 바로 금고에 넣고(사용자가 넣었으므로 draft가 아니다), 에이전트는 이름과 placeholder만 받는다. 요청은 하루 동안 열려 있다.
+
+```sh
+keyharbor vault requests                               # id  agent  kind  name  origin  reason
+keyharbor vault fulfill <id>                           # 숨김 입력 (또는 --stdin, --use 기존항목)
+keyharbor vault decline <id>
 ```
 
 ### 3단계의 한계
