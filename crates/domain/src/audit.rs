@@ -38,9 +38,11 @@ pub enum AuditKind {
     /// The user handed a site's login to the session from their own browser (R-42); the
     /// result is how many cookies came along.
     SiteHandedOff,
+    /// The user looked at or copied a value in the admin app; the result is `shown`.
+    ValueRevealed,
 }
 impl AuditKind {
-    pub const ALL: [AuditKind; 21] = [
+    pub const ALL: [AuditKind; 22] = [
         Self::SecretUsed,
         Self::SecretDenied,
         Self::OriginChangedAfterFill,
@@ -62,6 +64,7 @@ impl AuditKind {
         Self::GrantChanged,
         Self::NavigationDenied,
         Self::SiteHandedOff,
+        Self::ValueRevealed,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -86,6 +89,7 @@ impl AuditKind {
             Self::GrantChanged => "grant_changed",
             Self::NavigationDenied => "navigation_denied",
             Self::SiteHandedOff => "site_handed_off",
+            Self::ValueRevealed => "value_revealed",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {

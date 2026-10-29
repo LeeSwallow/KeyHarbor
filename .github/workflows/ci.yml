@@ -55,14 +55,47 @@ jobs:
           workspaces: prototype
       - run: cargo test --locked
 
+  app:
+    # app/: the admin app (Tauri), its own workspace so Linux CI needs no WebKitGTK (J-89).
+    # The window's TypeScript first (Tauri embeds ui/dist), then the Rust command layer.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - run: npm ci
+        working-directory: app/ui
+      - run: npm run check
+        working-directory: app/ui
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+      - run: cargo fmt --check
+        working-directory: app
+      - run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: app
+      - run: cargo test --locked
+        working-directory: app
+
   deny:
-    # Licenses, advisories, bans and sources of every dependency: deny.toml.
+    # Licenses, advisories, bans and sources of every dependency: deny.toml, for the root
+    # workspace and the app's.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: Cargo.toml
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: app/Cargo.toml
+          arguments: --config deny.toml
 
   repo-checks:
     runs-on: ubuntu-latest

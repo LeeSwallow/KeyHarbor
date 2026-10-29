@@ -7,3 +7,7 @@
 /dist/
 node_modules/
 integrations/browser-extension/dist/
+/app/target/
+/app/gen/
+/app/ui/node_modules/
+/app/ui/dist/

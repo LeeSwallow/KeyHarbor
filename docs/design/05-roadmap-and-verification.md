@@ -127,7 +127,7 @@ flowchart LR
 
 | 범위 | 완료 조건 |
 |---|---|
-| Tauri 앱 골격 | `kh-core` 직접 호출, 네트워크 listener 없음 확인 |
+| Tauri 앱 골격 | core·guard 직접 호출(`app/`, 별도 워크스페이스), 네트워크 listener 없음(`lsof` 확인), 금고 없으면 키를 만들지 않고 안내, 값 보기는 guard `reveal`만·기록됨, 다른 항목·화면으로 가면 보인 값이 DOM에서 사라짐, 변조 항목은 보기 없음 ✅ (`app/tests/commands.rs`, `app/ui/test`) |
 | 금고·세션·정책·기록·설정 화면 | 각 화면의 CRUD, 평문 보기, 비밀번호 생성 |
 | 인증 trait + `NoneAuth` | 설정 화면에 현재 방식과 안내 문구 |
 | 대기 중인 인계 재개 | CLI `resume`과 같은 조건 |

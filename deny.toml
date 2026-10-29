@@ -8,6 +8,9 @@ all-features = false
 version = 2
 # Exceptions, each with the reason it does not reach KeyHarbor. Revisit when age moves on.
 ignore = [
+  # proc-macro-error is unmaintained; it is a build-time macro of gtk-rs, which only Tauri's
+  # Linux (WebKitGTK) path of the admin app (app/) pulls in. The app ships for macOS only.
+  { id = "RUSTSEC-2024-0370", reason = "build-time macro on the app's Linux GTK path; macOS app only" },
   # crypto-bigint 0.5 timing variability, via age 0.12 → p256/elliptic-curve 0.13.
   # age links P-256 for its hybrid recipients; KeyHarbor uses only the scrypt
   # passphrase recipient (docs/design/07 §7.7), so the affected code never runs.

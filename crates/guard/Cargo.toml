@@ -15,7 +15,7 @@ zeroize.workspace = true
 
 [dev-dependencies]
 keyharbor-crypto = { path = "../crypto" }
-keyharbor-sqlite = { path = "../sqlite" }
+keyharbor-sqlite = { path = "../sqlite", features = ["test-support"] }
 keyharbor-keystore = { path = "../keystore" }
 tempfile.workspace = true
 tokio.workspace = true

@@ -1,0 +1,123 @@
+// State → HTML. Every text goes through `esc`; a value appears only for the field in
+// `state.revealed`. Buttons carry `data-action` for the one click handler in main.ts.
+
+import type { Item } from "./api.js";
+import type { State, View } from "./state.js";
+
+export const esc = (text: string): string =>
+  text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+const NAV: [View, string][] = [
+  ["home", "홈"],
+  ["inbox", "확인 대기"],
+  ["sessions", "세션"],
+  ["items", "항목"],
+  ["audit", "사용 기록"],
+];
+
+function count(s: State, view: View): number {
+  if (view === "inbox") return s.inbox.requests.length + s.inbox.drafts.length;
+  if (view === "sessions") return s.sessions.length;
+  if (view === "items") return s.items.length;
+  return 0;
+}
+
+function side(s: State): string {
+  const links = NAV.map(([view, label]) => {
+    const n = count(s, view);
+    const badge = n > 0 ? `<span class="kh-count">${n}</span>` : "";
+    return `<button class="nav${s.view === view ? " is-on" : ""}" data-action="go" data-view="${view}">${esc(label)}${badge}</button>`;
+  }).join("");
+  return `<nav class="side" aria-label="KeyHarbor">${links}<div class="group">인증 없음</div></nav>`;
+}
+
+function home(s: State): string {
+  const o = s.overview;
+  if (o && !o.vault_ready) {
+    return `<div class="kh-empty"><p>금고가 없습니다. 터미널에서 <code>keyharbor vault init</code>을 실행하세요.</p></div>`;
+  }
+  const kv = (label: string, n: number | undefined) => `<span>${esc(label)}</span><strong>${n ?? "…"}</strong>`;
+  const recent = s.audit
+    .slice(0, 8)
+    .map((e) => `<div class="kh-row">${esc(e.at)} · ${esc(e.agent)} · ${esc(e.kind)}${e.item ? ` · ${esc(e.item)}` : ""} · ${esc(e.result)}</div>`)
+    .join("");
+  return `<div class="kv">${kv("열린 세션", o?.sessions_open)}${kv("확인 대기", o ? o.requests_pending + o.drafts : undefined)}</div>
+    <h2>최근 활동</h2>${recent || `<div class="kh-empty">기록이 없습니다</div>`}`;
+}
+
+function inbox(s: State): string {
+  const requests = s.inbox.requests.map(
+    (r) => `<div class="kh-row"><div>${esc(r.agent)} → ${esc(r.kind)} <strong>${esc(r.name)}</strong>${r.origin ? ` · ${esc(r.origin)}` : ""}<br><small>${esc(r.reason)}</small></div>
+      <code>keyharbor vault fulfill ${esc(r.id)}</code>
+      <button class="kh-btn" data-action="decline" data-id="${esc(r.id)}">거절</button></div>`,
+  );
+  const drafts = s.inbox.drafts.map(
+    (d) => `<div class="kh-row"><div><strong>${esc(d.name)}</strong> · ${esc(d.kind)} · <span class="kh-badge">${esc(d.source)}</span></div>
+      <button class="kh-btn" data-action="confirm" data-name="${esc(d.name)}">확정</button>
+      <button class="kh-btn" data-action="discard" data-name="${esc(d.name)}">폐기</button></div>`,
+  );
+  const all = [...requests, ...drafts].join("");
+  return all || `<div class="kh-empty">확인할 것이 없습니다</div>`;
+}
+
+function sessions(s: State): string {
+  return (
+    s.sessions
+      .map((x) => {
+        const sites = x.sites.map((t) => `<div><small>${esc(t.origin)} · ${esc(t.state)}</small></div>`).join("");
+        return `<div class="kh-row"><div><strong>${esc(x.name)}</strong> · ${esc(x.state)}${x.cdp ? ` · <span class="kh-badge">raw CDP</span>` : ""}${sites}</div></div>`;
+      })
+      .join("") || `<div class="kh-empty">세션이 없습니다</div>`
+  );
+}
+
+function itemList(s: State): string {
+  return (
+    s.items
+      .map((i) => {
+        const marks = [i.status === "draft" ? "draft" : "", i.tampered ? "변조 의심" : "", i.expired ? "만료" : ""]
+          .filter(Boolean)
+          .map((m) => `<span class="kh-badge">${esc(m)}</span>`)
+          .join(" ");
+        return `<button class="kh-row${s.selected === i.name ? " is-selected" : ""}" data-action="select" data-name="${esc(i.name)}"><strong>${esc(i.name)}</strong> ${esc(i.kind)} ${marks}</button>`;
+      })
+      .join("") || `<div class="kh-empty">항목이 없습니다</div>`
+  );
+}
+
+function fieldRow(s: State, item: Item, field: string, placeholder: string): string {
+  const plain = item.plain_values[field];
+  const shown = s.revealed && s.revealed.item === item.name && s.revealed.field === field ? s.revealed.value : null;
+  const value = plain ?? shown;
+  const control =
+    plain !== undefined || item.tampered
+      ? ""
+      : shown === null
+        ? `<button class="kh-btn" data-action="reveal" data-name="${esc(item.name)}" data-field="${esc(field)}">보기</button>`
+        : `<button class="kh-btn" data-action="hide">가리기</button>`;
+  return `<span>${esc(field)}</span><div><code>${value === null || value === undefined ? "••••••••" : esc(value)}</code> ${control}<br><small>${esc(placeholder)}</small></div>`;
+}
+
+function detail(s: State): string {
+  const item = s.items.find((i) => i.name === s.selected);
+  if (!item) return `<div class="kh-empty">항목을 고르세요</div>`;
+  const warn = item.tampered ? `<p class="kh-help">⚠ 변조 의심 — 이 항목은 입력에 쓰이지 않습니다</p>` : "";
+  const fields = item.fields.map((f, n) => fieldRow(s, item, f, item.placeholders[n] ?? "")).join("");
+  const origins = item.origins.map(esc).join(", ") || "—";
+  return `<h2>${esc(item.name)}</h2>${warn}<div class="kv">${fields}<span>사이트</span><div>${origins}</div><span>태그</span><div>${item.tags.map(esc).join(", ") || "—"}</div></div>`;
+}
+
+function audit(s: State): string {
+  return s.audit
+    .map((e) => `<div class="kh-row">${esc(e.at)} · ${esc(e.agent)} · ${esc(e.kind)}${e.item ? ` · ${esc(e.item)}` : ""}${e.origin ? ` · ${esc(e.origin)}` : ""} · ${esc(e.result)}</div>`)
+    .join("") || `<div class="kh-empty">기록이 없습니다</div>`;
+}
+
+export function render(s: State): string {
+  const error = s.error ? `<div class="kh-toast" role="alert">${esc(s.error)}</div>` : "";
+  const [list, main] =
+    s.view === "items"
+      ? [itemList(s), detail(s)]
+      : ["", { home, inbox, sessions, audit }[s.view](s)];
+  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${main}</section>`;
+}

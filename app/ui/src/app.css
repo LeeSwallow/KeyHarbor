@@ -1,0 +1,11 @@
+/* The app window fills the screen; everything else comes from the design system. Nav and
+   list entries are buttons (keyboard reachable, 09 §9.11) dressed as rows. */
+html, body { margin: 0; height: 100%; }
+.kh-shell { height: 100vh; }
+.kh-shell .list, .kh-shell .detail { overflow: auto; }
+.kh-shell button.nav, .kh-shell button.kh-row {
+  appearance: none; border: 0; background: none; font: inherit; color: inherit;
+  width: 100%; text-align: left;
+}
+.kh-shell button.nav { cursor: pointer; }
+.kh-shell button.nav:focus-visible, .kh-shell button.kh-row:focus-visible { outline: 2px solid var(--c-accent); }

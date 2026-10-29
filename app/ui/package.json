@@ -1,0 +1,21 @@
+{
+  "name": "keyharbor-app-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The KeyHarbor admin app's window: plain TypeScript over the design system (09, J-89).",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run build && npm run test"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "esbuild": "0.28.1",
+    "typescript": "6.0.3",
+    "vitest": "4.0.18"
+  }
+}
