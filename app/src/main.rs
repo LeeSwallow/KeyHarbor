@@ -112,6 +112,27 @@ fn remove_policy(
     commands::remove_policy(&ctx, &agent, &resource, &target, confirmed).map_err(message)
 }
 
+#[tauri::command]
+fn copy_value(ctx: State<'_, Ctx>, item: String, field: String) -> Reply<()> {
+    commands::copy_value(&ctx, &item, &field).map_err(message)
+}
+#[tauri::command]
+fn copy_placeholder(ctx: State<'_, Ctx>, text: String) -> Reply<()> {
+    commands::copy_placeholder(&ctx, &text).map_err(message)
+}
+#[tauri::command]
+fn open_session(ctx: State<'_, Ctx>, id: String) -> Reply<()> {
+    commands::open_session(&ctx, &id).map_err(message)
+}
+#[tauri::command]
+fn stop_session(ctx: State<'_, Ctx>, id: String) -> Reply<()> {
+    commands::stop_session(&ctx, &id).map_err(message)
+}
+#[tauri::command]
+fn recover_session(ctx: State<'_, Ctx>, id: String, browser_closed: bool) -> Reply<()> {
+    commands::recover_session(&ctx, &id, browser_closed).map_err(message)
+}
+
 /// The data folder the CLI uses: `KEYHARBOR_HOME`, else the macOS application data folder.
 fn data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("KEYHARBOR_HOME") {
@@ -140,7 +161,14 @@ fn cli_binary() -> PathBuf {
 
 fn main() {
     let keys: keyharbor_app::KeyStores = Arc::new(|| Box::new(KeychainKeyStore));
-    let ctx = Ctx::new(data_dir(), keys, Arc::new(SystemClock), cli_binary());
+    let clipboard = Arc::new(keyharbor_app::clipboard::MacClipboard);
+    let ctx = Ctx::new(
+        data_dir(),
+        keys,
+        Arc::new(SystemClock),
+        cli_binary(),
+        clipboard,
+    );
     tauri::Builder::default()
         .manage(ctx)
         .invoke_handler(tauri::generate_handler![
@@ -162,7 +190,12 @@ fn main() {
             set_setting,
             policies,
             set_policy,
-            remove_policy
+            remove_policy,
+            copy_value,
+            copy_placeholder,
+            open_session,
+            stop_session,
+            recover_session
         ])
         .run(tauri::generate_context!())
         .expect("KeyHarbor app failed to start");

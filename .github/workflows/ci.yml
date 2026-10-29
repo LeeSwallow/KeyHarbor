@@ -82,6 +82,8 @@ jobs:
         working-directory: app
       - run: cargo test --locked
         working-directory: app
+      - run: cargo test --locked --lib clipboard -- --ignored
+        working-directory: app
 
   deny:
     # Licenses, advisories, bans and sources of every dependency: deny.toml, for the root

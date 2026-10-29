@@ -1,6 +1,7 @@
 //! The app's composition root: the data folder, key store, clock and the CLI binary that
 //! runs session supervisors (`Contents/Helpers/keyharbor` in the bundle, R-45).
 
+use crate::clipboard::Clipboard;
 use anyhow::Result;
 use keyharbor_core::Vault;
 use keyharbor_domain::ports::{Clock, KeyStore, SessionRuntime, Store};
@@ -36,16 +37,27 @@ pub struct Ctx {
     clock: Arc<dyn Clock>,
     /// The `keyharbor` binary that supervisors are started from.
     cli: PathBuf,
+    clipboard: Arc<dyn Clipboard>,
 }
 
 impl Ctx {
-    pub fn new(root: PathBuf, keys: KeyStores, clock: Arc<dyn Clock>, cli: PathBuf) -> Self {
+    pub fn new(
+        root: PathBuf,
+        keys: KeyStores,
+        clock: Arc<dyn Clock>,
+        cli: PathBuf,
+        clipboard: Arc<dyn Clipboard>,
+    ) -> Self {
         Self {
             root,
             keys,
             clock,
             cli,
+            clipboard,
         }
+    }
+    pub fn clipboard(&self) -> Arc<dyn Clipboard> {
+        self.clipboard.clone()
     }
     pub fn root(&self) -> &Path {
         &self.root
