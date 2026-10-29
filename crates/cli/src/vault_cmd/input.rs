@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 #[derive(Args)]
 pub struct FieldInput {
     /// Non-secret field, e.g. --set username=me
-    #[arg(long = "set", value_name = "FIELD=VALUE")]
+    #[arg(long = "set", value_name = "FIELD=VALUE", id = "set")]
     set: Vec<String>,
     /// Read fields as a JSON object from stdin
     #[arg(long)]

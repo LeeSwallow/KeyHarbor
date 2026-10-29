@@ -10,6 +10,7 @@ pub mod browser;
 pub mod clock;
 pub mod confirm;
 pub mod keys;
+pub mod request;
 pub mod runtime;
 pub mod session;
 pub mod site;
@@ -21,6 +22,7 @@ pub use browser::{BrowserPort, FrameInspector, PageInput};
 pub use clock::{Clock, ManualClock};
 pub use confirm::{Answer, Confirm};
 pub use keys::KeyStore;
+pub use request::VaultRequestStore;
 pub use runtime::SessionRuntime;
 pub use session::{SessionRow, SessionStore};
 pub use site::SiteStore;
@@ -30,11 +32,25 @@ pub use vault::{
 
 /// Everything the local database provides, as one object.
 pub trait Store:
-    VaultStore + RotationLock + SessionStore + SiteStore + PolicyStore + AuditStore + SettingsStore
+    VaultStore
+    + RotationLock
+    + SessionStore
+    + SiteStore
+    + VaultRequestStore
+    + PolicyStore
+    + AuditStore
+    + SettingsStore
 {
 }
 impl<
-    T: VaultStore + RotationLock + SessionStore + SiteStore + PolicyStore + AuditStore + SettingsStore,
+    T: VaultStore
+        + RotationLock
+        + SessionStore
+        + SiteStore
+        + VaultRequestStore
+        + PolicyStore
+        + AuditStore
+        + SettingsStore,
 > Store for T
 {
 }

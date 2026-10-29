@@ -6,6 +6,7 @@ mod files;
 mod input;
 mod items;
 mod output;
+mod requests;
 
 use crate::{compose::App, description_args::DescriptionArgs, expiry_args::ExpiryArgs};
 use anyhow::{Context, Result, bail};
@@ -92,6 +93,8 @@ pub enum VaultCmd {
         #[arg(value_enum)]
         domain: DomainArg,
     },
+    #[command(flatten)]
+    Request(requests::RequestCmd),
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -224,6 +227,7 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
             println!("removed\t{}", name.as_str());
         }
         VaultCmd::List { json } => list(app, json)?,
+        VaultCmd::Request(command) => requests::run(app, command)?,
         VaultCmd::ImportEnv { name, path } => {
             let name = item_name(&name)?;
             let text = Zeroizing::new(

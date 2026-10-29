@@ -24,9 +24,13 @@ pub enum AuditKind {
     FirstUseOrigin,
     /// An agent or the user recorded a session's sign-in state at a site.
     SiteStateChanged,
+    /// An agent asked the user for information (08 §8.2 ③); the result is the request id.
+    VaultRequested,
+    /// The user answered a request: `fulfilled` or `declined`.
+    VaultRequestAnswered,
 }
 impl AuditKind {
-    pub const ALL: [AuditKind; 15] = [
+    pub const ALL: [AuditKind; 17] = [
         Self::SecretUsed,
         Self::SecretDenied,
         Self::OriginChangedAfterFill,
@@ -42,6 +46,8 @@ impl AuditKind {
         Self::DeniedSuppressed,
         Self::FirstUseOrigin,
         Self::SiteStateChanged,
+        Self::VaultRequested,
+        Self::VaultRequestAnswered,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -60,6 +66,8 @@ impl AuditKind {
             Self::DeniedSuppressed => "secret_denied_suppressed",
             Self::FirstUseOrigin => "first_use_origin",
             Self::SiteStateChanged => "site_state_changed",
+            Self::VaultRequested => "vault_requested",
+            Self::VaultRequestAnswered => "vault_request_answered",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {
