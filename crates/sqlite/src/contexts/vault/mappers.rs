@@ -80,6 +80,7 @@ pub fn field_row(model: FieldModel) -> FieldRow {
     FieldRow {
         field: model.field,
         sealed: model.sealed,
+        previous: model.previous,
     }
 }
 
@@ -88,5 +89,6 @@ pub fn field_model(item: &[u8; 16], row: &FieldRow) -> FieldModel {
         item_id: item.to_vec(),
         field: row.field.clone(),
         sealed: row.sealed.clone(),
+        previous: row.previous.clone(),
     }
 }

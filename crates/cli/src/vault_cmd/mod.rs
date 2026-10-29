@@ -80,6 +80,12 @@ pub enum VaultCmd {
     },
     /// Remove an item
     Rm { name: String },
+    /// Swap fields back to their value before the last change (all that have one, or --field)
+    Revert {
+        name: String,
+        #[arg(long = "field")]
+        fields: Vec<String>,
+    },
     /// List items without values
     List {
         #[arg(long)]
@@ -246,6 +252,23 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
                 status,
             },
         )?,
+        VaultCmd::Revert { name, fields } => {
+            let name = item_name(&name)?;
+            let vault = app.vault()?;
+            let kind = vault
+                .list()?
+                .into_iter()
+                .find(|i| i.name == name.as_str())
+                .context("item not found")?
+                .kind;
+            let fields = fields
+                .iter()
+                .map(|f| input::field_name(kind, f))
+                .collect::<Result<Vec<_>>>()?;
+            for field in vault.revert(&name, &fields)? {
+                println!("reverted\t{}\t{field}", name.as_str());
+            }
+        }
         VaultCmd::Rm { name } => {
             let name = item_name(&name)?;
             if !app.vault()?.remove(&name)? {

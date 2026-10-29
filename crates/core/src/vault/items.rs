@@ -140,19 +140,30 @@ impl Vault {
         let (kind, name, origins) = self.verified(&row)?;
         check_fields(kind, &change.set_fields)?;
         let domain = kind.domain();
+        // A replaced value stays as the field's `previous` record, for `revert`.
+        let replaced = |name: &str| {
+            fields
+                .iter()
+                .find(|f| f.field == name)
+                .map(|f| f.sealed.clone())
+        };
+        let new_fields: Vec<FieldRow> = change
+            .set_fields
+            .iter()
+            .map(|(n, v)| FieldRow {
+                previous: replaced(n.as_str()),
+                ..self.seal(&row.id, domain, n, v)
+            })
+            .collect();
         let mut kept: Vec<FieldRow> = fields
-            .into_iter()
+            .iter()
             .filter(|f| {
                 !change.remove_fields.iter().any(|r| r.as_str() == f.field)
                     && !change.set_fields.iter().any(|(s, _)| s.as_str() == f.field)
             })
+            .cloned()
             .collect();
-        kept.extend(
-            change
-                .set_fields
-                .iter()
-                .map(|(n, v)| self.seal(&row.id, domain, n, v)),
-        );
+        kept.extend(new_fields);
         let origins = change.origins.unwrap_or(origins);
         row.origins = sorted_origins(&origins);
         if let Some(binding) = change.origin_binding {

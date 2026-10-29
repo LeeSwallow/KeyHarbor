@@ -44,6 +44,8 @@ pub struct ItemRow {
 pub struct FieldRow {
     pub field: String,
     pub sealed: Vec<u8>,
+    /// The record of the value before the last change (same key and AD), for `vault revert`.
+    pub previous: Option<Vec<u8>>,
 }
 
 /// The key generation a writer sealed and signed with. Writes are refused if it is stale.

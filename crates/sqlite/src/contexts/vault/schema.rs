@@ -48,6 +48,7 @@ diesel::table! {
         item_id -> Binary,
         field -> Text,
         sealed -> Binary,
+        previous -> Nullable<Binary>,
     }
 }
 

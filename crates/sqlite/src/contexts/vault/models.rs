@@ -56,6 +56,7 @@ pub struct FieldModel {
     pub item_id: Vec<u8>,
     pub field: String,
     pub sealed: Vec<u8>,
+    pub previous: Option<Vec<u8>>,
 }
 
 #[derive(Insertable)]

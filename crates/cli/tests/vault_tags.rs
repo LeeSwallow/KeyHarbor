@@ -162,3 +162,50 @@ fn items_are_named_by_path_tagged_filtered_and_backed_up_with_their_tags() {
         .unwrap();
     assert!(!bad.status.success());
 }
+
+/// Developer secrets spec §2: one previous value per field, swapped back by `vault revert`.
+#[test]
+fn a_changed_value_can_be_reverted_without_showing_it() {
+    let tmp = short_tempdir();
+    let (data, keys) = (tmp.path().join("data"), tmp.path().join("keys"));
+    cli(&data, &keys, &["vault", "init"], "");
+    cli(
+        &data,
+        &keys,
+        &["vault", "add", "api", "--kind", "secret", "--stdin"],
+        r#"{"value":"value-ONE-1234"}"#,
+    );
+    cli(
+        &data,
+        &keys,
+        &["vault", "edit", "api", "--stdin"],
+        r#"{"value":"value-TWO-5678"}"#,
+    );
+    let which = || {
+        cli(
+            &data,
+            &keys,
+            &[
+                "run",
+                "--file",
+                "F=api.value",
+                "--",
+                "sh",
+                "-c",
+                "if test \"$(cat \"$F\")\" = \"$1\"; then echo one; else echo two; fi",
+                "_",
+                "value-ONE-1234",
+            ],
+            "",
+        )
+    };
+    assert_eq!(which(), "two\n");
+    let reverted = cli(&data, &keys, &["vault", "revert", "api"], "");
+    assert_eq!(reverted, "reverted\tapi\tvalue\n");
+    assert_eq!(which(), "one\n");
+    let listed = cli(&data, &keys, &["vault", "list", "--json"], "");
+    assert!(
+        !listed.contains("value-") && listed.contains("\"tampered\":false"),
+        "{listed}"
+    );
+}
