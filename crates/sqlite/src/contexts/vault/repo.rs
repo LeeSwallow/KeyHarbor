@@ -129,6 +129,25 @@ fn replace_domain_key(conn: &mut SqliteConnection, dk: &DomainKeyRow) -> Result<
     Ok(())
 }
 
+/// Replaces an item's metadata row (found by id), fields, origins and field descriptions.
+fn update_item(conn: &mut SqliteConnection, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
+    let updated = diesel::update(vault_items::table.find(&item.id[..]))
+        .set(item_model(item))
+        .execute(conn)?;
+    if updated == 0 {
+        bail!("item not found");
+    }
+    diesel::delete(vault_fields::table.filter(vault_fields::item_id.eq(&item.id[..])))
+        .execute(conn)?;
+    diesel::delete(item_origins::table.filter(item_origins::item_id.eq(&item.id[..])))
+        .execute(conn)?;
+    diesel::delete(
+        item_field_descriptions::table.filter(item_field_descriptions::item_id.eq(&item.id[..])),
+    )
+    .execute(conn)?;
+    write_children(conn, item, fields)
+}
+
 impl VaultStore for SqliteStore {
     fn vault_get(&self) -> Result<Option<VaultRow>> {
         self.read(|conn| {
@@ -188,25 +207,26 @@ impl VaultStore for SqliteStore {
         })
     }
 
+    fn item_replace(
+        &self,
+        guard: &KeyGuard,
+        replaced: &str,
+        item: &ItemRow,
+        fields: &[FieldRow],
+    ) -> Result<()> {
+        self.write(|conn| {
+            check_guard(conn, guard)?;
+            diesel::delete(vault_items::table.filter(vault_items::name.eq(replaced)))
+                .execute(conn)?;
+            update_item(conn, item, fields)?;
+            bump(conn)
+        })
+    }
+
     fn item_update(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
         self.write(|conn| {
             check_guard(conn, guard)?;
-            let updated = diesel::update(vault_items::table.find(&item.id[..]))
-                .set(item_model(item))
-                .execute(conn)?;
-            if updated == 0 {
-                bail!("item not found");
-            }
-            diesel::delete(vault_fields::table.filter(vault_fields::item_id.eq(&item.id[..])))
-                .execute(conn)?;
-            diesel::delete(item_origins::table.filter(item_origins::item_id.eq(&item.id[..])))
-                .execute(conn)?;
-            diesel::delete(
-                item_field_descriptions::table
-                    .filter(item_field_descriptions::item_id.eq(&item.id[..])),
-            )
-            .execute(conn)?;
-            write_children(conn, item, fields)?;
+            update_item(conn, item, fields)?;
             bump(conn)
         })
     }

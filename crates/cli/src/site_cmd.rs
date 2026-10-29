@@ -68,8 +68,12 @@ pub fn run(app: &App, command: SiteCmd) -> Result<()> {
                     .transpose()
                     .map_err(invalid)?,
             };
-            let record = site::set(&*store, app.clock(), LOCAL_AGENT, change)?;
+            let (record, confirmed) =
+                site::set_and_confirm(&*store, || app.vault(), app.clock(), LOCAL_AGENT, change)?;
             println!("{}", line(&record));
+            if let Some(item) = confirmed {
+                println!("confirmed\t{}", item.as_str());
+            }
         }
     }
     Ok(())

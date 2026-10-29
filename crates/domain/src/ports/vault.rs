@@ -74,6 +74,15 @@ pub trait VaultStore: Send {
     fn item_insert(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()>;
     /// Replaces the item's metadata, fields and origins.
     fn item_update(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()>;
+    /// Deletes the item named `replaced` (if any) and updates `item` in one transaction:
+    /// confirming a draft renames it over the item it was made for (08 §8.3).
+    fn item_replace(
+        &self,
+        guard: &KeyGuard,
+        replaced: &str,
+        item: &ItemRow,
+        fields: &[FieldRow],
+    ) -> Result<()>;
     fn item_delete(&self, name: &str) -> Result<bool>;
     fn item_get(&self, name: &str) -> Result<Option<(ItemRow, Vec<FieldRow>)>>;
     /// Every item, ordered by name, with its origins.

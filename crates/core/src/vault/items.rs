@@ -120,7 +120,7 @@ impl Vault {
     fn note_change(&self, name: &ItemName, result: &str) {
         self.note_change_by(LOCAL_AGENT, name, result);
     }
-    fn note_change_by(&self, agent: &str, name: &ItemName, result: &str) {
+    pub(super) fn note_change_by(&self, agent: &str, name: &ItemName, result: &str) {
         let _ = self.store.record(
             &AuditEvent::new(agent, AuditKind::VaultItemChanged, result).item(name.as_str()),
         );

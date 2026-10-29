@@ -132,9 +132,9 @@ vault_put(name="openai", kind=secret, fields={value: "sk-..."}, origin=null)
 |---|---|
 | 상태 | `draft` → `active` 또는 `discarded` |
 | 사용 | draft도 placeholder로 **즉시** 쓸 수 있다 (P3) |
-| 자동 확정 | 같은 세션·origin에 `site_state_set(logged_in)`이 기록되면 `login` draft를 확정한다 |
-| 사용자 확정 | 관리 앱의 "확인 대기" 목록에서 확정·수정·폐기 |
-| 자동 폐기 | 기한(기본 7일) 동안 확정되지 않으면 폐기. 기한은 사용자가 바꿀 수 있다 [설계자 판단] |
+| 자동 확정 | 같은 세션·origin에 `site_state_set(logged_in)`이 기록되면 `login` draft를 확정한다. 대상은 이름을 준 draft, 없으면 그 origin의 가장 최근 draft다. **생성(`generated`)이나 포착(`captured`)된 draft만** 저절로 확정된다. 에이전트가 `vault_put`으로 넣은 draft는 사람이 확정한다 [J-79] |
+| 사용자 확정 | 관리 앱의 "확인 대기" 목록에서 확정·수정·폐기. 앱 전에는 CLI `keyharbor vault confirm|discard <이름>`, 번호 붙은 draft를 확정하면 원래 항목을 한 번에 대체한다 |
+| 자동 폐기 | 기한(기본 7일) 동안 확정되지 않으면 폐기. 기한은 사용자가 바꿀 수 있다 [설계자 판단]. 설정 `draft_ttl`(기본 `7d`, `none`이면 두기), `keyharbor vault prune-drafts`가 지난 draft와 폐기된 항목을 지운다 |
 | 기존 항목 변경 | 포착·위임 저장이 기존 항목의 값을 바꾸려 하면 항상 **새 버전 draft**로 남기고, 확정 전까지 기존 값을 유지한다. 새 버전의 이름은 `<이름>~draft-N`(빈 번호 중 가장 작은 것)이다. `~`는 사람·에이전트가 고르는 이름에 쓸 수 없어 draft만 갖는다. 한 이름의 draft는 20개까지다 [J-77] |
 | 정책 | "draft 없이 바로 확정"을 사용자가 고를 수 있다 (P2) |
 

@@ -10,6 +10,9 @@ pub const AUDIT_ENABLED: &str = "audit_enabled";
 pub const CAPTURE_ENABLED: &str = "capture_enabled";
 /// Gives new items an expiry, e.g. `90d` (R-37). `none` (the default): they never expire.
 pub const DEFAULT_ITEM_TTL: &str = "default_item_ttl";
+/// How long an unconfirmed draft is kept before `prune-drafts` removes it (08 §8.3). `none`:
+/// until a person confirms or discards it.
+pub const DRAFT_TTL: &str = "draft_ttl";
 /// The `default_item_ttl` value meaning "never expire".
 pub const NO_TTL: &str = "none";
 
@@ -58,6 +61,12 @@ pub const SETTINGS: &[SettingSpec] = &[
     SettingSpec {
         key: DEFAULT_ITEM_TTL,
         default: NO_TTL,
+        format: SettingFormat::Ttl,
+        weakening: SettingWeakening::Never,
+    },
+    SettingSpec {
+        key: DRAFT_TTL,
+        default: "7d",
         format: SettingFormat::Ttl,
         weakening: SettingWeakening::Never,
     },

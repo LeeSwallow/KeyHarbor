@@ -4,6 +4,7 @@
 //! `rotate` and `transfer`.
 
 mod developer;
+mod drafts;
 mod items;
 mod open;
 mod register;

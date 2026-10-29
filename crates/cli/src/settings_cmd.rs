@@ -12,7 +12,7 @@ pub enum SettingsCmd {
     /// Print a setting
     Get { key: String },
     /// Change a setting: audit_enabled true|false, capture_enabled true|false,
-    /// default_item_ttl <N>d|none
+    /// default_item_ttl <N>d|none, draft_ttl <N>d|none
     Set { key: String, value: String },
 }
 
