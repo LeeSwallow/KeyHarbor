@@ -18,6 +18,12 @@ pub const CLIPBOARD_CLEAR_SECONDS: &str = "clipboard_clear_seconds";
 /// The range `clipboard_clear_seconds` takes: long enough to paste, short enough to matter.
 const CLEAR_SECONDS_RANGE: std::ops::RangeInclusive<u64> = 5..=300;
 const CLEAR_SECONDS_DEFAULT: u64 = 30;
+/// macOS notifications from the admin app, per kind (09 §9.3). On unless `false`. Turning one
+/// off hides nothing: what waits stays on the home screen and the menu bar.
+pub const NOTIFY_REQUESTS: &str = "notify_requests";
+pub const NOTIFY_HANDOFFS: &str = "notify_handoffs";
+pub const NOTIFY_DRAFTS: &str = "notify_drafts";
+pub const NOTIFY_DENIALS: &str = "notify_denials";
 /// The `default_item_ttl` value meaning "never expire".
 pub const NO_TTL: &str = "none";
 
@@ -53,6 +59,16 @@ pub struct SettingSpec {
     pub weakening: SettingWeakening,
 }
 
+/// A notice switch: on by default, and off is a preference, not a weakening.
+const fn notice(key: &'static str) -> SettingSpec {
+    SettingSpec {
+        key,
+        default: "true",
+        format: SettingFormat::Boolean,
+        weakening: SettingWeakening::Never,
+    }
+}
+
 /// Every setting.
 pub const SETTINGS: &[SettingSpec] = &[
     SettingSpec {
@@ -85,6 +101,10 @@ pub const SETTINGS: &[SettingSpec] = &[
         format: SettingFormat::ClearSeconds,
         weakening: SettingWeakening::AboveDefault,
     },
+    notice(NOTIFY_REQUESTS),
+    notice(NOTIFY_HANDOFFS),
+    notice(NOTIFY_DRAFTS),
+    notice(NOTIFY_DENIALS),
 ];
 
 /// A value a setting does not take. The message names the format, never the value.
@@ -207,6 +227,23 @@ mod tests {
         assert_eq!(clipboard_clear_after(None).as_secs(), 30);
         assert_eq!(clipboard_clear_after(Some("10")).as_secs(), 10);
         assert_eq!(clipboard_clear_after(Some("9999")).as_secs(), 30);
+    }
+
+    #[test]
+    fn notices_are_on_by_default_and_turning_them_off_does_not_weaken() {
+        for key in [
+            NOTIFY_REQUESTS,
+            NOTIFY_HANDOFFS,
+            NOTIFY_DRAFTS,
+            NOTIFY_DENIALS,
+        ] {
+            let spec = SettingSpec::find(key).unwrap();
+            assert_eq!(
+                (spec.default, spec.format),
+                ("true", SettingFormat::Boolean)
+            );
+            assert!(!spec.weakens("false"), "{key}");
+        }
     }
 
     #[test]
