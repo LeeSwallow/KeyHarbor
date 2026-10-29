@@ -8,12 +8,17 @@ use crate::compose::App;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
 use keyharbor_domain::policy::AgentName;
-use keyharbor_guard::{pep::mask::Masker, run as guard_run};
+use keyharbor_guard::{
+    pep::mask::{Masker, StreamMasker},
+    run as guard_run,
+};
 use std::{
     ffi::OsString,
-    io::{BufRead, BufReader, Read, Write},
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::mpsc,
+    time::Duration,
 };
 use zeroize::Zeroizing;
 
@@ -33,26 +38,100 @@ pub struct RunArgs {
     command: Vec<OsString>,
 }
 
-/// Copies `input` to `output` a line at a time through the masker.
-fn pump(input: impl Read, mut output: impl Write, masker: &Masker) {
-    let mut reader = BufReader::new(input);
-    let mut line = Zeroizing::new(Vec::new());
-    loop {
-        line.clear();
-        match reader.read_until(b'\n', &mut line) {
-            Ok(0) | Err(_) => return,
-            Ok(_) => {
-                let masked = masker.redact_bytes(&line);
-                if output
-                    .write_all(&masked)
+/// How long output may sit unshown when the child stops writing mid-line (a prompt, a
+/// progress bar). Fixed: short enough to feel immediate, long enough that one write is not
+/// split by a pause between the reads of it.
+const IDLE_FLUSH: Duration = Duration::from_millis(100);
+
+/// Copies `input` to `output` through a stream masker: what is safe is shown at once, and
+/// the rest when the child pauses or closes the stream (J-83).
+fn pump(input: impl Read + Send, mut output: impl Write, masker: &Masker) {
+    let (chunks, received) = mpsc::channel::<Zeroizing<Vec<u8>>>();
+    std::thread::scope(|scope| {
+        scope.spawn(move || read_chunks(input, &chunks));
+        let mut stream = StreamMasker::new(masker);
+        loop {
+            let shown = match received.recv_timeout(IDLE_FLUSH) {
+                Ok(chunk) => stream.push(&chunk),
+                Err(mpsc::RecvTimeoutError::Timeout) => stream.idle(),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    let _ = output
+                        .write_all(&stream.flush())
+                        .and_then(|()| output.flush());
+                    return;
+                }
+            };
+            if !shown.is_empty()
+                && output
+                    .write_all(&shown)
                     .and_then(|()| output.flush())
                     .is_err()
-                {
+            {
+                return;
+            }
+        }
+    });
+}
+
+/// Sends what `input` gives, as it comes, until it ends.
+fn read_chunks(mut input: impl Read, chunks: &mpsc::Sender<Zeroizing<Vec<u8>>>) {
+    let mut buffer = Zeroizing::new(vec![0u8; 8192]);
+    loop {
+        match input.read(&mut buffer) {
+            Ok(0) | Err(_) => return,
+            Ok(n) => {
+                if chunks.send(Zeroizing::new(buffer[..n].to_vec())).is_err() {
                     return;
                 }
             }
         }
     }
+}
+
+/// Signals asking `keyharbor run` to stop, which the child gets instead (J-83). SIGINT is not
+/// here: Ctrl-C reaches the child from the terminal, as it is in our process group.
+const FORWARDED: [libc::c_int; 2] = [libc::SIGTERM, libc::SIGHUP];
+
+fn forwarded_set() -> libc::sigset_t {
+    // SAFETY: sigemptyset and sigaddset only write the set they are given.
+    unsafe {
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        for signal in FORWARDED {
+            libc::sigaddset(&mut set, signal);
+        }
+        set
+    }
+}
+
+/// Blocks the forwarded signals in this thread (and the threads it starts after), so that
+/// only [`forward_signals`] receives them.
+fn block_forwarded() -> Result<()> {
+    let set = forwarded_set();
+    // SAFETY: pthread_sigmask reads `set` and changes this thread's mask only.
+    if unsafe { libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut()) } != 0 {
+        bail!("could not block signals");
+    }
+    Ok(())
+}
+
+/// Passes every forwarded signal on to the child until this process exits.
+fn forward_signals(child: u32) {
+    let Ok(pid) = libc::pid_t::try_from(child) else {
+        return;
+    };
+    std::thread::spawn(move || {
+        let set = forwarded_set();
+        loop {
+            let mut signal = 0;
+            // SAFETY: sigwait reads `set` and writes `signal`; the signals are blocked.
+            if unsafe { libc::sigwait(&set, &mut signal) } != 0 {
+                return;
+            }
+            // SAFETY: kill only sends a signal.
+            unsafe { libc::kill(pid, signal) };
+        }
+    });
 }
 
 /// Starts the child with `vars` and no core dumps, its output piped back to us. The
@@ -65,10 +144,14 @@ fn spawn(argv: &[OsString], vars: &[(String, Zeroizing<String>)]) -> Result<Chil
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // SAFETY: setrlimit is async-signal-safe.
+    let set = forwarded_set();
+    // SAFETY: pthread_sigmask and setrlimit are async-signal-safe; the set is built before fork.
     unsafe {
         use std::os::unix::process::CommandExt;
-        command.pre_exec(|| {
+        command.pre_exec(move || {
+            if libc::pthread_sigmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut()) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
             let none = libc::rlimit {
                 rlim_cur: 0,
                 rlim_max: 0,
@@ -115,7 +198,9 @@ pub fn run(app: &App, args: RunArgs) -> Result<i32> {
         },
     )?;
     let vars = std::mem::take(&mut injection.vars);
+    block_forwarded()?;
     let mut child = spawn(&args.command, &vars)?;
+    forward_signals(child.id());
     drop(vars);
     injection.record_injected(&*store);
     let (out, err) = (
