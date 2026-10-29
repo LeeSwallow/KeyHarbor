@@ -30,6 +30,8 @@ pub struct ItemRow {
     pub description: Option<String>,
     /// Per-field overrides of the kind's field descriptions, `(field, text)` sorted by field.
     pub field_descriptions: Vec<(String, String)>,
+    /// Tags (plaintext, signed), sorted.
+    pub tags: Vec<String>,
     pub status: String,
     pub source: String,
     pub meta_mac: Vec<u8>,

@@ -10,6 +10,7 @@ use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     date::{Expiry, Ttl},
     ports::{FieldRow, ItemRow},
+    tag::{Tag, tag_set},
     vault::{Description, Domain, ItemName},
 };
 use keyharbor_vault::keys::KeyId;
@@ -84,6 +85,11 @@ impl Vault {
                     .map(|(f, _)| f.as_str())
                     .collect::<Vec<_>>(),
             )?,
+            tags: tag_set(item.details.tags.clone())
+                .map_err(|e| anyhow!("{e}"))?
+                .iter()
+                .map(|t| t.as_str().to_owned())
+                .collect(),
             status: item.status.as_str().to_owned(),
             source: item.source.as_str().to_owned(),
             meta_mac: Vec::new(),
@@ -172,6 +178,21 @@ impl Vault {
         )?;
         if let Some(status) = change.status {
             row.status = status.as_str().to_owned();
+        }
+        if !change.add_tags.is_empty() || !change.remove_tags.is_empty() {
+            let current = row
+                .tags
+                .iter()
+                .map(|t| Tag::parse(t))
+                .collect::<Result<Vec<_>, _>>();
+            let mut tags = current.map_err(|e| anyhow!("{e}"))?;
+            tags.retain(|t| !change.remove_tags.contains(t));
+            tags.extend(change.add_tags.iter().cloned());
+            row.tags = tag_set(tags)
+                .map_err(|e| anyhow!("{e}"))?
+                .iter()
+                .map(|t| t.as_str().to_owned())
+                .collect();
         }
         row.updated_at = self.clock.now_rfc3339();
         row.meta_mac = self.mac_for(&row, kind, &name, &origins);

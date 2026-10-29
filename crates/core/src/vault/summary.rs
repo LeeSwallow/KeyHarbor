@@ -122,6 +122,7 @@ impl Vault {
             expired,
             description: row.description,
             field_descriptions,
+            tags: row.tags.clone(),
             status: ItemStatus::parse(&row.status).context("unknown status in database")?,
             source: ItemSource::parse(&row.source).context("unknown source in database")?,
             updated_at: row.updated_at,
@@ -222,5 +223,110 @@ mod tests {
             panic!("{entries:?}")
         };
         assert_eq!((gitlab.name.as_str(), gitlab.tampered), ("gitlab", false));
+    }
+}
+
+/// Which items a listing shows: those whose name starts with `prefix` (`myapp/` for every
+/// item under it) and that carry `tag`, when given (developer secrets spec §2).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ItemFilter {
+    pub prefix: Option<String>,
+    pub tag: Option<keyharbor_domain::tag::Tag>,
+}
+
+impl ItemFilter {
+    pub fn keeps(&self, item: &super::ItemSummary) -> bool {
+        self.prefix
+            .as_deref()
+            .is_none_or(|p| item.name.starts_with(p))
+            && self
+                .tag
+                .as_ref()
+                .is_none_or(|t| item.tags.iter().any(|x| x == t.as_str()))
+    }
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+    use crate::{
+        ItemDetails,
+        tests::{env, init, login},
+    };
+    use keyharbor_domain::{tag::Tag, vault::ItemName};
+
+    #[test]
+    fn listings_filter_by_name_prefix_and_tag() {
+        let e = env();
+        let vault = init(&e);
+        let tagged = |name: &str, tags: &[&str]| {
+            let mut item = login(name, "pw");
+            item.name = ItemName::parse(name).unwrap();
+            item.details = ItemDetails {
+                tags: tags.iter().map(|t| Tag::parse(t).unwrap()).collect(),
+                ..Default::default()
+            };
+            item
+        };
+        vault.add(tagged("myapp/prod/db", &["prod", "db"])).unwrap();
+        vault.add(tagged("myapp/dev/db", &["dev", "db"])).unwrap();
+        vault.add(tagged("other", &[])).unwrap();
+        let names = |filter: ItemFilter| -> Vec<String> {
+            vault
+                .list()
+                .unwrap()
+                .into_iter()
+                .filter(|i| filter.keeps(i))
+                .map(|i| i.name)
+                .collect()
+        };
+        assert_eq!(names(ItemFilter::default()).len(), 3);
+        let under = ItemFilter {
+            prefix: Some("myapp/".into()),
+            tag: None,
+        };
+        assert_eq!(names(under), ["myapp/dev/db", "myapp/prod/db"]);
+        let prod = ItemFilter {
+            prefix: None,
+            tag: Some(Tag::parse("prod").unwrap()),
+        };
+        assert_eq!(names(prod), ["myapp/prod/db"]);
+        let item = vault
+            .list()
+            .unwrap()
+            .into_iter()
+            .find(|i| i.name == "myapp/prod/db")
+            .unwrap();
+        assert_eq!(item.tags, ["db", "prod"]);
+        assert!(!item.tampered);
+    }
+
+    #[test]
+    fn tags_change_by_adding_and_removing_and_stay_signed() {
+        let e = env();
+        let vault = init(&e);
+        vault.add(login("github", "pw")).unwrap();
+        let name = ItemName::parse("github").unwrap();
+        let t = |s: &str| Tag::parse(s).unwrap();
+        vault
+            .edit(
+                &name,
+                crate::ItemChange {
+                    add_tags: vec![t("work"), t("git")],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        vault
+            .edit(
+                &name,
+                crate::ItemChange {
+                    remove_tags: vec![t("git")],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let item = vault.list().unwrap().remove(0);
+        assert_eq!((item.tags, item.tampered), (vec!["work".to_owned()], false));
     }
 }

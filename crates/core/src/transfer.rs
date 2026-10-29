@@ -33,6 +33,7 @@ struct ItemOut<'a> {
     expires_at: Option<String>,
     description: Option<&'a str>,
     field_descriptions: BTreeMap<&'a str, &'a str>,
+    tags: &'a [String],
     status: &'static str,
     source: &'static str,
     fields: BTreeMap<&'a str, &'a str>,
@@ -58,6 +59,9 @@ struct ItemIn {
     /// Only the item's own descriptions (not the kind's defaults).
     #[serde(default)]
     field_descriptions: BTreeMap<String, String>,
+    /// Absent in exports from before tags.
+    #[serde(default)]
+    tags: Vec<String>,
     status: String,
     fields: BTreeMap<String, String>,
 }
@@ -125,6 +129,7 @@ impl Vault {
                         })
                         .map(|(f, d)| (f.as_str(), d.as_str()))
                         .collect(),
+                    tags: &s.tags,
                     status: s.status.as_str(),
                     source: s.source.as_str(),
                     fields: fields
@@ -206,6 +211,11 @@ impl Vault {
                                 Description::parse(d).map_err(|e| anyhow!("{e}"))?,
                             ))
                         })
+                        .collect::<Result<_>>()?,
+                    tags: item
+                        .tags
+                        .iter()
+                        .map(|t| keyharbor_domain::tag::Tag::parse(t).map_err(|e| anyhow!("{e}")))
                         .collect::<Result<_>>()?,
                 },
             })?;

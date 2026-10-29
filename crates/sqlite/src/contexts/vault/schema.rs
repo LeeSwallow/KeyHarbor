@@ -31,6 +31,7 @@ diesel::table! {
         run_allowed -> Bool,
         expires_at -> Nullable<Text>,
         description -> Nullable<Text>,
+        tags -> Text,
     }
 }
 

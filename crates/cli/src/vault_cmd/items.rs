@@ -9,9 +9,9 @@ use crate::{
     compose::App, description_args::DescriptionArgs, expiry_args::ExpiryArgs,
     tty_confirm::TtyConfirm,
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use keyharbor_core::{ItemChange, ItemDetails, ItemSource, ItemStatus, NewItem};
-use keyharbor_domain::vault::ItemKind;
+use keyharbor_domain::{tag::Tag, vault::ItemKind};
 use keyharbor_guard::items;
 
 pub struct AddArgs {
@@ -23,6 +23,7 @@ pub struct AddArgs {
     pub run_allowed: Option<Toggle>,
     pub expiry: ExpiryArgs,
     pub about: DescriptionArgs,
+    pub tags: Vec<String>,
     pub draft: bool,
 }
 
@@ -36,7 +37,16 @@ pub struct EditArgs {
     pub run_allowed: Option<Toggle>,
     pub expiry: ExpiryArgs,
     pub about: DescriptionArgs,
+    pub tags: Vec<String>,
+    pub untag: Vec<String>,
     pub status: Option<StatusArg>,
+}
+
+fn tags(values: &[String]) -> Result<Vec<Tag>> {
+    values
+        .iter()
+        .map(|t| Tag::parse(t).map_err(|e| anyhow!("{e}")))
+        .collect()
 }
 
 pub fn add(app: &App, args: &AddArgs) -> Result<()> {
@@ -61,6 +71,7 @@ pub fn add(app: &App, args: &AddArgs) -> Result<()> {
             expiry: args.expiry.for_new_item(app.clock())?,
             description: description.flatten(),
             field_descriptions,
+            tags: tags(&args.tags)?,
         },
     };
     items::add(&vault, item, &args.about.texts())?;
@@ -98,6 +109,8 @@ pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
         description: args.about.item()?,
         field_descriptions: args.about.fields(kind)?,
         status: args.status.map(ItemStatus::from),
+        add_tags: tags(&args.tags)?,
+        remove_tags: tags(&args.untag)?,
     };
     items::edit(&vault, &TtyConfirm, &name, change, &args.about.texts())?;
     println!("updated\t{}", name.as_str());

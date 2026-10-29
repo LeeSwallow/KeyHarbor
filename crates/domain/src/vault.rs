@@ -319,16 +319,18 @@ impl ItemName {
         }
     }
     /// A name a person or an agent chooses for a new item: never a draft's name.
+    /// A name may be a path, `myapp/prod/db`, to group items for listing (`--prefix`); the
+    /// store gives the segments no other meaning (developer secrets spec §2).
     pub fn parse_new(value: &str) -> Result<Self, InvalidValue> {
         let count = value.chars().count();
-        if count == 0
-            || count > 64
-            || !value
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-        {
+        let segment_ok = |s: &str| {
+            !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        };
+        if count == 0 || count > 64 || !value.split('/').all(segment_ok) {
             return Err(InvalidValue(
-                "item name must be 1–64 letters, digits, '-' or '_'",
+                "item name must be 1–64 letters, digits, '-' or '_', in segments joined by '/'",
             ));
         }
         Ok(Self(value.to_owned()))
@@ -546,6 +548,20 @@ mod tests {
             assert!(ItemName::parse(good).is_ok(), "{good:?}");
         }
     }
+    #[test]
+    fn names_may_be_paths_of_plain_segments() {
+        for good in ["myapp/prod/db", "a/b", "회사/메일"] {
+            assert!(ItemName::parse(good).is_ok(), "{good:?}");
+        }
+        for bad in ["/a", "a/", "a//b", "/", "a/b c"] {
+            assert!(ItemName::parse(bad).is_err(), "{bad:?}");
+        }
+        let draft = ItemName::parse("myapp/db").unwrap().draft(1);
+        assert_eq!(ItemName::parse(draft.as_str()), Ok(draft.clone()));
+        let refs = parse_placeholders("{{secret:myapp/prod/db.password}}").unwrap();
+        assert_eq!(refs[0].item.as_str(), "myapp/prod/db");
+    }
+
     #[test]
     fn drafts_are_named_after_their_item_and_cannot_be_chosen() {
         let github = ItemName::parse("github").unwrap();

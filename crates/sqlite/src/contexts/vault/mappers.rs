@@ -49,6 +49,7 @@ pub fn item_row(model: ItemModel, children: ItemChildren) -> Result<ItemRow> {
         expires_at: model.expires_at,
         description: model.description,
         field_descriptions: children.field_descriptions,
+        tags: model.tags.split_whitespace().map(str::to_owned).collect(),
         status: model.status,
         source: model.source,
         meta_mac: model.meta_mac,
@@ -71,6 +72,7 @@ pub fn item_model(row: &ItemRow) -> ItemModel {
         run_allowed: row.run_allowed,
         expires_at: row.expires_at.clone(),
         description: row.description.clone(),
+        tags: row.tags.join(" "),
     }
 }
 

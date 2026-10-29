@@ -3,7 +3,8 @@
 //!
 //! v2 (phase 3) adds the run permission, the expiry date and the descriptions. Items signed
 //! before v2 still verify under v1 as long as those attributes hold their v1-era values (the
-//! kind's default run permission, no expiry, no descriptions); any other value needs v2.
+//! kind's default run permission, no expiry, no descriptions); any other value needs v2. v3
+//! adds tags; a v2 (or v1) MAC still verifies an item without tags.
 
 use crate::{VaultError, keys::SecretKey, keys::VaultId, record::push_lp};
 use keyharbor_crypto::mac::{mac, verify_mac};
@@ -11,6 +12,7 @@ use keyharbor_domain::vault::{Domain, ItemKind, ItemName, Origin};
 
 const META_TAG_V1: &[u8] = b"keyharbor/meta/v1";
 const META_TAG_V2: &[u8] = b"keyharbor/meta/v2";
+const META_TAG_V3: &[u8] = b"keyharbor/meta/v3";
 
 pub struct ItemMeta<'a> {
     pub vault: &'a VaultId,
@@ -29,6 +31,8 @@ pub struct ItemMeta<'a> {
     pub description: Option<&'a str>,
     /// Per-field descriptions, `(field, text)`; order does not matter.
     pub field_descriptions: &'a [(String, String)],
+    /// Tags; order and repeats do not matter.
+    pub tags: &'a [String],
 }
 
 impl ItemMeta<'_> {
@@ -71,7 +75,7 @@ fn input(tag: &[u8], meta: &ItemMeta) -> Vec<u8> {
     }
     push_lp(&mut input, meta.status.as_bytes());
     push_lp(&mut input, meta.updated_at.as_bytes());
-    if tag == META_TAG_V2 {
+    if tag != META_TAG_V1 {
         input.push(u8::from(meta.run_allowed));
         push_opt(&mut input, meta.expires_at);
         push_opt(&mut input, meta.description);
@@ -85,18 +89,32 @@ fn input(tag: &[u8], meta: &ItemMeta) -> Vec<u8> {
             push_lp(&mut input, text.as_bytes());
         }
     }
+    if tag == META_TAG_V3 {
+        let mut tags: Vec<&str> = meta.tags.iter().map(String::as_str).collect();
+        tags.sort_unstable();
+        tags.dedup();
+        let count = u16::try_from(tags.len()).expect("more than 65535 tags");
+        input.extend_from_slice(&count.to_be_bytes());
+        for tag in tags {
+            push_lp(&mut input, tag.as_bytes());
+        }
+    }
     input
 }
 
-/// The v2 MAC; every write signs with it.
+/// The v3 MAC; every write signs with it.
 pub fn meta_mac(mk: &SecretKey, meta: &ItemMeta) -> [u8; 32] {
-    mac(mk, &input(META_TAG_V2, meta))
+    mac(mk, &input(META_TAG_V3, meta))
 }
 
-/// Accepts a v2 MAC, or a v1 MAC when the v2 attributes hold their v1-era values.
+/// Accepts a v3 MAC; a v2 MAC when the item has no tags; a v1 MAC when, besides, the v2
+/// attributes hold their v1-era values.
 pub fn verify_meta_mac(mk: &SecretKey, meta: &ItemMeta, tag: &[u8]) -> Result<(), VaultError> {
-    let v2 = verify_mac(mk, &input(META_TAG_V2, meta), tag);
-    if v2 || (meta.v1_compatible() && verify_mac(mk, &input(META_TAG_V1, meta), tag)) {
+    let untagged = meta.tags.is_empty();
+    let ok = verify_mac(mk, &input(META_TAG_V3, meta), tag)
+        || (untagged && verify_mac(mk, &input(META_TAG_V2, meta), tag))
+        || (untagged && meta.v1_compatible() && verify_mac(mk, &input(META_TAG_V1, meta), tag));
+    if ok {
         return Ok(());
     }
     Err(VaultError::Tampered)
@@ -140,6 +158,7 @@ mod tests {
             expires_at: None,
             description: None,
             field_descriptions: &[],
+            tags: &[],
         }
     }
 
@@ -222,5 +241,31 @@ mod tests {
         let mut b = meta(&f, &f.origins);
         b.field_descriptions = &swapped;
         assert_ne!(meta_mac(&mk, &a), meta_mac(&mk, &b));
+    }
+
+    #[test]
+    fn tags_are_signed_and_older_macs_only_cover_untagged_items() {
+        let f = fixture();
+        let mk = SecretKey::from_bytes([3; 32]);
+        let base = meta(&f, &f.origins);
+        let v2 = mac(&mk, &input(META_TAG_V2, &base));
+        assert!(
+            verify_meta_mac(&mk, &base, &v2).is_ok(),
+            "an item from before v3"
+        );
+        let tags = ["prod".to_owned(), "team-a".to_owned()];
+        let mut tagged = meta(&f, &f.origins);
+        tagged.tags = &tags;
+        assert!(
+            verify_meta_mac(&mk, &tagged, &v2).is_err(),
+            "v2 never vouches for tags"
+        );
+        let v3 = meta_mac(&mk, &tagged);
+        assert!(verify_meta_mac(&mk, &tagged, &v3).is_ok());
+        assert!(verify_meta_mac(&mk, &base, &v3).is_err());
+        let reordered = ["team-a".to_owned(), "prod".to_owned(), "prod".to_owned()];
+        let mut same = meta(&f, &f.origins);
+        same.tags = &reordered;
+        assert!(verify_meta_mac(&mk, &same, &v3).is_ok());
     }
 }

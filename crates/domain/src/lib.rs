@@ -288,4 +288,5 @@ pub mod request;
 pub mod secret;
 pub mod settings;
 pub mod site;
+pub mod tag;
 pub mod vault;
