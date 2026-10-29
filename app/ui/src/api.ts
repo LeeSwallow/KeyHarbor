@@ -14,6 +14,16 @@ export interface Request { id: string; agent: string; kind: string; name: string
 export interface Draft { name: string; kind: string; source: string; origins: string[] }
 export interface Inbox { requests: Request[]; drafts: Draft[] }
 export interface AuditEvent { at: string; agent: string; kind: string; item: string | null; origin: string | null; result: string }
+export interface FormField { name: string; secret: boolean }
+export interface RequestForm {
+  id: string; agent: string; kind: string; name: string; origin: string | null; reason: string;
+  fields: FormField[]; free_fields: boolean;
+}
+export interface Handoff { session: string; session_name: string; request_id: string; origin: string | null }
+export interface Setting { key: string; value: string; default: string }
+export interface Rule { agent: string; resource: string; target: string; effect: string }
+/// A change that may need a person: done, or the question to put to them.
+export type Outcome = { outcome: "done" } | { outcome: "ask"; question: string };
 
 export interface Api {
   overview(): Promise<Overview>;
@@ -25,6 +35,15 @@ export interface Api {
   declineRequest(id: string): Promise<void>;
   confirmDraft(name: string): Promise<string>;
   discardDraft(name: string): Promise<void>;
+  requestForm(id: string): Promise<RequestForm>;
+  fulfillRequest(id: string, values: Record<string, string>): Promise<string>;
+  handoffs(): Promise<Handoff[]>;
+  resumeHandoff(session: string, request: string): Promise<void>;
+  settings(): Promise<Setting[]>;
+  setSetting(key: string, value: string, confirmed: boolean): Promise<Outcome>;
+  policies(): Promise<Rule[]>;
+  setPolicy(rule: Rule, confirmed: boolean): Promise<Outcome>;
+  removePolicy(rule: Rule, confirmed: boolean): Promise<Outcome>;
 }
 
 type Invoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -41,5 +60,14 @@ export function tauriApi(invoke: Invoke): Api {
     declineRequest: (id) => call("decline_request", { id }),
     confirmDraft: (name) => call("confirm_draft", { name }),
     discardDraft: (name) => call("discard_draft", { name }),
+    requestForm: (id) => call("request_form", { id }),
+    fulfillRequest: (id, values) => call("fulfill_request", { id, values }),
+    handoffs: () => call("handoffs"),
+    resumeHandoff: (session, request) => call("resume_handoff", { session, request }),
+    settings: () => call("settings"),
+    setSetting: (key, value, confirmed) => call("set_setting", { key, value, confirmed }),
+    policies: () => call("policies"),
+    setPolicy: (r, confirmed) => call("set_policy", { ...r, confirmed }),
+    removePolicy: (r, confirmed) => call("remove_policy", { agent: r.agent, resource: r.resource, target: r.target, confirmed }),
   };
 }

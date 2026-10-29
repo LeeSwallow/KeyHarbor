@@ -136,3 +136,114 @@ fn sessions_show_their_sites() {
     );
     assert!(sessions[0].sites.is_empty());
 }
+
+fn init_vault(dir: &Path) -> Vault {
+    Vault::init(
+        SqliteStore::open(&dir.join("data")).unwrap(),
+        Box::new(FileKeyStore::new(dir.join("keys"))),
+        Arc::new(SystemClock),
+    )
+    .unwrap()
+}
+fn ask_card(dir: &Path) -> String {
+    let store = SqliteStore::open(&dir.join("data")).unwrap();
+    request::ask(
+        &store,
+        &SystemClock,
+        "codex",
+        request::Ask {
+            kind: ItemKind::Card,
+            name: ItemName::parse("visa").unwrap(),
+            reason: Description::parse("checkout").unwrap(),
+            origin: Some(Origin::parse("https://shop.example").unwrap()),
+        },
+    )
+    .unwrap()
+    .to_string()
+}
+
+#[test]
+fn the_secure_form_shows_the_request_and_stores_what_the_person_typed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    init_vault(tmp.path());
+    let id = ask_card(tmp.path());
+    let form = commands::request_form(&c, &id).unwrap();
+    assert_eq!(
+        (form.agent.as_str(), form.kind, form.reason.as_str()),
+        ("codex", "card", "checkout")
+    );
+    let number = form.fields.iter().find(|f| f.name == "number").unwrap();
+    assert!(number.secret);
+    assert!(!form.free_fields);
+
+    let empty = std::collections::BTreeMap::from([("number".to_owned(), String::new())]);
+    assert!(commands::fulfill_request(&c, &id, empty).is_err());
+    let bad = std::collections::BTreeMap::from([("nope".to_owned(), "x".to_owned())]);
+    assert!(commands::fulfill_request(&c, &id, bad).is_err());
+    let typed = std::collections::BTreeMap::from([("number".to_owned(), "4111-SECRET".to_owned())]);
+    assert_eq!(commands::fulfill_request(&c, &id, typed).unwrap(), "visa");
+    let items = serde_json::to_string(&commands::items(&c).unwrap()).unwrap();
+    assert!(items.contains("\"visa\"") && !items.contains("4111-SECRET"));
+    assert!(commands::inbox(&c).unwrap().requests.is_empty());
+    assert!(commands::handoffs(&c).unwrap().is_empty());
+}
+
+#[test]
+fn weakening_changes_ask_first_and_stricter_ones_do_not() {
+    use keyharbor_app::confirm::Outcome;
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    let allow = ("codex", "item", "github", "allow");
+    let asked = commands::set_policy(&c, allow, false).unwrap();
+    assert!(
+        matches!(&asked, Outcome::Ask { question } if question.contains("policy allow codex item github"))
+    );
+    assert!(
+        commands::policies(&c).unwrap().is_empty(),
+        "nothing changed before the person confirmed"
+    );
+    assert_eq!(
+        commands::set_policy(&c, allow, true).unwrap(),
+        Outcome::Done
+    );
+    assert_eq!(
+        commands::set_policy(&c, ("codex", "domain", "payment", "deny"), false).unwrap(),
+        Outcome::Done
+    );
+    assert_eq!(commands::policies(&c).unwrap().len(), 2);
+    assert!(matches!(
+        commands::remove_policy(&c, "codex", "domain", "payment", false).unwrap(),
+        Outcome::Ask { .. }
+    ));
+    assert_eq!(
+        commands::remove_policy(&c, "codex", "item", "github", false).unwrap(),
+        Outcome::Done
+    );
+
+    assert!(matches!(
+        commands::set_setting(&c, "audit_enabled", "false", false).unwrap(),
+        Outcome::Ask { .. }
+    ));
+    assert_eq!(
+        commands::set_setting(&c, "draft_ttl", "3d", false).unwrap(),
+        Outcome::Done
+    );
+    let settings = commands::settings(&c).unwrap();
+    let get = |key: &str| {
+        settings
+            .iter()
+            .find(|s| s.key == key)
+            .unwrap()
+            .value
+            .clone()
+    };
+    assert_eq!(
+        (get("audit_enabled"), get("draft_ttl")),
+        ("true".to_owned(), "3d".to_owned())
+    );
+    assert!(
+        commands::set_setting(&c, "draft_ttl", "soon", true).is_err(),
+        "a bad value is an error, not a question"
+    );
+}

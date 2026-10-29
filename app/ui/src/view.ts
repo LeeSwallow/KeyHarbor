@@ -3,9 +3,12 @@
 
 import type { Item } from "./api.js";
 import type { State, View } from "./state.js";
+import { dialog, policies, settings } from "./views/admin.js";
+import { form } from "./views/form.js";
 
-export const esc = (text: string): string =>
-  text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+import { esc } from "./html.js";
+
+export { esc };
 
 const NAV: [View, string][] = [
   ["home", "홈"],
@@ -13,10 +16,12 @@ const NAV: [View, string][] = [
   ["sessions", "세션"],
   ["items", "항목"],
   ["audit", "사용 기록"],
+  ["policies", "에이전트와 정책"],
+  ["settings", "설정"],
 ];
 
 function count(s: State, view: View): number {
-  if (view === "inbox") return s.inbox.requests.length + s.inbox.drafts.length;
+  if (view === "inbox") return s.inbox.requests.length + s.inbox.drafts.length + s.handoffs.length;
   if (view === "sessions") return s.sessions.length;
   if (view === "items") return s.items.length;
   return 0;
@@ -46,9 +51,14 @@ function home(s: State): string {
 }
 
 function inbox(s: State): string {
+  if (s.form) return form(s.form);
+  const handoffs = s.handoffs.map(
+    (h) => `<div class="kh-row"><div>인계 대기 · <strong>${esc(h.session_name)}</strong>${h.origin ? ` · ${esc(h.origin)}` : ""}</div>
+      <button class="kh-btn" data-action="resume" data-session="${esc(h.session)}" data-id="${esc(h.request_id)}">재개</button></div>`,
+  );
   const requests = s.inbox.requests.map(
     (r) => `<div class="kh-row"><div>${esc(r.agent)} → ${esc(r.kind)} <strong>${esc(r.name)}</strong>${r.origin ? ` · ${esc(r.origin)}` : ""}<br><small>${esc(r.reason)}</small></div>
-      <code>keyharbor vault fulfill ${esc(r.id)}</code>
+      <button class="kh-btn" data-action="open-form" data-id="${esc(r.id)}">입력하기</button>
       <button class="kh-btn" data-action="decline" data-id="${esc(r.id)}">거절</button></div>`,
   );
   const drafts = s.inbox.drafts.map(
@@ -56,7 +66,7 @@ function inbox(s: State): string {
       <button class="kh-btn" data-action="confirm" data-name="${esc(d.name)}">확정</button>
       <button class="kh-btn" data-action="discard" data-name="${esc(d.name)}">폐기</button></div>`,
   );
-  const all = [...requests, ...drafts].join("");
+  const all = [...handoffs, ...requests, ...drafts].join("");
   return all || `<div class="kh-empty">확인할 것이 없습니다</div>`;
 }
 
@@ -118,6 +128,10 @@ export function render(s: State): string {
   const [list, main] =
     s.view === "items"
       ? [itemList(s), detail(s)]
-      : ["", { home, inbox, sessions, audit }[s.view](s)];
-  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${main}</section>`;
+      : ["", {
+          home, inbox, sessions, audit,
+          policies: (x: State) => policies(x.policies),
+          settings: (x: State) => settings(x.settings),
+        }[s.view](s)];
+  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${main}</section>${dialog(s.ask)}`;
 }

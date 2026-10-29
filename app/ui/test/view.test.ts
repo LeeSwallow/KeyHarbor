@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "../src/api.js";
-import { go, hide, initial, select, show } from "../src/state.js";
+import { asking, closeForm, go, hide, initial, openForm, select, show } from "../src/state.js";
+import { formValues } from "../src/views/form.js";
 import { esc, render } from "../src/view.js";
 
 const github: Item = {
@@ -54,5 +55,42 @@ describe("rendering", () => {
   it("asks for vault init instead of making a key when there is no vault", () => {
     const html = render({ ...initial, overview: { vault_ready: false, sessions_open: 0, requests_pending: 0, drafts: 0 } });
     expect(html).toContain("keyharbor vault init");
+  });
+});
+
+describe("the secure input form", () => {
+  const form = {
+    id: "r1", agent: "codex", kind: "card", name: "visa", origin: "https://shop.example", reason: "checkout",
+    fields: [{ name: "number", secret: true }, { name: "holder", secret: false }], free_fields: false,
+  };
+
+  it("hides secret fields and turns off remembering and completion", () => {
+    const html = render(openForm(initial, form));
+    expect(html).toMatch(/name="number" type="password"/);
+    expect(html).toMatch(/name="holder" type="text"/);
+    expect(html.match(/autocomplete="off"/g)?.length).toBe(2);
+    expect(html).toContain("codex");
+    expect(html).toContain("이 값은 에이전트에게 보이지 않습니다");
+  });
+
+  it("is gone from the page once closed or left", () => {
+    const opened = openForm(initial, form);
+    expect(render(closeForm(opened))).not.toContain('data-form="r1"');
+    expect(render(go(opened, "home"))).not.toContain('data-form="r1"');
+  });
+
+  it("reads KEY=VALUE lines for env items", () => {
+    const data = new FormData();
+    data.set("__env", "API_KEY=sk-1\nPORT=8081\nnot a line");
+    expect(formValues(data)).toEqual({ API_KEY: "sk-1", PORT: "8081" });
+  });
+});
+
+describe("weakening changes", () => {
+  it("show their question in a dialog until answered", () => {
+    const asked = asking(initial, { question: "policy allow codex item github", retry: async () => undefined });
+    expect(render(asked)).toContain("policy allow codex item github");
+    expect(render(asking(asked, null))).not.toContain("alertdialog");
+    expect(go(asked, "home").ask).toBeNull();
   });
 });
