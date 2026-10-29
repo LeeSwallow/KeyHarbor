@@ -1,0 +1,21 @@
+{
+  "name": "keyharbor",
+  "interface": {
+    "displayName": "KeyHarbor"
+  },
+  "plugins": [
+    {
+      "name": "keyharbor",
+      "version": "0.1.0",
+      "source": {
+        "source": "local",
+        "path": "./plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "NONE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -116,6 +116,18 @@ impl Server {
     }
 }
 
+/// The names of the tools a server offers (for `keyharbor mcp --list-tools`, which the plugin
+/// checks its skills against), sorted.
+pub(crate) fn tool_names(allow_cdp: bool) -> Vec<String> {
+    let mut names: Vec<String> = router(allow_cdp)
+        .list_all()
+        .into_iter()
+        .map(|tool| tool.name.to_string())
+        .collect();
+    names.sort();
+    names
+}
+
 /// Every tool; `session_endpoint` only with `--allow-cdp`.
 fn router(allow_cdp: bool) -> ToolRouter<Server> {
     let mut router = Server::session_tools()

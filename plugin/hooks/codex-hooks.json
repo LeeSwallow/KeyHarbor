@@ -1,0 +1,17 @@
+{
+  "description": "At the start of a session, say whether KeyHarbor is ready and what waits for the user (counts only). Claude Code uses claude-hooks.json, beside this file.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/scripts/session-start.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

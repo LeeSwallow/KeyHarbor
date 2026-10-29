@@ -6,7 +6,7 @@
 
 KeyHarbor는 Claude Code·Codex 같은 AI 에이전트가 권한 정책 안에서 중단 없이 일하도록, 비밀번호·카드·개인정보·`.env` 변수와 브라우저 세션을 **내 컴퓨터 안에서만** 관리하는 무료 오픈소스 도구입니다. 외부 금고나 클라우드 계정이 필요 없습니다.
 
-> **상태: 개발 중 — 아직 릴리스하지 않았습니다.** 지금 동작하는 것은 로컬 암호화 금고 CLI, 브라우저 세션·조작 MCP 도구, 에이전트가 값을 보지 않고 `{{secret:항목.필드}}`로 입력하는 치환·응답 마스킹·권한 정책·사용 기록, `.env` 변수를 자식 프로세스에만 넣는 `keyharbor run`입니다(macOS). 관리 앱과 Claude Code 플러그인은 [로드맵](ROADMAP.md)에 따라 만들고 있으며, 모두 갖춰지면 첫 릴리스를 냅니다.
+> **상태: 개발 중 — 아직 릴리스하지 않았습니다.** 지금 동작하는 것은 로컬 암호화 금고 CLI, 브라우저 세션·조작 MCP 도구, 에이전트가 값을 보지 않고 `{{secret:항목.필드}}`로 입력하는 치환·응답 마스킹·권한 정책·사용 기록, `.env` 변수를 자식 프로세스에만 넣는 `keyharbor run`입니다(macOS). Claude Code·Codex 플러그인([docs/plugin.md](docs/plugin.md))도 있습니다. 관리 앱은 [로드맵](ROADMAP.md)에 따라 만들고 있으며, 모두 갖춰지면 첫 릴리스를 냅니다.
 
 ## 소스에서 빌드
 
@@ -20,6 +20,8 @@ cp target/release/keyharbor /usr/local/bin/    # 또는 PATH에 있는 아무 �
 ```
 
 첫 릴리스부터는 [Releases](https://github.com/LeeSwallow/KeyHarbor/releases)의 바이너리와 Homebrew(`brew install --cask leeswallow/tap/keyharbor`)로 설치할 수 있습니다.
+
+Claude Code·Codex 플러그인(MCP 서버 등록과 스킬): `/plugin marketplace add LeeSwallow/KeyHarbor` → `/plugin install keyharbor@keyharbor`. 자세한 것은 [docs/plugin.md](docs/plugin.md).
 
 ## 빠른 시작
 

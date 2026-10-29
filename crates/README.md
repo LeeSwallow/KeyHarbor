@@ -87,6 +87,7 @@ cargo run -p keyharbor -- list
 
 | 명령 | 설명 |
 |---|---|
+| `status` | 한 줄: 금고 준비 여부, 열린 세션 수, 기다리는 요청 수, draft 수. 저장소만 읽고(키체인 창 없음) 이름·값은 없다. 플러그인 세션 훅이 쓴다 |
 | `vault init` | 금고와 루트 키를 만든다. 이미 있으면 덮어쓰지 않는다 |
 | `vault add <name> --kind <login\|secret\|env\|card\|identity\|address> [--origin URL]… [--set FIELD=VALUE]… [--stdin] [--tag T]… [--plain FIELD]… [--no-origin-binding] [--run-allowed on\|off] [--expires YYYY-MM-DD \| --expires-in Nd \| --no-expiry] [--description TEXT] [--field-description FIELD=TEXT]… [--draft]` | 비밀 필드는 숨김 프롬프트나 `--stdin`(JSON 객체)으로만 받는다 |
 | `vault edit <name> [--set …] [--stdin] [--unset FIELD]… [--tag T]… [--untag T]… [--plain FIELD]… [--secret FIELD]… [--origin URL]… [--clear-origins] [--origin-binding on\|off] [--run-allowed on\|off] [--expires … \| --expires-in … \| --no-expiry] [--description TEXT \| --no-description] [--field-description FIELD=TEXT]… [--status active\|draft\|discarded]` | 보호를 약하게 하는 변경은 터미널의 사람 확인이 필요하다(아래) |

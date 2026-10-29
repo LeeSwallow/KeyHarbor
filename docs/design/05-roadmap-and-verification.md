@@ -139,7 +139,7 @@ flowchart LR
 
 | 범위 | 완료 조건 |
 |---|---|
-| Claude Code 플러그인 (`.mcp.json` + 사용법 skill) | 임시 설정에서 `Connected`, 도구 발견 |
+| Claude Code·Codex 플러그인 (`plugin/`: `.mcp.json`, 스킬 6개, 규칙, 명령 2개, 세션 훅) | `.mcp.json`의 명령이 서버를 띄우고 도구를 내놓음, 스킬이 있는 도구·명령만 가르침, 훅은 `keyharbor`가 없으면 조용함 ✅ (`tests/plugin.rs`). 사용자 설정을 바꾸는 `claude mcp` 확인은 하지 않음 |
 | README·이 문서 세트 갱신 | 구현된 것과 문서의 차이 없음 |
 
 ## 5.3 검증 게이트 (모든 단계 공통)
