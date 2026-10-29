@@ -13,8 +13,11 @@ use crate::{compose::App, description_args::DescriptionArgs, expiry_args::Expiry
 use anyhow::{Context, Result, bail};
 use clap::{Subcommand, ValueEnum};
 use input::{FieldInput, item_name, read_passphrase};
-use keyharbor_core::ItemStatus;
-use keyharbor_domain::vault::{Domain, ItemKind};
+use keyharbor_core::{ItemFilter, ItemStatus};
+use keyharbor_domain::{
+    tag::Tag,
+    vault::{Domain, ItemKind},
+};
 use std::path::PathBuf;
 use zeroize::Zeroizing;
 
@@ -40,6 +43,9 @@ pub enum VaultCmd {
         expiry: ExpiryArgs,
         #[command(flatten)]
         about: DescriptionArgs,
+        /// A label to find the item by, e.g. env:prod (repeat for more)
+        #[arg(long = "tag")]
+        tags: Vec<String>,
         #[arg(long)]
         draft: bool,
     },
@@ -63,6 +69,12 @@ pub enum VaultCmd {
         expiry: ExpiryArgs,
         #[command(flatten)]
         about: DescriptionArgs,
+        /// Add a tag (repeat for more)
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+        /// Remove a tag
+        #[arg(long = "untag")]
+        untag: Vec<String>,
         #[arg(long, value_enum)]
         status: Option<StatusArg>,
     },
@@ -72,6 +84,12 @@ pub enum VaultCmd {
     List {
         #[arg(long)]
         json: bool,
+        /// Only items whose name starts with this, e.g. myapp/
+        #[arg(long)]
+        prefix: Option<String>,
+        /// Only items with this tag
+        #[arg(long)]
+        tag: Option<String>,
     },
     /// Import a .env file as an env item
     ImportEnv { name: String, path: PathBuf },
@@ -181,6 +199,7 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
             run_allowed,
             expiry,
             about,
+            tags,
             draft,
         } => items::add(
             app,
@@ -193,6 +212,7 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
                 run_allowed,
                 expiry,
                 about,
+                tags,
                 draft,
             },
         )?,
@@ -206,6 +226,8 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
             run_allowed,
             expiry,
             about,
+            tags,
+            untag,
             status,
         } => items::edit(
             app,
@@ -219,6 +241,8 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
                 run_allowed,
                 expiry,
                 about,
+                tags,
+                untag,
                 status,
             },
         )?,
@@ -229,7 +253,14 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
             }
             println!("removed\t{}", name.as_str());
         }
-        VaultCmd::List { json } => list(app, json)?,
+        VaultCmd::List { json, prefix, tag } => {
+            let tag = tag
+                .as_deref()
+                .map(Tag::parse)
+                .transpose()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            list(app, json, &ItemFilter { prefix, tag })?
+        }
         VaultCmd::Request(command) => requests::run(app, command)?,
         VaultCmd::Draft(command) => drafts::run(app, command)?,
         VaultCmd::ImportEnv { name, path } => {
@@ -275,8 +306,9 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
     Ok(())
 }
 
-fn list(app: &App, json: bool) -> Result<()> {
-    let items = app.vault()?.list()?;
+fn list(app: &App, json: bool, filter: &ItemFilter) -> Result<()> {
+    let mut items = app.vault()?.list()?;
+    items.retain(|item| filter.keeps(item));
     if json {
         let values: Vec<_> = items.iter().map(output::summary_json).collect();
         println!("{}", serde_json::Value::Array(values));

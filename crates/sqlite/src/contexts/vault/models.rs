@@ -46,6 +46,8 @@ pub struct ItemModel {
     pub run_allowed: bool,
     pub expires_at: Option<String>,
     pub description: Option<String>,
+    /// Space-joined, sorted.
+    pub tags: String,
 }
 
 #[derive(Queryable, Selectable, Insertable)]

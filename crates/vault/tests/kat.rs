@@ -65,8 +65,9 @@ fn field_record_bytes_are_stable() {
 
 const META_V1_HEX: &str = "7263b493640d4a2ae564062c249db35f664507d37b79a8333a6b5b1016372e58";
 const META_V2_HEX: &str = "243dba424b4566e6d8dafec19ea3b767379af742d1c86ab7cc7fdebac551ea71";
+const META_V3_HEX: &str = "979703330f43937dc774d97860790c29c6f52135d2dedee64aa870d473cfe2c6";
 
-/// §7.6.3 metadata MAC: v2 bytes are stable, and an item signed with v1 still verifies.
+/// §7.6.3 metadata MAC: v3 bytes are stable, and items signed with v1 and v2 still verify.
 #[test]
 fn meta_macs_are_stable() {
     use keyharbor_domain::vault::{ItemKind, ItemName, Origin};
@@ -92,6 +93,7 @@ fn meta_macs_are_stable() {
         expires_at: None,
         description: None,
         field_descriptions: &[],
+        tags: &[],
     };
     let v1: Vec<u8> = (0..32)
         .map(|i| u8::from_str_radix(&META_V1_HEX[2 * i..2 * i + 2], 16).unwrap())
@@ -103,6 +105,13 @@ fn meta_macs_are_stable() {
     meta.description = Some("work");
     meta.field_descriptions = &described;
     assert!(verify_meta_mac(keys.mac(), &meta, &v1).is_err());
-    let v2 = meta_mac(keys.mac(), &meta);
-    assert_eq!(hex(&v2), META_V2_HEX);
+    let v2: Vec<u8> = (0..32)
+        .map(|i| u8::from_str_radix(&META_V2_HEX[2 * i..2 * i + 2], 16).unwrap())
+        .collect();
+    assert!(verify_meta_mac(keys.mac(), &meta, &v2).is_ok());
+    let tags = ["prod".to_owned()];
+    meta.tags = &tags;
+    assert!(verify_meta_mac(keys.mac(), &meta, &v2).is_err());
+    let v3 = meta_mac(keys.mac(), &meta);
+    assert_eq!(hex(&v3), META_V3_HEX);
 }

@@ -445,6 +445,7 @@ mod tests {
             expires_at: None,
             description: None,
             field_descriptions: vec![],
+            tags: vec![],
             status: "active".into(),
             source: "user".into(),
             meta_mac: vec![id; 32],

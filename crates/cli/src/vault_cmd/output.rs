@@ -13,6 +13,16 @@ pub fn summary_line(item: &ItemSummary) -> String {
         item.origins.join(","),
         item.fields.join(","),
     ) + &expiry_column(item)
+        + &tags_column(item)
+}
+
+/// `\ttags a,b`, or nothing for an untagged item.
+fn tags_column(item: &ItemSummary) -> String {
+    if item.tags.is_empty() {
+        String::new()
+    } else {
+        format!("\ttags {}", item.tags.join(","))
+    }
 }
 
 /// `\texpires 2027-01-31`, `\texpired`, or nothing for an item that never expires.
@@ -36,6 +46,7 @@ pub fn summary_json(item: &ItemSummary) -> serde_json::Value {
         "expires_at": item.expires_at.map(|e| e.to_string()),
         "description": item.description,
         "field_descriptions": item.field_descriptions,
+        "tags": item.tags,
         "expired": item.expired,
         "status": item.status.as_str(),
         "source": item.source.as_str(),

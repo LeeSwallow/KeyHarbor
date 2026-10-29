@@ -13,7 +13,7 @@ mod summary;
 
 pub use register::{DraftItem, GeneratedLogin, MAX_DRAFTS};
 pub use resolve::fill_template;
-pub use summary::{CatalogEntry, ItemUse, catalog, effective_descriptions};
+pub use summary::{CatalogEntry, ItemFilter, ItemUse, catalog, effective_descriptions};
 
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
@@ -22,6 +22,7 @@ use keyharbor_domain::{
         AuditStore, Clock, FieldRow, ItemRow, KeyGuard, KeyStore, RotationLock, SettingsStore,
         VaultStore,
     },
+    tag::Tag,
     vault::{Description, Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
 };
 use keyharbor_vault::{
@@ -111,6 +112,8 @@ pub struct ItemDetails {
     pub description: Option<Description>,
     /// Overrides of the kind's field descriptions; each names a field the item has.
     pub field_descriptions: Vec<(FieldName, Description)>,
+    /// Labels to find the item by (developer secrets spec §2).
+    pub tags: Vec<Tag>,
 }
 
 /// The expiry a new item gets (R-37).
@@ -137,6 +140,8 @@ pub struct ItemChange {
     /// Sets (`Some`) or removes (`None`, back to the kind's default) a field's description.
     pub field_descriptions: Vec<(FieldName, Option<Description>)>,
     pub status: Option<ItemStatus>,
+    pub add_tags: Vec<Tag>,
+    pub remove_tags: Vec<Tag>,
 }
 
 /// What callers may show: never a value.
@@ -155,6 +160,8 @@ pub struct ItemSummary {
     pub description: Option<String>,
     /// Every field's description: the item's own or the kind's default.
     pub field_descriptions: BTreeMap<String, String>,
+    /// Sorted.
+    pub tags: Vec<String>,
     pub status: ItemStatus,
     pub source: ItemSource,
     pub updated_at: String,
@@ -292,6 +299,7 @@ impl Vault {
             expires_at: row.expires_at.as_deref(),
             description: row.description.as_deref(),
             field_descriptions: &row.field_descriptions,
+            tags: &row.tags,
         }
     }
 

@@ -190,6 +190,8 @@ meta_mac = HMAC-SHA256(MK,
   ‖ lp(status) ‖ lp(updated_at))
 ```
 
+v2(3단계)는 태그를 `keyharbor/meta/v2`로 바꾸고 끝에 `run_allowed (1B) ‖ opt(expires_at) ‖ opt(description) ‖ u16be(count) ‖ (lp(field) ‖ lp(text))…`(필드 설명, 정렬·중복 제거)를 더한다. v3(개발자 비밀)는 `keyharbor/meta/v3`로 바꾸고 v2 입력 끝에 `u16be(count) ‖ lp(tag_1) …`(정렬·중복 제거)를 더한다. 쓰기는 언제나 v3로 서명한다. 검증은 v3를 받고, 태그가 없는 항목은 v2도, 그중 v2 속성이 v1 시절 값인 항목은 v1도 받는다(이전 금고를 다시 서명하지 않고 연다). KAT는 `crates/vault/tests/kat.rs`의 `META_V1_HEX`·`META_V2_HEX`·`META_V3_HEX` [J-85].
+
 `lp(x)`는 `u16be(길이) ‖ x`다. origin 목록은 정렬하고 중복을 없앤 뒤 넣는다. `status`(draft·active·discarded)도 포함해 확정 상태를 몰래 바꾸지 못하게 한다. [구현 J-27] 감독자는 치환 입력 전에 이 MAC을 검증한다. **DB 쓰기 권한은 있지만 Keychain 키를 꺼낼 수 없는 프로세스**가 origin 목록을 바꿔 피싱 origin을 추가하면 검증에 실패한다. 03의 T6을 부분적으로 완화한다(§7.9).
 
 ## 7.7 내보내기·가져오기: age 형식

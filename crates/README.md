@@ -65,7 +65,7 @@ cargo run -p keyharbor -- list
 | 세션 | `session_list`(설명 포함), `session_create {name, description?}`, `session_open {id, url?, cdp?}`, `session_stop`, `session_wait_auth {id, origin?}`, `session_wait_for_resume {id, request_id, timeout_seconds 1–300}` |
 | 세션 (선택) | `session_endpoint` — `--allow-cdp`일 때만 등록 |
 | 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_type`, `browser_login {item, submit?}`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` — 모두 `session` 인자 |
-| 금고 | `vault_list` — 이름·종류·도메인·필드 이름·필드별 placeholder·설명(항목·필드)·origin·바인딩·`run_allowed`·`expires_at`·`expired`·상태·출처만. 메타 MAC이 맞지 않는 항목은 이름과 `tampered: true`만 |
+| 금고 | `vault_list` {prefix?, tag?} — 이름·종류·도메인·필드 이름·필드별 placeholder·설명(항목·필드)·태그·origin·바인딩·`run_allowed`·`expires_at`·`expired`·상태·출처만. 메타 MAC이 맞지 않는 항목은 이름과 `tampered: true`만 |
 | 금고 등록 | `vault_generate {name, origin, username?, password_rule? {length 8–128, symbols, forbid}}`, `vault_put {name, kind, fields, origins?}` — draft로만 저장한다. 이름이 이미 있으면 `<이름>~draft-N`이 되고 기존 항목은 바뀌지 않는다. 응답은 이름·`draft: true`·placeholder뿐이다 |
 | 정보 요청 | `vault_request {kind, name, reason, origin?}` → `request_id`, `vault_wait {request_id, timeout_seconds 1–300}` → `fulfilled`(이름·placeholder)·`declined`·`expired`·`pending`(대기만 끝남, 요청은 남음). 사용자는 `keyharbor vault requests`·`fulfill <id> [--stdin \| --use ITEM]`·`decline <id>`로 답한다 |
 | 사이트 상태 | `site_state_get {session, origin}` → `logged_in`·`expired`·`unknown`(기록 없음), `site_state_set {session, origin, state, item?}` — 에이전트가 페이지를 보고 남기는 메모다. KeyHarbor가 확인하지 않는다. `logged_in`이면 그 origin의 생성·포착 draft를 확정하고 `confirmed`에 이름을 돌려준다(에이전트가 put한 draft는 사람이 확정) |
@@ -88,10 +88,10 @@ cargo run -p keyharbor -- list
 | 명령 | 설명 |
 |---|---|
 | `vault init` | 금고와 루트 키를 만든다. 이미 있으면 덮어쓰지 않는다 |
-| `vault add <name> --kind <login\|secret\|env\|card\|identity\|address> [--origin URL]… [--set FIELD=VALUE]… [--stdin] [--no-origin-binding] [--run-allowed on\|off] [--expires YYYY-MM-DD \| --expires-in Nd \| --no-expiry] [--description TEXT] [--field-description FIELD=TEXT]… [--draft]` | 비밀 필드는 숨김 프롬프트나 `--stdin`(JSON 객체)으로만 받는다 |
-| `vault edit <name> [--set …] [--stdin] [--unset FIELD]… [--origin URL]… [--clear-origins] [--origin-binding on\|off] [--run-allowed on\|off] [--expires … \| --expires-in … \| --no-expiry] [--description TEXT \| --no-description] [--field-description FIELD=TEXT]… [--status active\|draft\|discarded]` | 보호를 약하게 하는 변경은 터미널의 사람 확인이 필요하다(아래) |
+| `vault add <name> --kind <login\|secret\|env\|card\|identity\|address> [--origin URL]… [--set FIELD=VALUE]… [--stdin] [--tag T]… [--no-origin-binding] [--run-allowed on\|off] [--expires YYYY-MM-DD \| --expires-in Nd \| --no-expiry] [--description TEXT] [--field-description FIELD=TEXT]… [--draft]` | 비밀 필드는 숨김 프롬프트나 `--stdin`(JSON 객체)으로만 받는다 |
+| `vault edit <name> [--set …] [--stdin] [--unset FIELD]… [--tag T]… [--untag T]… [--origin URL]… [--clear-origins] [--origin-binding on\|off] [--run-allowed on\|off] [--expires … \| --expires-in … \| --no-expiry] [--description TEXT \| --no-description] [--field-description FIELD=TEXT]… [--status active\|draft\|discarded]` | 보호를 약하게 하는 변경은 터미널의 사람 확인이 필요하다(아래) |
 | `vault rm <name>` | |
-| `vault list [--json]` | 이름·종류·도메인·상태·사이트·필드 이름(만료가 있으면 `expires 2027-01-31`·`expired`)만. `--json`은 `run_allowed`·`expires_at`·`expired`·`description`·`field_descriptions`도. 값은 보여 주지 않는다 |
+| `vault list [--json] [--prefix P] [--tag T]` | 이름·종류·도메인·상태·사이트·필드 이름(만료가 있으면 `expires 2027-01-31`·`expired`, 태그가 있으면 `tags a,b`)만. `--prefix`는 이름이 P로 시작하는 항목만(`myapp/`), `--tag`는 그 태그가 있는 항목만. `--json`은 `run_allowed`·`expires_at`·`expired`·`description`·`field_descriptions`·`tags`도. 값은 보여 주지 않는다 |
 | `vault import-env <name> <path>` | `.env` 파일을 env 항목으로 가져온다 |
 | `vault export <path> [--passphrase-stdin]` | [age](https://age-encryption.org/v1) 형식의 암호화 백업. `age -d`로도 열린다. 기존 파일을 덮어쓰지 않는다 |
 | `vault import <path> [--passphrase-stdin]` | 같은 이름의 항목은 건너뛴다 |

@@ -3,9 +3,12 @@
 
 use crate::server::{Server, fail, outcome};
 use anyhow::{Context, Result, anyhow, bail};
-use keyharbor_core::{CatalogEntry, DraftItem, GeneratedLogin, ItemSource, ItemSummary, catalog};
+use keyharbor_core::{
+    CatalogEntry, DraftItem, GeneratedLogin, ItemFilter, ItemSource, ItemSummary, catalog,
+};
 use keyharbor_domain::{
     password::{DEFAULT_LENGTH, PasswordRule},
+    tag::Tag,
     vault::{FieldName, InvalidValue, ItemKind, ItemName, Origin, placeholder},
 };
 use rmcp::{
@@ -15,6 +18,14 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+struct ListArgs {
+    /// Only items whose name starts with this, e.g. myapp/.
+    prefix: Option<String>,
+    /// Only items with this tag.
+    tag: Option<String>,
+}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct PasswordRuleArgs {
@@ -112,6 +123,7 @@ fn summary_json(item: &ItemSummary) -> Value {
         "kind": item.kind.as_str(),
         "domain": item.domain.as_str(),
         "field_descriptions": item.field_descriptions,
+        "tags": item.tags,
         "fields": item.fields,
         "placeholders": placeholders,
         "origins": item.origins,
@@ -136,13 +148,28 @@ fn entry_json(entry: &CatalogEntry) -> Value {
 #[tool_router(router = vault_tools, vis = "pub(crate)")]
 impl Server {
     #[tool(
-        description = "List vault items: name, kind, domain, field names, descriptions (what the item and each field is for), origins, run permission, expiry, status and the placeholder for each field (use it in browser_fill or browser_type). An item whose stored metadata fails verification shows only its name and tampered: true; it cannot be used until the user fixes it. Values are never returned."
+        description = "List vault items: name, kind, domain, field names, descriptions (what the item and each field is for), tags, origins, run permission, expiry, status and the placeholder for each field. Optionally only names starting with prefix (e.g. myapp/) or items with a tag (use it in browser_fill or browser_type). An item whose stored metadata fails verification shows only its name and tampered: true; it cannot be used until the user fixes it. Values are never returned."
     )]
-    async fn vault_list(&self) -> CallToolResult {
+    async fn vault_list(&self, Parameters(args): Parameters<ListArgs>) -> CallToolResult {
+        let tag = match args.tag.as_deref().map(Tag::parse).transpose() {
+            Ok(tag) => tag,
+            Err(error) => return fail(error.to_string()),
+        };
+        let filter = ItemFilter {
+            prefix: args.prefix,
+            tag,
+        };
         outcome(
-            self.blocking(|inner| {
+            self.blocking(move |inner| {
                 let entries = catalog(&**inner.store()?, || (inner.open_vault)())?;
-                Ok(Value::Array(entries.iter().map(entry_json).collect()))
+                let kept = entries.iter().filter(|entry| match entry {
+                    CatalogEntry::Verified(item) => filter.keeps(item),
+                    // A tampered item's tags are not trusted; it shows unless the prefix excludes it.
+                    CatalogEntry::Tampered { name } => {
+                        filter.prefix.as_deref().is_none_or(|p| name.starts_with(p))
+                    }
+                });
+                Ok(Value::Array(kept.map(entry_json).collect()))
             })
             .await,
         )
