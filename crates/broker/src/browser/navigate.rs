@@ -16,18 +16,26 @@ impl CdpBrowser {
         if let Some(error) = navigated["errorText"].as_str().filter(|e| !e.is_empty()) {
             bail!("navigation failed: {error}");
         }
+        // Count only the load of this navigation: a page still loading from before (the start
+        // page) fires its own load event on the same session. A navigation that commits says
+        // so with the loader `Page.navigate` returned; without one, any load will do.
+        let loader = navigated["loaderId"].as_str().map(str::to_owned);
+        let mut committed = loader.is_none();
         let deadline = Instant::now() + LOAD_TIMEOUT;
         loop {
             let event = tokio::time::timeout_at(deadline, events.recv())
                 .await
                 .map_err(|_| anyhow!("page did not finish loading within 15 seconds"))?;
             match event {
+                Ok(event) if event["sessionId"] != session.as_str() => (),
                 Ok(event)
-                    if event["method"] == "Page.loadEventFired"
-                        && event["sessionId"] == session.as_str() =>
+                    if event["method"] == "Page.frameNavigated"
+                        && event["params"]["frame"]["parentId"].is_null()
+                        && event["params"]["frame"]["loaderId"].as_str() == loader.as_deref() =>
                 {
-                    break;
+                    committed = true;
                 }
+                Ok(event) if committed && event["method"] == "Page.loadEventFired" => break,
                 Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => (),
                 Err(_) => bail!("browser connection closed"),
             }
