@@ -49,6 +49,11 @@ pub enum WeakeningOp {
         key: &'static str,
         value: String,
     },
+    /// Marking fields not secret: their values show in listings and are not masked.
+    FieldsPlain {
+        item: String,
+        fields: Vec<String>,
+    },
     /// Letting a session into a site (R-43).
     Grant {
         session: String,
@@ -71,6 +76,13 @@ impl fmt::Display for WeakeningOp {
             Self::PolicyAllow(rule) => write!(f, "policy allow {}", target(rule)),
             Self::PolicyRemoveDeny(rule) => write!(f, "removing the rule {}", target(rule)),
             Self::Setting { key, value } => write!(f, "settings set {key} {value}"),
+            Self::FieldsPlain { item, fields } => {
+                write!(
+                    f,
+                    "showing {} of {item} in listings, unmasked",
+                    fields.join(", ")
+                )
+            }
             Self::Grant { session, origin } => {
                 write!(f, "granting session {session} the site {origin}")
             }
@@ -146,6 +158,26 @@ impl Vault {
         }
         if change.run_allowed == Some(true) && !current.run_allowed {
             out.push(WeakeningOp::RunAllowed { item: item.clone() });
+        }
+        if !change.make_plain.is_empty() {
+            let already: Vec<String> = self
+                .list()?
+                .into_iter()
+                .find(|i| i.name == item && !i.tampered)
+                .map(|i| i.plain_values.into_keys().collect())
+                .unwrap_or_default();
+            let fields: Vec<String> = change
+                .make_plain
+                .iter()
+                .map(|f| f.as_str().to_owned())
+                .filter(|f| !already.contains(f))
+                .collect();
+            if !fields.is_empty() {
+                out.push(WeakeningOp::FieldsPlain {
+                    item: item.clone(),
+                    fields,
+                });
+            }
         }
         // Setting a first expiry or shortening one never asks (R-37).
         match (current.expires_at, change.expiry) {

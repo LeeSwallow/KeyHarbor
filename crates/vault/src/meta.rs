@@ -4,7 +4,8 @@
 //! v2 (phase 3) adds the run permission, the expiry date and the descriptions. Items signed
 //! before v2 still verify under v1 as long as those attributes hold their v1-era values (the
 //! kind's default run permission, no expiry, no descriptions); any other value needs v2. v3
-//! adds tags; a v2 (or v1) MAC still verifies an item without tags.
+//! adds tags; a v2 (or v1) MAC still verifies an item without tags. v4 adds the fields marked
+//! not secret; a v3 (or older) MAC still verifies an item where every field is secret.
 
 use crate::{VaultError, keys::SecretKey, keys::VaultId, record::push_lp};
 use keyharbor_crypto::mac::{mac, verify_mac};
@@ -13,6 +14,7 @@ use keyharbor_domain::vault::{Domain, ItemKind, ItemName, Origin};
 const META_TAG_V1: &[u8] = b"keyharbor/meta/v1";
 const META_TAG_V2: &[u8] = b"keyharbor/meta/v2";
 const META_TAG_V3: &[u8] = b"keyharbor/meta/v3";
+const META_TAG_V4: &[u8] = b"keyharbor/meta/v4";
 
 pub struct ItemMeta<'a> {
     pub vault: &'a VaultId,
@@ -33,6 +35,8 @@ pub struct ItemMeta<'a> {
     pub field_descriptions: &'a [(String, String)],
     /// Tags; order and repeats do not matter.
     pub tags: &'a [String],
+    /// Fields that are not secret (shown in listings, not masked); order does not matter.
+    pub plain_fields: &'a [String],
 }
 
 impl ItemMeta<'_> {
@@ -89,7 +93,7 @@ fn input(tag: &[u8], meta: &ItemMeta) -> Vec<u8> {
             push_lp(&mut input, text.as_bytes());
         }
     }
-    if tag == META_TAG_V3 {
+    if tag == META_TAG_V3 || tag == META_TAG_V4 {
         let mut tags: Vec<&str> = meta.tags.iter().map(String::as_str).collect();
         tags.sort_unstable();
         tags.dedup();
@@ -99,17 +103,34 @@ fn input(tag: &[u8], meta: &ItemMeta) -> Vec<u8> {
             push_lp(&mut input, tag.as_bytes());
         }
     }
+    if tag == META_TAG_V4 {
+        let mut plain: Vec<&str> = meta.plain_fields.iter().map(String::as_str).collect();
+        plain.sort_unstable();
+        plain.dedup();
+        let count = u16::try_from(plain.len()).expect("more than 65535 fields");
+        input.extend_from_slice(&count.to_be_bytes());
+        for field in plain {
+            push_lp(&mut input, field.as_bytes());
+        }
+    }
     input
 }
 
-/// The v3 MAC; every write signs with it.
+/// The v4 MAC; every write signs with it.
 pub fn meta_mac(mk: &SecretKey, meta: &ItemMeta) -> [u8; 32] {
-    mac(mk, &input(META_TAG_V3, meta))
+    mac(mk, &input(META_TAG_V4, meta))
 }
 
-/// Accepts a v3 MAC; a v2 MAC when the item has no tags; a v1 MAC when, besides, the v2
-/// attributes hold their v1-era values.
+/// Accepts a v4 MAC; older MACs only for an item where every field is secret: v3, v2 when
+/// it also has no tags, v1 when besides the v2 attributes hold their v1-era values. An older
+/// MAC never vouches for a field marked not secret.
 pub fn verify_meta_mac(mk: &SecretKey, meta: &ItemMeta, tag: &[u8]) -> Result<(), VaultError> {
+    if verify_mac(mk, &input(META_TAG_V4, meta), tag) {
+        return Ok(());
+    }
+    if !meta.plain_fields.is_empty() {
+        return Err(VaultError::Tampered);
+    }
     let untagged = meta.tags.is_empty();
     let ok = verify_mac(mk, &input(META_TAG_V3, meta), tag)
         || (untagged && verify_mac(mk, &input(META_TAG_V2, meta), tag))
@@ -159,6 +180,7 @@ mod tests {
             description: None,
             field_descriptions: &[],
             tags: &[],
+            plain_fields: &[],
         }
     }
 
@@ -267,5 +289,31 @@ mod tests {
         let mut same = meta(&f, &f.origins);
         same.tags = &reordered;
         assert!(verify_meta_mac(&mk, &same, &v3).is_ok());
+    }
+
+    #[test]
+    fn plain_fields_are_signed_and_no_older_mac_vouches_for_them() {
+        let f = fixture();
+        let mk = SecretKey::from_bytes([3; 32]);
+        let base = meta(&f, &f.origins);
+        let v3 = mac(&mk, &input(META_TAG_V3, &base));
+        assert!(
+            verify_meta_mac(&mk, &base, &v3).is_ok(),
+            "an item from before v4"
+        );
+        let plain = ["username".to_owned()];
+        let mut marked = meta(&f, &f.origins);
+        marked.plain_fields = &plain;
+        assert!(
+            verify_meta_mac(&mk, &marked, &v3).is_err(),
+            "marking a field plain in the DB"
+        );
+        let v4 = meta_mac(&mk, &marked);
+        assert!(verify_meta_mac(&mk, &marked, &v4).is_ok());
+        assert!(verify_meta_mac(&mk, &base, &v4).is_err());
+        let other = ["password".to_owned()];
+        let mut swapped = meta(&f, &f.origins);
+        swapped.plain_fields = &other;
+        assert!(verify_meta_mac(&mk, &swapped, &v4).is_err());
     }
 }

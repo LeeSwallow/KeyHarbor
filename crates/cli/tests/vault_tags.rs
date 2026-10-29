@@ -209,3 +209,70 @@ fn a_changed_value_can_be_reverted_without_showing_it() {
         "{listed}"
     );
 }
+
+/// Developer secrets spec §2: a field marked not secret shows in listings and is not masked;
+/// marking a secret field plain needs a person at a terminal.
+#[test]
+fn plain_fields_show_their_values_and_marking_one_needs_a_person() {
+    let tmp = short_tempdir();
+    let (data, keys) = (tmp.path().join("data"), tmp.path().join("keys"));
+    cli(&data, &keys, &["vault", "init"], "");
+    cli(
+        &data,
+        &keys,
+        &[
+            "vault", "add", "app", "--kind", "env", "--plain", "PORT", "--stdin",
+        ],
+        r#"{"API_KEY":"key-SECRET-1234","PORT":"8081"}"#,
+    );
+    let listed: Value =
+        serde_json::from_str(&cli(&data, &keys, &["vault", "list", "--json"], "")).unwrap();
+    assert_eq!(listed[0]["plain_values"], json!({"PORT": "8081"}));
+    assert!(!listed.to_string().contains("key-SECRET"));
+    let out = cli(
+        &data,
+        &keys,
+        &[
+            "run",
+            "--env",
+            "app",
+            "--",
+            "sh",
+            "-c",
+            "echo $PORT $API_KEY",
+        ],
+        "",
+    );
+    assert_eq!(out, "8081 {{secret:app.API_KEY}}\n");
+
+    let refused = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+        .arg("--data-dir")
+        .arg(&data)
+        .args(["vault", "edit", "app", "--plain", "API_KEY"])
+        .env("KEYHARBOR_TEST_KEYSTORE_DIR", &keys)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("needs confirmation"));
+    let confirmed = common::on_terminal(
+        &data,
+        &keys,
+        &["vault", "edit", "app", "--plain", "API_KEY"],
+        "yes",
+    );
+    assert!(confirmed.success, "{}", confirmed.output);
+    let mut mcp = Mcp::start(&data, tmp.path(), &[]);
+    let seen = mcp.ok("vault_list", json!({}));
+    assert_eq!(seen[0]["plain_values"]["API_KEY"], "key-SECRET-1234");
+    mcp.finish();
+    cli(
+        &data,
+        &keys,
+        &["vault", "edit", "app", "--secret", "API_KEY"],
+        "",
+    );
+    let listed: Value =
+        serde_json::from_str(&cli(&data, &keys, &["vault", "list", "--json"], "")).unwrap();
+    assert_eq!(listed[0]["plain_values"], json!({"PORT": "8081"}));
+}

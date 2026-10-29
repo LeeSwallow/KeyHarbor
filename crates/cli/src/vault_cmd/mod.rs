@@ -46,6 +46,9 @@ pub enum VaultCmd {
         /// A label to find the item by, e.g. env:prod (repeat for more)
         #[arg(long = "tag")]
         tags: Vec<String>,
+        /// A field that is not secret (PORT): its value shows in listings, unmasked
+        #[arg(long = "plain", value_name = "FIELD")]
+        plain: Vec<String>,
         #[arg(long)]
         draft: bool,
     },
@@ -75,6 +78,12 @@ pub enum VaultCmd {
         /// Remove a tag
         #[arg(long = "untag")]
         untag: Vec<String>,
+        /// Mark a field not secret: its value shows in listings, unmasked (asks first)
+        #[arg(long = "plain", value_name = "FIELD")]
+        plain: Vec<String>,
+        /// Mark a field secret again
+        #[arg(long = "secret", value_name = "FIELD")]
+        secret: Vec<String>,
         #[arg(long, value_enum)]
         status: Option<StatusArg>,
     },
@@ -206,6 +215,7 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
             expiry,
             about,
             tags,
+            plain,
             draft,
         } => items::add(
             app,
@@ -219,6 +229,7 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
                 expiry,
                 about,
                 tags,
+                plain,
                 draft,
             },
         )?,
@@ -234,6 +245,8 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
             about,
             tags,
             untag,
+            plain,
+            secret,
             status,
         } => items::edit(
             app,
@@ -249,6 +262,8 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
                 about,
                 tags,
                 untag,
+                plain,
+                secret,
                 status,
             },
         )?,

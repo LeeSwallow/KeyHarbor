@@ -449,6 +449,7 @@ mod tests {
             description: None,
             field_descriptions: vec![],
             tags: vec![],
+            plain_fields: vec![],
             status: "active".into(),
             source: "user".into(),
             meta_mac: vec![id; 32],

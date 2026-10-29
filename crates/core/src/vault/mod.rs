@@ -8,6 +8,7 @@ mod drafts;
 mod history;
 mod items;
 mod open;
+mod plain;
 mod register;
 mod resolve;
 mod summary;
@@ -115,6 +116,8 @@ pub struct ItemDetails {
     pub field_descriptions: Vec<(FieldName, Description)>,
     /// Labels to find the item by (developer secrets spec §2).
     pub tags: Vec<Tag>,
+    /// Fields that are not secret: shown in listings, not masked (developer secrets spec §2).
+    pub plain_fields: Vec<FieldName>,
 }
 
 /// The expiry a new item gets (R-37).
@@ -143,6 +146,10 @@ pub struct ItemChange {
     pub status: Option<ItemStatus>,
     pub add_tags: Vec<Tag>,
     pub remove_tags: Vec<Tag>,
+    /// Mark fields not secret (weakens: a person confirms).
+    pub make_plain: Vec<FieldName>,
+    /// Mark fields secret again.
+    pub make_secret: Vec<FieldName>,
 }
 
 /// What callers may show: never a value.
@@ -163,6 +170,8 @@ pub struct ItemSummary {
     pub field_descriptions: BTreeMap<String, String>,
     /// Sorted.
     pub tags: Vec<String>,
+    /// The values of fields marked not secret (empty for a tampered item).
+    pub plain_values: BTreeMap<String, String>,
     pub status: ItemStatus,
     pub source: ItemSource,
     pub updated_at: String,
@@ -301,6 +310,7 @@ impl Vault {
             description: row.description.as_deref(),
             field_descriptions: &row.field_descriptions,
             tags: &row.tags,
+            plain_fields: &row.plain_fields,
         }
     }
 

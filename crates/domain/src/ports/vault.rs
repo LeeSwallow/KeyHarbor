@@ -32,6 +32,8 @@ pub struct ItemRow {
     pub field_descriptions: Vec<(String, String)>,
     /// Tags (plaintext, signed), sorted.
     pub tags: Vec<String>,
+    /// Fields that are not secret (signed), sorted: shown in listings, not masked.
+    pub plain_fields: Vec<String>,
     pub status: String,
     pub source: String,
     pub meta_mac: Vec<u8>,

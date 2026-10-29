@@ -358,7 +358,8 @@ Claude Code·Codex 같은 에이전트는 MCP뿐 아니라 **셸**도 쓴다. �
 
 | 작업 | 확인이 필요한 경우 | 필요 없는 경우 |
 |---|---|---|
-| `vault edit` | origin 바인딩 끄기, 지금 목록에 없는 origin 추가, `--run-allowed on`, 만료 연장·제거 | 바인딩 켜기, origin 빼기, run 끄기, 첫 만료 설정·단축 |
+| `vault edit` | origin 바인딩 끄기, 지금 목록에 없는 origin 추가, `--run-allowed on`, 만료 연장·제거, 비밀 필드를 `--plain`으로 표시(값이 목록에 보이고 가려지지 않는다) | 바인딩 켜기, origin 빼기, run 끄기, 첫 만료 설정·단축, `--secret`으로 되돌리기 |
+| `grant add` | 언제나(세션이 그 사이트로 갈 수 있게 된다) | `grant revoke` |
 | `policy` | `allow`(어떤 대상이든), deny 규칙 `rm` | `deny`, allow 규칙 `rm` |
 | `settings set` | `audit_enabled false`, `capture_enabled` 변경 | `audit_enabled true`, `default_item_ttl` |
 

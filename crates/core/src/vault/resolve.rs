@@ -58,6 +58,12 @@ impl Vault {
             // An unknown kind is masked in full: masking errs on the side of hiding.
             let kind = ItemKind::parse(&row.kind);
             for field in fields {
+                // A field marked not secret is shown on purpose; masking it would blank out
+                // common short values. The mark is signed (MAC v4); a tampered row keeps it
+                // masked.
+                if row.plain_fields.contains(&field.field) && self.verified(&row).is_ok() {
+                    continue;
+                }
                 if kind
                     .and_then(|k| k.field(&field.field))
                     .is_some_and(|spec| !spec.maskable)

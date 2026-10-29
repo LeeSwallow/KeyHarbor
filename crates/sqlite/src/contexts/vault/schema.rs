@@ -32,6 +32,7 @@ diesel::table! {
         expires_at -> Nullable<Text>,
         description -> Nullable<Text>,
         tags -> Text,
+        plain_fields -> Text,
     }
 }
 
