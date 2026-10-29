@@ -347,7 +347,7 @@ fn a_field_can_be_handed_over_as_a_private_file() {
     let out = c.run(
         &[
             "run", "--file", "CRED=app.API_KEY", "--", "sh", "-c",
-            "echo \"$CRED\"; cat \"$CRED\"; echo; mode=$(stat -f %Lp \"$CRED\" 2>/dev/null || stat -c %a \"$CRED\"); echo \"mode=$mode\"; d=$(dirname \"$CRED\"); dmode=$(stat -f %Lp \"$d\" 2>/dev/null || stat -c %a \"$d\"); echo \"dir=$dmode\"",
+            "echo \"$CRED\"; cat \"$CRED\"; echo; mode=$(stat -c %a \"$CRED\" 2>/dev/null || stat -f %Lp \"$CRED\"); echo \"mode=$mode\"; d=$(dirname \"$CRED\"); dmode=$(stat -c %a \"$d\" 2>/dev/null || stat -f %Lp \"$d\"); echo \"dir=$dmode\"",
         ],
         None,
     );
