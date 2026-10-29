@@ -91,6 +91,7 @@ cargo run -p keyharbor -- list
 | `vault add <name> --kind <login\|secret\|env\|card\|identity\|address> [--origin URL]… [--set FIELD=VALUE]… [--stdin] [--tag T]… [--no-origin-binding] [--run-allowed on\|off] [--expires YYYY-MM-DD \| --expires-in Nd \| --no-expiry] [--description TEXT] [--field-description FIELD=TEXT]… [--draft]` | 비밀 필드는 숨김 프롬프트나 `--stdin`(JSON 객체)으로만 받는다 |
 | `vault edit <name> [--set …] [--stdin] [--unset FIELD]… [--tag T]… [--untag T]… [--origin URL]… [--clear-origins] [--origin-binding on\|off] [--run-allowed on\|off] [--expires … \| --expires-in … \| --no-expiry] [--description TEXT \| --no-description] [--field-description FIELD=TEXT]… [--status active\|draft\|discarded]` | 보호를 약하게 하는 변경은 터미널의 사람 확인이 필요하다(아래) |
 | `vault rm <name>` | |
+| `vault revert <name> [--field F]…` | 필드를 마지막 변경 전 값으로 되돌린다(값이 있는 필드 전부, 또는 `--field`). 직전 값은 하나만 둔다. 다시 실행하면 되돌린 것을 되돌린다. 값은 출력하지 않는다 |
 | `vault list [--json] [--prefix P] [--tag T]` | 이름·종류·도메인·상태·사이트·필드 이름(만료가 있으면 `expires 2027-01-31`·`expired`, 태그가 있으면 `tags a,b`)만. `--prefix`는 이름이 P로 시작하는 항목만(`myapp/`), `--tag`는 그 태그가 있는 항목만. `--json`은 `run_allowed`·`expires_at`·`expired`·`description`·`field_descriptions`·`tags`도. 값은 보여 주지 않는다 |
 | `vault import-env <name> <path>` | `.env` 파일을 env 항목으로 가져온다 |
 | `vault export <path> [--passphrase-stdin]` | [age](https://age-encryption.org/v1) 형식의 암호화 백업. `age -d`로도 열린다. 기존 파일을 덮어쓰지 않는다 |

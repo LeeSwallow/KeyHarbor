@@ -12,6 +12,9 @@ impl TestVault {
     pub fn resolve(&self, reference: &PlaceholderRef) -> Result<Zeroizing<String>> {
         self.0.resolve(&PlaintextAccess::issue(), reference)
     }
+    pub fn mask_values(&self) -> Result<crate::MaskValues> {
+        self.0.mask_values(&PlaintextAccess::issue())
+    }
 }
 
 impl std::ops::Deref for TestVault {

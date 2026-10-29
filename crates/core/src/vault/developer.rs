@@ -74,15 +74,19 @@ impl Vault {
                     item: &row.id,
                     field: &field.field,
                 };
-                let plain = open_field(&self.domain_keys[&old].1, &from, &field.sealed)
-                    .map_err(vault_err)?;
                 let to = FieldAd {
                     domain: Domain::Developer,
                     ..from
                 };
+                let reseal = |record: &[u8]| -> Result<Vec<u8>> {
+                    let plain =
+                        open_field(&self.domain_keys[&old].1, &from, record).map_err(vault_err)?;
+                    Ok(seal_field(&dk, &dk_id, &to, &plain))
+                };
                 sealed.push(FieldRow {
                     field: field.field.clone(),
-                    sealed: seal_field(&dk, &dk_id, &to, &plain),
+                    sealed: reseal(&field.sealed)?,
+                    previous: field.previous.as_deref().map(reseal).transpose()?,
                 });
             }
             let mut moved = row.clone();

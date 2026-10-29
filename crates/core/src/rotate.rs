@@ -143,12 +143,18 @@ impl Vault {
                     item: &row.id,
                     field: name.as_str(),
                 };
-                let plain = open_field(&old_dk, &ad, &field.sealed).map_err(vault_err)?;
+                let reseal = |record: &[u8]| -> Result<Vec<u8>> {
+                    let plain = open_field(&old_dk, &ad, record).map_err(vault_err)?;
+                    Ok(seal_field(&new_dk, &new_id, &ad, &plain))
+                };
+                let sealed = reseal(&field.sealed)?;
+                let previous = field.previous.as_deref().map(reseal).transpose()?;
                 fields.push((
                     row.id,
                     FieldRow {
-                        field: field.field,
-                        sealed: seal_field(&new_dk, &new_id, &ad, &plain),
+                        field: field.field.clone(),
+                        sealed,
+                        previous,
                     },
                 ));
             }

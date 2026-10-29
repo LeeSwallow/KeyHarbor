@@ -311,7 +311,10 @@ impl VaultStore for SqliteStore {
             replace_domain_key(conn, dk)?;
             for (item, field) in fields {
                 let changed = diesel::update(vault_fields::table.find((&item[..], &field.field)))
-                    .set(vault_fields::sealed.eq(&field.sealed))
+                    .set((
+                        vault_fields::sealed.eq(&field.sealed),
+                        vault_fields::previous.eq(field.previous.as_deref()),
+                    ))
                     .execute(conn)?;
                 if changed != 1 {
                     bail!("field not found during domain rotation");
@@ -458,10 +461,12 @@ mod tests {
             FieldRow {
                 field: "password".into(),
                 sealed: vec![1, 2, 3],
+                previous: None,
             },
             FieldRow {
                 field: "username".into(),
                 sealed: vec![4, 5],
+                previous: None,
             },
         ]
     }
@@ -639,6 +644,7 @@ mod tests {
             FieldRow {
                 field: "password".into(),
                 sealed: vec![9, 9],
+                previous: None,
             },
         )];
         s.replace_domain(s.vault_version().unwrap(), &dk, &new_fields)
@@ -647,11 +653,13 @@ mod tests {
         let (_, f) = s.item_get("github").unwrap().unwrap();
         assert!(f.contains(&FieldRow {
             field: "password".into(),
-            sealed: vec![9, 9]
+            sealed: vec![9, 9],
+            previous: None,
         }));
         assert!(f.contains(&FieldRow {
             field: "username".into(),
-            sealed: vec![4, 5]
+            sealed: vec![4, 5],
+            previous: None,
         }));
     }
 
@@ -672,6 +680,7 @@ mod tests {
         let sealed = vec![FieldRow {
             field: "value".into(),
             sealed: vec![9, 9],
+            previous: None,
         }];
         // A stale version changes nothing.
         assert!(

@@ -70,21 +70,22 @@ impl Vault {
                     item: &row.id,
                     field: &field.field,
                 };
-                let bytes = open_field(&self.domain_keys[&domain].1, &ad, &field.sealed)
-                    .map_err(|e| anyhow!("{e}"))
-                    .context("could not decrypt a value for masking")?;
-                let text = Zeroizing::new(
-                    std::str::from_utf8(&bytes)
-                        .context("stored field is not UTF-8")?
-                        .to_owned(),
-                );
-                values.push((
-                    PlaceholderRef {
-                        item: item.clone(),
-                        field: FieldName::parse(&field.field).map_err(|e| anyhow!("{e}"))?,
-                    },
-                    text,
-                ));
+                let reference = PlaceholderRef {
+                    item: item.clone(),
+                    field: FieldName::parse(&field.field).map_err(|e| anyhow!("{e}"))?,
+                };
+                // The value before the last change may still be valid somewhere: mask it too.
+                for record in std::iter::once(&field.sealed).chain(field.previous.as_ref()) {
+                    let bytes = open_field(&self.domain_keys[&domain].1, &ad, record)
+                        .map_err(|e| anyhow!("{e}"))
+                        .context("could not decrypt a value for masking")?;
+                    let text = Zeroizing::new(
+                        std::str::from_utf8(&bytes)
+                            .context("stored field is not UTF-8")?
+                            .to_owned(),
+                    );
+                    values.push((reference.clone(), text));
+                }
             }
         }
         Ok(MaskValues { version, values })

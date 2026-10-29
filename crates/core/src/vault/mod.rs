@@ -5,6 +5,7 @@
 
 mod developer;
 mod drafts;
+mod history;
 mod items;
 mod open;
 mod register;
@@ -336,6 +337,7 @@ impl Vault {
         FieldRow {
             field: field.as_str().to_owned(),
             sealed: seal_field(dk, dk_id, &ad, value.as_bytes()),
+            previous: None,
         }
     }
 
