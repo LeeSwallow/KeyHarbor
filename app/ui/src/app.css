@@ -29,3 +29,34 @@ html, body { margin: 0; height: 100%; }
 /* Only the item screen has a list beside the detail; elsewhere the detail takes the room. */
 .kh-shell:has(> .list:empty) { grid-template-columns: 190px minmax(0, 1fr); }
 .kh-shell > .list:empty { display: none; }
+/* Screens built from the design system's parts (views/parts.ts). */
+.kh-shell .detail { align-content: start; }
+.kh-shell .screen-head { display: grid; gap: var(--space-1); margin-bottom: var(--space-2); }
+.kh-shell .screen-head h2, .kh-shell .item-head h2 { margin: 0; }
+.kh-shell h3.section { margin: var(--space-4) 0 var(--space-1); font: var(--text-label); letter-spacing: var(--tracking-label); color: var(--c-ink-3); }
+.kh-shell .kh-row.card { background: var(--c-surface); border: 1px solid var(--c-line); cursor: default; }
+.kh-shell .kh-row.card:hover { background: var(--c-surface); }
+.kh-shell .kh-row .title { white-space: normal; }
+.kh-shell .kh-row .actions { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.kh-shell .kh-row .sites { margin: var(--space-1) 0 0; padding: 0; list-style: none; display: grid; gap: var(--space-half); font: var(--text-small); color: var(--c-ink-2); }
+.kh-shell .list { gap: var(--space-1); }
+.kh-shell .list-head { display: flex; justify-content: flex-end; padding-bottom: var(--space-2); }
+.kh-shell .list .kh-row .main { display: grid; }
+.kh-shell .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.kh-shell button.stat { appearance: none; text-align: left; font: inherit; color: inherit; cursor: pointer; display: grid; gap: var(--space-1);
+  padding: var(--space-4); border-radius: var(--radius-md); background: var(--c-surface); border: 1px solid var(--c-line); }
+.kh-shell button.stat:hover { background: var(--c-surface-3); }
+.kh-shell button.stat strong { font: var(--text-title); }
+.kh-shell .item-head { display: flex; align-items: center; gap: var(--space-3); }
+.kh-shell .item-head .main { flex: 1; min-width: 0; }
+.kh-shell .item-head .actions { display: flex; gap: var(--space-2); }
+.kh-shell .item-head .glyph { display: grid; place-items: center; width: var(--size-glyph); height: var(--size-glyph); border-radius: var(--radius-glyph); }
+.kh-shell .field-value { display: grid; gap: var(--space-half); }
+.kh-shell .value-line { display: flex; align-items: center; gap: var(--space-2); }
+.kh-shell .rule-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: var(--space-2); align-items: end; }
+.kh-shell .kh-dialog .body h2 { margin: 0; }
+/* The design system colors a glyph inside a row; the item header shows one outside it. */
+.kh-shell .item-head .glyph.cred { background: var(--c-dom-cred-wash); color: var(--c-dom-cred); }
+.kh-shell .item-head .glyph.pay { background: var(--c-dom-pay-wash); color: var(--c-dom-pay); }
+.kh-shell .item-head .glyph.personal { background: var(--c-dom-personal-wash); color: var(--c-dom-personal); }
+.kh-shell .item-head .glyph.dev { background: var(--c-dom-dev-wash); color: var(--c-dom-dev); }

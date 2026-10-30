@@ -1,7 +1,7 @@
 // Builds dist/: the bundled window script, the page, and the design-system stylesheets it
 // imports (copied at build time, never into src/).
 
-import { cpSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
@@ -32,4 +32,9 @@ await esbuild.build({
 cpSync(join(root, "src/index.html"), join(out, "index.html"));
 cpSync(join(root, "src/app.css"), join(out, "app.css"));
 for (const css of stylesheets()) cpSync(join(designDir, css), join(out, "design", css));
+// Icons, and a class per icon: the CSP has no 'unsafe-inline', so the design system's inline
+// `style="mask-image:…"` cannot be used; `<span class="kh-i i-key">` takes it from here.
+cpSync(join(designDir, "icons"), join(out, "design", "icons"), { recursive: true });
+const icons = readdirSync(join(designDir, "icons")).filter((f) => f.endsWith(".svg")).map((f) => f.slice(0, -4));
+writeFileSync(join(out, "icons.css"), icons.map((i) => `.kh-i.i-${i} { mask-image: url(design/icons/${i}.svg); }`).join("\n") + "\n");
 console.log(`built ${out}`);
