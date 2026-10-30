@@ -11,6 +11,7 @@
 //! - [`session`] — which policy actions each session operation needs.
 //! - [`capture`] — storing a sign-in the user typed during a handoff as a draft.
 //! - [`reveal`] — a person looking at a value in the admin app (recorded).
+//! - [`autofill`] — filling a login into the person's own browser after Touch ID (recorded).
 //! - [`GuardedBrowser`] — a `BrowserPort` decorator: input goes through `substitute`, every
 //!   result and error through `mask`. The supervisor hands control requests only to it.
 //!
@@ -18,6 +19,7 @@
 //! core's own export), which `Vault::resolve` and `Vault::mask_values` demand.
 
 pub mod audit;
+pub mod autofill;
 mod browser;
 pub mod capture;
 pub mod describe;

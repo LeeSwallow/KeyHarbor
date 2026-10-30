@@ -40,9 +40,12 @@ pub enum AuditKind {
     SiteHandedOff,
     /// The user looked at or copied a value in the admin app; the result is `shown`.
     ValueRevealed,
+    /// The person filled a login into a page of their own browser after confirming with
+    /// Touch ID (ADR-0017); the result is `filled`.
+    ValueAutofilled,
 }
 impl AuditKind {
-    pub const ALL: [AuditKind; 22] = [
+    pub const ALL: [AuditKind; 23] = [
         Self::SecretUsed,
         Self::SecretDenied,
         Self::OriginChangedAfterFill,
@@ -65,6 +68,7 @@ impl AuditKind {
         Self::NavigationDenied,
         Self::SiteHandedOff,
         Self::ValueRevealed,
+        Self::ValueAutofilled,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -90,6 +94,7 @@ impl AuditKind {
             Self::NavigationDenied => "navigation_denied",
             Self::SiteHandedOff => "site_handed_off",
             Self::ValueRevealed => "value_revealed",
+            Self::ValueAutofilled => "value_autofilled",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {

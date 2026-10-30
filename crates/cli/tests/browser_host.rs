@@ -204,3 +204,127 @@ fn a_handed_site_arrives_with_its_cookies_and_the_session_stays_on_it() {
     mcp.ok("session_stop", json!({"id": id}));
     mcp.finish();
 }
+
+const PASSWORD: &str = "KH-PW-autofill-41";
+
+/// The host with a vault (plaintext test key store) and a test answer for Touch ID.
+fn host_with_vault(data: &Path, presence: &str, message: Value) -> Value {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+        .arg("--data-dir")
+        .arg(data)
+        .args([
+            "browser",
+            "host",
+            "chrome-extension://fimjcgdlhnkdmjnhcccnkpcnmcecgjoc/",
+        ])
+        .env("KEYHARBOR_TEST_KEYSTORE_DIR", data.join("keys"))
+        .env("KEYHARBOR_TEST_PRESENCE", presence)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let body = message.to_string().into_bytes();
+    let mut framed = (body.len() as u32).to_ne_bytes().to_vec();
+    framed.extend_from_slice(&body);
+    child.stdin.take().unwrap().write_all(&framed).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains(PASSWORD), "stderr holds no value");
+    serde_json::from_slice(&out.stdout[4..]).unwrap()
+}
+
+fn vault_with_github(data: &Path) {
+    let run = |args: &[&str], stdin: Option<&str>| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+            .arg("--data-dir")
+            .arg(data)
+            .args(args)
+            .env("KEYHARBOR_TEST_KEYSTORE_DIR", data.join("keys"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        if let Some(text) = stdin {
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(text.as_bytes())
+                .unwrap();
+        }
+        drop(child.stdin.take());
+        assert!(child.wait().unwrap().success(), "{args:?}");
+    };
+    run(&["vault", "init"], None);
+    run(
+        &[
+            "vault",
+            "add",
+            "github",
+            "--kind",
+            "login",
+            "--origin",
+            "https://github.com",
+            "--stdin",
+        ],
+        Some(&format!(r#"{{"username":"amy","password":"{PASSWORD}"}}"#)),
+    );
+}
+
+#[test]
+fn autofill_lists_by_name_fills_only_after_touch_id_and_saves_drafts() {
+    let tmp = short_tempdir();
+    let data = tmp.path().join("data");
+    vault_with_github(&data);
+    let list = |origin: &str| {
+        host_with_vault(
+            &data,
+            "yes",
+            json!({"v": 1, "type": "autofill_list", "origin": origin}),
+        )
+    };
+    assert_eq!(
+        list("https://github.com"),
+        json!({"v": 1, "type": "logins", "items": ["github"]})
+    );
+    assert_eq!(list("https://github.com.evil.example")["items"], json!([]));
+
+    let fill =
+        json!({"v": 1, "type": "autofill_fill", "origin": "https://github.com", "item": "github"});
+    let refused = host_with_vault(&data, "no", fill.clone());
+    assert_eq!(
+        refused,
+        json!({"v": 1, "type": "error", "code": "not_confirmed"})
+    );
+    let filled = host_with_vault(&data, "yes", fill);
+    assert_eq!(
+        filled,
+        json!({"v": 1, "type": "filled", "username": "amy", "password": PASSWORD})
+    );
+    let elsewhere = host_with_vault(
+        &data,
+        "yes",
+        json!({"v": 1, "type": "autofill_fill", "origin": "https://evil.example", "item": "github"}),
+    );
+    assert_eq!(code(&elsewhere), "refused");
+    assert!(!elsewhere.to_string().contains(PASSWORD));
+
+    let save = |password: &str| {
+        host_with_vault(
+            &data,
+            "no",
+            json!({"v": 1, "type": "save_login", "origin": "https://github.com", "username": "amy", "password": password}),
+        )
+    };
+    assert_eq!(
+        save(PASSWORD),
+        json!({"v": 1, "type": "known", "item": "github"})
+    );
+    let saved = save("KH-PW-new-42");
+    assert_eq!(saved["type"], "saved", "{saved}");
+    assert!(saved["item"].as_str().unwrap().starts_with("github~draft-"));
+    assert!(!saved.to_string().contains("KH-PW-new-42"));
+}

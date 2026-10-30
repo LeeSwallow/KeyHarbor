@@ -53,5 +53,5 @@ export const auditWord = word({
   env_injected: "변수 주입", substitution_locked: "치환 잠김", mask_probe: "마스킹 탐지", first_use_origin: "처음 쓰는 사이트",
   site_state_changed: "로그인 상태 바뀜", vault_requested: "정보 요청", vault_request_answered: "요청 답함",
   credential_captured: "로그인 포착", grant_changed: "grant 변경", navigation_denied: "이동 거부", site_handed_off: "사이트 넘김",
-  value_revealed: "값 보기",
+  value_revealed: "값 보기", value_autofilled: "자동 완성",
 });

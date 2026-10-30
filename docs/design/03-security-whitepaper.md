@@ -364,3 +364,33 @@ Claude Code·Codex 같은 에이전트는 MCP뿐 아니라 **셸**도 쓴다. �
 | `settings set` | `audit_enabled false`, `capture_enabled` 변경 | `audit_enabled true`, `default_item_ttl` |
 
 stdin과 stderr가 모두 터미널이 아니면 `"<작업> needs confirmation from a person at a terminal (or the admin app)"`으로 거부한다. 터미널이면 `/dev/tty`에 묻고 `yes`만 받는다. §3.1에 쓴 대로 이 경계는 pty 흉내로 우회할 수 있다.
+
+### 3.12.2 사람용 자동 완성 통로 (ADR-0017, R-46)
+
+7단계에서 평문이 금고 밖으로 나가는 길이 하나 늘었다. 사람이 평소 Chrome에서 확장 팝업의 [채우기]를 누르면, native host가 그 사이트의 로그인을 확장에 돌려주고 확장이 그 탭의 최상위 frame에 넣는다.
+
+```mermaid
+sequenceDiagram
+  participant P as 사람
+  participant X as 확장 (팝업)
+  participant H as native host
+  participant G as guard autofill
+  P->>X: [채우기]
+  X->>H: autofill_fill {origin, item}
+  Note over H: 부모 프로세스가 브라우저 실행 파일인가<br/>(셸에서 띄우면 not_browser)
+  H->>G: origin에 정확히 묶인 활성 로그인인가
+  G->>P: Touch ID "github.com에 github 로그인을 채웁니다"
+  P-->>G: 확인
+  G-->>H: 아이디·비밀번호 (사용 기록 value_autofilled)
+  H-->>X: filled {username, password} ← 평문이 나가는 유일한 답
+  X->>X: 그 탭 최상위 frame의 입력칸에 넣고 잊는다
+```
+
+| 막는 것 | 어떻게 | 남는 약점 |
+|---|---|---|
+| 다른 사이트에 채우기 | guard가 항목의 origin과 요청 origin이 정확히 같을 때만 후보로 둔다. draft·변조·만료 항목은 후보가 아니다. 후보가 아니면 Touch ID를 묻지도 않는다 | 확장이 알려 준 origin을 믿는다(확장은 탭의 URL에서 얻는다) |
+| 셸 에이전트가 host를 직접 실행 | `autofill_fill`은 부모 프로세스가 브라우저 앱 번들의 실행 파일일 때만 답한다(`proc_pidpath`) | 같은 사용자의 프로세스가 진짜 브라우저를 띄우고 확장 ID를 흉내 내는 경우는 막지 못한다(N1). 확장 ID는 매니페스트의 공개 키에서 나오므로 비밀이 아니다 |
+| 사람 모르게 채우기 | 채울 때마다 Touch ID(없으면 로그인 암호). 잠금 해제 상태를 저장하지 않는다 | 사람이 문구를 읽지 않고 승인할 수 있다 |
+| 기록 없이 채우기 | 채운 것마다 `value_autofilled`(항목, origin, 값 없음) | — |
+
+목록(`autofill_list`)은 이름만, 저장(`save_login`)은 값을 받아 draft로 두기만 하므로 Touch ID를 묻지 않는다. 저장한 draft는 사람이 앱에서 확정하기 전에는 채우기 후보가 되지 않는다.

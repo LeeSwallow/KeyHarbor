@@ -86,7 +86,11 @@ fn stored(
 }
 
 /// Compares with the logins already kept for `origin` and stores a draft if this one is new.
-fn store_login(vault: &Vault, origin: &Origin, login: CapturedLogin) -> Result<CaptureOutcome> {
+pub(crate) fn store_login(
+    vault: &Vault,
+    origin: &Origin,
+    login: CapturedLogin,
+) -> Result<CaptureOutcome> {
     let access = PlaintextAccess::issue();
     let mut base = None;
     for item in vault.list()? {
