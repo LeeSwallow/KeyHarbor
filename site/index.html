@@ -18,12 +18,9 @@
 
   <main>
     <section class="install" aria-labelledby="install-title">
-      <h2 id="install-title">소스에서 빌드 <span class="badge">개발 중 · macOS</span></h2>
-      <pre class="cmd"><code>git clone https://github.com/LeeSwallow/KeyHarbor
-cd KeyHarbor
-cargo build --release -p keyharbor
-cp target/release/keyharbor /usr/local/bin/</code></pre>
-      <p class="muted">아직 릴리스 전입니다. 에이전트 연동·관리 앱·플러그인까지 갖춰지면 첫 릴리스와 Homebrew 설치를 제공합니다. <a href="https://github.com/LeeSwallow/KeyHarbor/blob/main/ROADMAP.md">로드맵 보기</a></p>
+      <h2 id="install-title">설치 <span class="badge">v0.1.0 · macOS</span></h2>
+      <pre class="cmd"><code>brew install --cask leeswallow/tap/keyharbor</code></pre>
+      <p class="muted">관리 앱은 <a href="https://github.com/LeeSwallow/KeyHarbor/releases/latest">Releases</a>의 <code>keyharbor-app-…-arm64.dmg</code>(Apple silicon)를 받아 응용 프로그램으로 끌어다 놓습니다. 아직 서명·공증하지 않아 처음 열 때 우클릭 → 열기가 필요합니다. <a href="https://github.com/LeeSwallow/KeyHarbor/blob/main/ROADMAP.md">로드맵 보기</a></p>
     </section>
 
     <section class="demos" aria-label="사용 예시">
