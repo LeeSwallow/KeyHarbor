@@ -243,6 +243,41 @@ impl Vault {
         Ok(())
     }
 
+    /// Gives an item a new name. Crate-only: interfaces go through `rename::rename_item`, which
+    /// first refuses while a policy rule names the item (J-104).
+    pub(crate) fn rename(&self, from: &ItemName, to: &ItemName) -> Result<()> {
+        if from.is_draft() {
+            bail!("a draft is renamed by confirming it");
+        }
+        let to = ItemName::parse_new(to.as_str()).map_err(|e| anyhow!("{e}"))?;
+        let names: Vec<String> = self.list()?.into_iter().map(|i| i.name).collect();
+        if names.iter().any(|n| n == to.as_str()) {
+            bail!("an item named {} already exists", to.as_str());
+        }
+        if names
+            .iter()
+            .filter_map(|n| ItemName::parse(n).ok())
+            .any(|n| n.is_draft() && n.base() == *from)
+        {
+            bail!(
+                "drafts of {} wait to be confirmed or discarded; settle them first",
+                from.as_str()
+            );
+        }
+        let (mut row, fields) = self
+            .store
+            .item_get(from.as_str())?
+            .context("item not found")?;
+        let (kind, _, origins) = self.verified(&row)?;
+        row.name = to.as_str().to_owned();
+        row.updated_at = self.clock.now_rfc3339();
+        row.meta_mac = self.mac_for(&row, kind, &to, &origins);
+        self.store
+            .item_update(&self.guard(kind.domain()), &row, &fields)?;
+        self.note_change(&to, &format!("renamed from {}", from.as_str()));
+        Ok(())
+    }
+
     pub fn remove(&self, name: &ItemName) -> Result<bool> {
         let removed = self.store.item_delete(name.as_str())?;
         if removed {

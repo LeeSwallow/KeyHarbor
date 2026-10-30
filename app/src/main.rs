@@ -169,6 +169,11 @@ fn remove_item(ctx: State<'_, Ctx>, name: String) -> Reply<()> {
     commands::remove_item(&ctx, &name).map_err(message)
 }
 
+#[tauri::command]
+fn rename_item(ctx: State<'_, Ctx>, from: String, to: String) -> Reply<String> {
+    commands::rename_item(&ctx, &from, &to).map_err(message)
+}
+
 /// The data folder the CLI uses: `KEYHARBOR_HOME`, else the macOS application data folder.
 fn data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("KEYHARBOR_HOME") {
@@ -248,7 +253,8 @@ fn main() {
             kinds,
             add_item,
             edit_item,
-            remove_item
+            remove_item,
+            rename_item
         ])
         .run(tauri::generate_context!())
         .expect("KeyHarbor app failed to start");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asking, go, initial } from "../src/state.js";
+import { asking, edit, go, initial, select } from "../src/state.js";
 import { render } from "../src/view.js";
 
 /// Text between tags, so attribute values (data-*, class) do not count as shown words.
@@ -68,5 +68,22 @@ describe("icons", () => {
       expect(html, view).toMatch(new RegExp(`<h2><span class="kh-i i-${name}"[^>]*></span>`));
       expect(html).toContain('<img class="brand-icon" src="app-icon.svg" alt="">');
     }
+  });
+});
+
+describe("renaming an item", () => {
+  const github = {
+    name: "github", kind: "login", domain: "credentials", status: "active", source: "user", description: null,
+    fields: ["password"], placeholders: ["{{secret:github.password}}"], plain_values: {}, origins: [], tags: [],
+    expired: false, tampered: false,
+  };
+  const opened = select({ ...initial, view: "items" as const, items: [github] }, "github");
+
+  it("is offered on the item, and warns that its placeholders change", () => {
+    expect(render(opened)).toContain('data-action="rename-item" data-name="github"');
+    const html = render(edit(opened, { mode: "rename", name: "github" }));
+    expect(html).toContain('data-editor="rename" data-name="github"');
+    expect(html).toContain("{{secret:github.password}}");
+    expect(html).toContain("에이전트 설정에 옛 이름이 있으면 고쳐야 합니다");
   });
 });

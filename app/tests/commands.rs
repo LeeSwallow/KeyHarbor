@@ -453,3 +453,24 @@ fn the_secure_input_window_opens_only_for_a_pending_request() {
         "no longer pending"
     );
 }
+
+#[test]
+fn an_item_is_renamed_unless_a_rule_names_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    init_vault(tmp.path())
+        .add(login("github", ItemStatus::Active))
+        .unwrap();
+    commands::rename_item(&c, "github", "work/github").unwrap();
+    let names: Vec<String> = commands::items(&c)
+        .unwrap()
+        .into_iter()
+        .map(|i| i.name)
+        .collect();
+    assert_eq!(names, ["work/github"]);
+    commands::set_policy(&c, ("codex", "item", "work/github", "deny"), false).unwrap();
+    let err = commands::rename_item(&c, "work/github", "gh")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("policy rule(s) name this item"), "{err}");
+}

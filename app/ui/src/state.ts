@@ -29,7 +29,7 @@ export interface Palette { query: string }
 export interface Ask { question: string; retry: () => Promise<unknown>; title?: string }
 
 /// The item form open in the detail pane: a new item of a kind, or a change to one.
-export type Editor = { mode: "new"; kind: string } | { mode: "edit"; name: string };
+export type Editor = { mode: "new"; kind: string } | { mode: "edit"; name: string } | { mode: "rename"; name: string };
 
 export interface Revealed { item: string; field: string; value: string }
 

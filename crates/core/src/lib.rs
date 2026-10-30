@@ -11,6 +11,7 @@ mod chrome_csv;
 mod dotenv;
 pub mod grant;
 pub mod policy;
+pub mod rename;
 pub mod request;
 mod rotate;
 pub mod session;

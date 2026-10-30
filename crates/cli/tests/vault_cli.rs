@@ -406,3 +406,44 @@ fn a_chrome_export_is_imported_and_only_counts_are_printed() {
     );
     assert!(c.ok(&["vault", "list"], None).contains("chrome/github-com"));
 }
+
+#[test]
+fn an_item_is_moved_and_its_placeholder_change_is_named() {
+    let c = Cli::new();
+    c.ok(&["vault", "init"], None);
+    c.ok(
+        &[
+            "vault",
+            "add",
+            "github",
+            "--kind",
+            "login",
+            "--origin",
+            "https://github.com",
+            "--stdin",
+        ],
+        Some(r#"{"password":"pw"}"#),
+    );
+    let out = c.ok(&["vault", "mv", "github", "work/github"], None);
+    assert_eq!(
+        out,
+        "renamed\tgithub\twork/github\nplaceholders now read {{secret:work/github.<field>}}; update agents that quote the old name\n"
+    );
+    assert!(c.ok(&["vault", "list"], None).contains("work/github"));
+    c.ok(
+        &[
+            "policy",
+            "deny",
+            "--agent",
+            "codex",
+            "--resource",
+            "item",
+            "--target",
+            "work/github",
+        ],
+        None,
+    );
+    let refused = c.run(&["vault", "mv", "work/github", "gh"], None);
+    assert!(!refused.status.success());
+    assert!(text(&refused).contains("policy rule(s) name this item"));
+}

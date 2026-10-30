@@ -89,6 +89,8 @@ pub enum VaultCmd {
     },
     /// Remove an item
     Rm { name: String },
+    /// Rename or move an item (its placeholders change); refused while a policy rule names it
+    Mv { from: String, to: String },
     /// Swap fields back to their value before the last change (all that have one, or --field)
     Revert {
         name: String,
@@ -285,6 +287,15 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
             for field in vault.revert(&name, &fields)? {
                 println!("reverted\t{}\t{field}", name.as_str());
             }
+        }
+        VaultCmd::Mv { from, to } => {
+            let (from, to) = (item_name(&from)?, item_name(&to)?);
+            keyharbor_core::rename::rename_item(&*app.store()?, &app.vault()?, &from, &to)?;
+            println!("renamed\t{}\t{}", from.as_str(), to.as_str());
+            println!(
+                "placeholders now read {}; update agents that quote the old name",
+                keyharbor_domain::vault::placeholder(to.as_str(), "<field>")
+            );
         }
         VaultCmd::Rm { name } => {
             let name = item_name(&name)?;
