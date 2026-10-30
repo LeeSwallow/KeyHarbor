@@ -236,6 +236,16 @@ fn no_command_prints_plaintext() {
         &["vault", "import-env", "app", env_file.to_str().unwrap()],
         None,
     );
+    let chrome_file = c.path("chrome.csv");
+    std::fs::write(
+        &chrome_file,
+        format!("name,url,username,password,note\nshop,https://shop.example/,{s}-cuser,{s}-cpw,{s}-cnote\n"),
+    )
+    .unwrap();
+    run(
+        &["vault", "import-chrome", chrome_file.to_str().unwrap()],
+        None,
+    );
     run(
         &["vault", "edit", "github", "--stdin"],
         Some(&format!(r#"{{"password":"{s}-pw2"}}"#)),
@@ -280,7 +290,7 @@ fn no_command_prints_plaintext() {
         Some("pass phrase\n"),
     )));
     transcript.push_str(&text(&other.run(&["vault", "list"], None)));
-    assert!(transcript.contains("imported\t6"), "{transcript}");
+    assert!(transcript.contains("imported\t7"), "{transcript}");
     for v in variants(s) {
         assert!(!transcript.contains(&v), "leaked {v:?} in:\n{transcript}");
     }
@@ -370,4 +380,29 @@ fn keyharbor_home_still_overrides() {
     assert!(out.status.success(), "{}", text(&out));
     assert!(custom.join("keyharbor.sqlite3").exists());
     assert!(!tmp.path().join("Library").exists());
+}
+
+#[test]
+fn a_chrome_export_is_imported_and_only_counts_are_printed() {
+    let c = Cli::new();
+    c.ok(&["vault", "init"], None);
+    let csv = c.path("passwords.csv");
+    std::fs::write(
+        &csv,
+        "name,url,username,password,note\n\
+         github,https://github.com/login,amy,pw-1,\n\
+         app,android://x@com.example/,b,pw-2,\n",
+    )
+    .unwrap();
+    let out = c.ok(&["vault", "import-chrome", csv.to_str().unwrap()], None);
+    assert_eq!(
+        out,
+        "imported\t1 logins\tskipped 0 existing, 1 without a web address\n"
+    );
+    let again = c.ok(&["vault", "import-chrome", csv.to_str().unwrap()], None);
+    assert_eq!(
+        again,
+        "imported\t0 logins\tskipped 1 existing, 1 without a web address\n"
+    );
+    assert!(c.ok(&["vault", "list"], None).contains("chrome/github-com"));
 }
