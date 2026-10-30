@@ -102,6 +102,7 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
     }
     if (action === "new-item") set(edit(state, { mode: "new", kind: state.kinds[0]?.kind ?? "login" }));
     if (action === "edit-item" && name) set(edit(state, { mode: "edit", name }));
+    if (action === "rename-item" && name) set(edit(state, { mode: "rename", name }));
     if (action === "close-editor") set(edit(state, null));
     if (action === "remove-item" && name) {
       set(asking(state, {
@@ -188,6 +189,10 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
       const { values, origins } = editorValues(data);
       el.reset();
       void change((confirmed) => api.editItem(name, { values, origins }, confirmed)).then(() => set(edit(state, null)));
+    } else if (el.dataset.editor === "rename" && el.dataset.name) {
+      const from = el.dataset.name;
+      const to = String(data.get("to") ?? "").trim();
+      void guard(() => api.renameItem(from, to).then((name) => load().then(() => set(select(state, name)))));
     } else if (el.dataset.setting) {
       const key = el.dataset.setting;
       const value = String(data.get("value") ?? "");

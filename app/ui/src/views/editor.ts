@@ -42,10 +42,22 @@ function change(item: Item): string {
     <button type="submit" class="kh-btn primary">저장</button></div></form>`;
 }
 
+/// A new name or folder for an item. Its placeholders change, so the form shows them first;
+/// a policy rule that names the item makes the rename fail with that reason (J-104).
+function rename(item: Item): string {
+  const shown = item.placeholders.map((p) => `<code>${esc(p)}</code>`).join("<br>");
+  return `<form class="kh-dialog" data-editor="rename" data-name="${esc(item.name)}"><div class="body">
+    <h2>${esc(item.name)} 이름 바꾸기</h2>
+    <label class="kh-field"><span class="kh-label">새 이름</span><input class="kh-input" name="to" value="${esc(item.name)}" placeholder="work/github" ${quiet}></label>
+    <p class="kh-help error">이 placeholder가 새 이름으로 바뀝니다. 에이전트 설정에 옛 이름이 있으면 고쳐야 합니다.</p><p>${shown}</p>
+    </div><div class="foot"><button type="button" class="kh-btn ghost" data-action="close-editor">취소</button>
+    <button type="submit" class="kh-btn primary">이름 바꾸기</button></div></form>`;
+}
+
 export function editor(e: Editor, kinds: KindForm[], items: Item[]): string {
   if (e.mode === "new") return newItem(kinds, e.kind);
   const item = items.find((i) => i.name === e.name);
-  return item ? change(item) : "";
+  return item ? (e.mode === "rename" ? rename(item) : change(item)) : "";
 }
 
 /// Field values typed into an item form (`v:<field>` inputs, or KEY=VALUE lines), and the

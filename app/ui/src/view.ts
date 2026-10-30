@@ -182,6 +182,7 @@ function detail(s: State): string {
   const origins = item.origins.map(esc).join("<br>") || "—";
   const actions =
     btn("편집", `data-action="edit-item" data-name="${esc(item.name)}"`) +
+    btn("이름 바꾸기", `data-action="rename-item" data-name="${esc(item.name)}"`, "ghost") +
     btn("삭제", `data-action="remove-item" data-name="${esc(item.name)}"`, "danger");
   return `<header class="item-head">${glyph(item.kind)}<div class="main"><h2>${esc(item.name)}</h2><div class="kh-help">${esc(kindWord(item.kind))} · ${esc(sourceWord(item.source))}</div></div><div class="actions">${actions}</div></header>
     ${warn}${item.description ? `<p>${esc(item.description)}</p>` : ""}

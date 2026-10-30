@@ -148,3 +148,12 @@ pub fn remove_item(ctx: &Ctx, name: &str) -> Result<()> {
     }
     Ok(())
 }
+
+/// Renames or moves an item (its placeholders change; the window warns first). Refused while a
+/// policy rule names it (J-104).
+pub fn rename_item(ctx: &Ctx, from: &str, to: &str) -> Result<String> {
+    let from = ItemName::parse(from).map_err(invalid)?;
+    let to = ItemName::parse_new(to).map_err(invalid)?;
+    keyharbor_core::rename::rename_item(&*ctx.store()?, &ctx.vault()?, &from, &to)?;
+    Ok(to.as_str().to_owned())
+}
