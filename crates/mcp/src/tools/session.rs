@@ -1,10 +1,14 @@
 //! Session tools: list, create, open, stop, hand to the user and wait, raw CDP endpoint.
 
 use crate::server::{Server, fail, outcome};
+use keyharbor_core::grant;
 use keyharbor_core::session::{
-    self as lifecycle, OpenOptions, ResumeWait, SessionView, resume_check, wait_for_resume,
+    self as lifecycle, OpenOptions, ResumeWait, SessionView, poll, resume_check, wait_for_resume,
 };
-use keyharbor_domain::{RequestId, SessionName, State, vault::Description};
+use keyharbor_domain::{
+    RequestId, SessionName, State,
+    vault::{Description, Origin},
+};
 use keyharbor_guard::session::SessionOp;
 use rmcp::{
     handler::server::wrapper::Parameters, model::CallToolResult, schemars, tool, tool_router,
@@ -37,6 +41,14 @@ struct WaitAuth {
     id: String,
     /// Site origin the user should sign in to (no path), e.g. https://example.com. Not verified.
     origin: Option<String>,
+}
+#[derive(Deserialize, schemars::JsonSchema)]
+struct WaitSite {
+    id: String,
+    /// Only this site, e.g. https://github.com; any site when absent.
+    origin: Option<String>,
+    /// Maximum wait in seconds, 1 to 300; default 120.
+    timeout_seconds: Option<u64>,
 }
 #[derive(Deserialize, schemars::JsonSchema)]
 struct WaitForResume {
@@ -220,6 +232,44 @@ impl Server {
                 let check = || resume_check(&**inner.store()?, &*inner.runtime, id, request);
                 wait_for_resume(wait, check, std::thread::sleep)?;
                 Ok(json!({"id": id.to_string(), "state": State::Running.as_str(), "note": "the user resumed; sign-in success is not verified"}))
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        description = "Wait until the user hands a site over to this session from their own browser (the KeyHarbor extension), up to timeout_seconds (1–300, default 120). Ask the user first, e.g. \"open github.com in Chrome and send it to the work session\". Returns status received with the origin, or waiting if the time ran out (ask again or wait again). No cookie or value is returned."
+    )]
+    async fn session_wait_site(
+        &self,
+        Parameters(WaitSite {
+            id,
+            origin,
+            timeout_seconds,
+        }): Parameters<WaitSite>,
+    ) -> CallToolResult {
+        let id = match self.session(&id) {
+            Ok(id) => id,
+            Err(error) => return fail(error.to_string()),
+        };
+        let origin = match origin.map(|o| Origin::parse(&o)).transpose() {
+            Ok(origin) => origin,
+            Err(error) => return fail(error.to_string()),
+        };
+        let wait = match ResumeWait::seconds(timeout_seconds) {
+            Ok(wait) => wait,
+            Err(error) => return fail(error.to_string()),
+        };
+        outcome(
+            self.blocking(move |inner| {
+                inner.allow(SessionOp::WaitSite(id))?;
+                let since = inner.clock.unix_seconds();
+                // The store is held for one look at a time, not for the whole wait.
+                let check = || grant::handed_off(&**inner.store()?, id, since, origin.as_ref());
+                Ok(match poll(wait, check, std::thread::sleep)? {
+                    Some(grant) => json!({"id": id.to_string(), "status": "received", "origin": grant.origin.as_str()}),
+                    None => json!({"id": id.to_string(), "status": "waiting"}),
+                })
             })
             .await,
         )

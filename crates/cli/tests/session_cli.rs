@@ -384,3 +384,79 @@ fn endpoint_only_for_cdp_sessions() {
     env.ok(&["stop", &id]);
     env.fails(&["endpoint", &id]);
 }
+
+#[test]
+fn receive_waits_for_a_site_handed_over_and_ignores_grants_a_person_typed() {
+    use keyharbor_domain::{
+        SessionId,
+        grant::{Grant, GrantId},
+        ports::GrantStore,
+        vault::Origin,
+    };
+    let env = Env::new();
+    let id = env.create("work");
+    let session = SessionId::parse(&id).unwrap();
+    let grant = |created_by: &str, origin: &str| {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        keyharbor_sqlite::SqliteStore::open(&env.data)
+            .unwrap()
+            .grant_add(&Grant {
+                id: GrantId::from_bytes(rand_bytes(created_by, origin)),
+                session,
+                origin: Origin::parse(origin).unwrap(),
+                until: Some(now + 600),
+                created_by: created_by.into(),
+                reason: None,
+                created_at: now,
+                revoked_at: None,
+                cleared: false,
+            })
+            .unwrap();
+    };
+    let nothing = env.fails(&["receive", &id, "--timeout-seconds", "1"]);
+    assert!(nothing.contains("no site was handed over"), "{nothing}");
+
+    let waiting = env
+        .cmd()
+        .args([
+            "receive",
+            &id,
+            "--origin",
+            "https://github.com",
+            "--timeout-seconds",
+            "10",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    thread::sleep(Duration::from_millis(1500));
+    grant("cli", "https://github.com");
+    grant("handoff", "https://bank.example");
+    thread::sleep(Duration::from_millis(1500));
+    grant("handoff", "https://github.com");
+    let out = waiting.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        format!("{id}\treceived\thttps://github.com\n")
+    );
+}
+
+/// Distinct ids for the test's grants (the store wants them unique, not random).
+fn rand_bytes(a: &str, b: &str) -> [u8; 16] {
+    let mut out = [0u8; 16];
+    for (i, byte) in a.bytes().chain(b.bytes()).enumerate() {
+        out[i % 16] ^= byte.wrapping_add(i as u8);
+    }
+    out[6] = (out[6] & 0x0f) | 0x40;
+    out[8] = (out[8] & 0x3f) | 0x80;
+    out
+}

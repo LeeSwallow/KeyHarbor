@@ -93,6 +93,22 @@ pub fn add_for_handoff(
     Ok(grant)
 }
 
+/// The newest site handed over to session `id` at or after `since` (unix seconds), for `origin` if
+/// given: what `session receive` and `session_wait_site` wait for. Only handoff grants count; a
+/// grant a person typed in is not a site arriving.
+pub fn handed_off(
+    store: &dyn Store,
+    id: SessionId,
+    since: u64,
+    origin: Option<&Origin>,
+) -> Result<Option<Grant>> {
+    Ok(list(store, id)?
+        .into_iter()
+        .filter(|g| g.created_by == HANDOFF && g.created_at >= since && g.revoked_at.is_none())
+        .filter(|g| origin.is_none_or(|o| &g.origin == o))
+        .max_by_key(|g| g.created_at))
+}
+
 pub fn list(store: &dyn Store, id: SessionId) -> Result<Vec<Grant>> {
     session(store, id)?;
     store.grants_for(id)
@@ -175,6 +191,56 @@ mod tests {
             ttl: ttl.map(|t| GrantTtl::parse(t).unwrap()),
             reason: None,
         }
+    }
+
+    #[test]
+    fn a_site_handed_off_after_the_wait_began_is_found_once_per_origin_asked() {
+        let (_tmp, store, id) = setup();
+        let clock = ManualClock::at_unix_seconds(1_000);
+        let github = Origin::parse("https://github.com").unwrap();
+        let bank = Origin::parse("https://bank.example").unwrap();
+        add_for_handoff(&store, &clock, id, bank.clone(), 600).unwrap();
+        assert!(
+            handed_off(&store, id, 1_001, None).unwrap().is_none(),
+            "before the wait began"
+        );
+        clock.advance(Duration::from_secs(5));
+        add(
+            &store,
+            &clock,
+            &Says(Answer::Yes),
+            "cli",
+            NewGrant {
+                session: id,
+                origin: github.clone(),
+                ttl: None,
+                reason: None,
+            },
+        )
+        .unwrap();
+        assert!(
+            handed_off(&store, id, 1_001, None).unwrap().is_none(),
+            "a grant a person added is not a handoff"
+        );
+        add_for_handoff(&store, &clock, id, github.clone(), 600).unwrap();
+        assert_eq!(
+            handed_off(&store, id, 1_001, None)
+                .unwrap()
+                .map(|g| g.origin),
+            Some(github.clone())
+        );
+        assert_eq!(
+            handed_off(&store, id, 1_001, Some(&github))
+                .unwrap()
+                .map(|g| g.origin),
+            Some(github)
+        );
+        assert!(
+            handed_off(&store, id, 1_001, Some(&bank))
+                .unwrap()
+                .is_none(),
+            "bank was handed off before"
+        );
     }
 
     #[test]
