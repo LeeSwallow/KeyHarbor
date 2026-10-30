@@ -37,6 +37,27 @@ fn request_id(id: &str) -> Result<RequestId> {
     RequestId::parse(id).context("invalid request id")
 }
 
+/// Where the secure input window (09 §9.4.5) loads: the form for `id`, or for the oldest
+/// request when none is named; `None` when nothing waits. The id goes into the URL only as
+/// the parsed id of a request that is still pending.
+pub fn request_window_path(ctx: &Ctx, id: Option<&str>) -> Result<Option<String>> {
+    let store = ctx.store()?;
+    let id = match id {
+        Some(id) => {
+            let request = request::status(&*store, ctx.clock(), request_id(id)?)?;
+            if request.status != keyharbor_domain::request::VaultRequestStatus::Pending {
+                bail!("the request is no longer waiting");
+            }
+            request.id
+        }
+        None => match request::pending(&*store, ctx.clock())?.first() {
+            Some(request) => request.id,
+            None => return Ok(None),
+        },
+    };
+    Ok(Some(format!("index.html?request={id}")))
+}
+
 pub fn request_form(ctx: &Ctx, id: &str) -> Result<RequestForm> {
     let request = request::status(&*ctx.store()?, ctx.clock(), request_id(id)?)?;
     let spec = request.kind.spec();

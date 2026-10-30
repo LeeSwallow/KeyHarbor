@@ -57,6 +57,18 @@ fn discard_draft(ctx: State<'_, Ctx>, name: String) -> Reply<()> {
 }
 
 #[tauri::command]
+fn open_request_window(app: tauri::AppHandle, ctx: State<'_, Ctx>, id: String) -> Reply<()> {
+    let path = commands::request_window_path(&ctx, Some(&id)).map_err(message)?;
+    let path = path.ok_or_else(|| "the request is no longer waiting".to_owned())?;
+    shell::request_window::open(&app, path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn close_request_window(app: tauri::AppHandle) {
+    shell::request_window::close(&app);
+}
+
+#[tauri::command]
 fn request_form(ctx: State<'_, Ctx>, id: String) -> Reply<RequestForm> {
     commands::request_form(&ctx, &id).map_err(message)
 }
@@ -217,6 +229,8 @@ fn main() {
             confirm_draft,
             discard_draft,
             request_form,
+            open_request_window,
+            close_request_window,
             fulfill_request,
             fulfill_with_item,
             handoffs,

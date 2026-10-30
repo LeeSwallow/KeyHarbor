@@ -53,6 +53,7 @@ function inbox(s: State): string {
   const requests = s.inbox.requests.map(
     (r) => `<div class="kh-row"><div>${esc(r.agent)} → ${esc(r.kind)} <strong>${esc(r.name)}</strong>${r.origin ? ` · ${esc(r.origin)}` : ""}<br><small>${esc(r.reason)}</small></div>
       <button class="kh-btn" data-action="open-form" data-id="${esc(r.id)}">입력하기</button>
+      <button class="kh-btn" data-action="open-window" data-id="${esc(r.id)}">창으로 열기</button>
       <button class="kh-btn" data-action="decline" data-id="${esc(r.id)}">거절</button></div>`,
   );
   const drafts = s.inbox.drafts.map(
@@ -135,6 +136,10 @@ function audit(s: State): string {
 
 export function render(s: State): string {
   const error = s.error ? `<div class="kh-toast" role="alert">${esc(s.error)}</div>` : "";
+  if (s.alone) {
+    const body = s.form ? form(s.form) : `<div class="kh-empty">이 요청은 이미 끝났습니다</div>`;
+    return `<section class="detail alone">${error}${body}</section>`;
+  }
   const [list, main] =
     s.view === "items"
       ? [itemList(s), detail(s)]

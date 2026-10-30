@@ -44,6 +44,8 @@ export interface State {
   editor: Editor | null;
   ask: Ask | null;
   palette: Palette | null;
+  /// The secure input window (09 §9.4.5): only the form for one request, nothing else.
+  alone: boolean;
   selected: string | null;
   revealed: Revealed | null;
   error: string | null;
@@ -64,6 +66,7 @@ export const initial: State = {
   editor: null,
   ask: null,
   palette: null,
+  alone: false,
   selected: null,
   revealed: null,
   error: null,
@@ -72,6 +75,7 @@ export const initial: State = {
 export const go = (s: State, view: View): State =>
   ({ ...s, view, selected: null, revealed: null, form: null, ask: null, editor: null, error: null });
 export const openForm = (s: State, form: RequestForm): State => ({ ...s, view: "inbox", form, revealed: null });
+export const alone = (s: State, form: RequestForm | null): State => ({ ...s, alone: true, form });
 export const closeForm = (s: State): State => ({ ...s, form: null });
 export const asking = (s: State, ask: Ask | null): State => ({ ...s, ask });
 export const select = (s: State, name: string): State => ({ ...s, selected: name, revealed: null, editor: null });

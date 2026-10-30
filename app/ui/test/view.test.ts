@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "../src/api.js";
-import { asking, closeForm, edit, go, hide, initial, openForm, select, show } from "../src/state.js";
+import { alone, asking, closeForm, edit, go, hide, initial, openForm, select, show } from "../src/state.js";
 import { editorValues } from "../src/views/editor.js";
 import { formValues } from "../src/views/form.js";
 import { esc, render } from "../src/view.js";
@@ -64,6 +64,19 @@ describe("the secure input form", () => {
     id: "r1", agent: "codex", kind: "card", name: "visa", origin: "https://shop.example", reason: "checkout",
     fields: [{ name: "number", secret: true }, { name: "holder", secret: false }], free_fields: false,
   };
+
+  it("in its own window shows only the form, and says so when the request is gone", () => {
+    const html = render(alone(initial, form));
+    expect(html).toContain("codex");
+    expect(html).not.toContain('aria-label="KeyHarbor"');
+    expect(html).toContain("detail alone");
+    expect(render(alone(initial, null))).toContain("이 요청은 이미 끝났습니다");
+  });
+
+  it("can be opened in its own window from the inbox", () => {
+    const waiting = { ...initial, view: "inbox" as const, inbox: { requests: [{ id: "r1", agent: "codex", kind: "card", name: "visa", origin: null, reason: "checkout" }], drafts: [] } };
+    expect(render(waiting)).toContain('data-action="open-window" data-id="r1"');
+  });
 
   it("hides secret fields and turns off remembering and completion", () => {
     const html = render(openForm(initial, form));

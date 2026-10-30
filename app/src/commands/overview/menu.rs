@@ -10,6 +10,8 @@ pub struct MenuText {
     pub waiting: String,
     /// Beside the icon; `None` when nothing waits.
     pub badge: Option<String>,
+    /// The item that opens the secure input window; `None` when no request waits.
+    pub answer: Option<String>,
 }
 
 pub fn menu_text(o: &OverviewDto) -> MenuText {
@@ -24,6 +26,8 @@ pub fn menu_text(o: &OverviewDto) -> MenuText {
         },
         waiting: format!("확인 대기 {waiting}"),
         badge: (waiting > 0).then(|| waiting.to_string()),
+        answer: (o.requests_pending > 0)
+            .then(|| format!("정보 요청에 답하기 ({})", o.requests_pending)),
     }
 }
 
@@ -47,6 +51,12 @@ mod tests {
         assert_eq!(
             (busy.waiting.as_str(), busy.badge.as_deref()),
             ("확인 대기 3", Some("3"))
+        );
+        assert_eq!(busy.answer.as_deref(), Some("정보 요청에 답하기 (1)"));
+        assert_eq!(
+            menu_text(&overview(0, 0, 2)).answer,
+            None,
+            "drafts are not requests"
         );
         let idle = menu_text(&overview(0, 0, 0));
         assert_eq!(

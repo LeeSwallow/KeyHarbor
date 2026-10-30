@@ -20,6 +20,7 @@ pub const REFRESH: Duration = Duration::from_secs(10);
 
 const OPEN: &str = "open";
 const QUIT: &str = "quit";
+const ANSWER: &str = "answer";
 
 fn menu(app: &AppHandle, text: &MenuText) -> tauri::Result<Menu<tauri::Wry>> {
     let status = MenuItem::with_id(app, "status", &text.status, false, None::<&str>)?;
@@ -28,7 +29,14 @@ fn menu(app: &AppHandle, text: &MenuText) -> tauri::Result<Menu<tauri::Wry>> {
     let quit = MenuItem::with_id(app, QUIT, "종료", true, Some("CmdOrCtrl+Q"))?;
     let line = PredefinedMenuItem::separator(app)?;
     let line2 = PredefinedMenuItem::separator(app)?;
-    Menu::with_items(app, &[&status, &waiting, &line, &open, &line2, &quit])
+    let menu = Menu::with_items(app, &[&status, &waiting, &line, &open, &line2, &quit])?;
+    if let Some(answer) = &text.answer {
+        menu.insert(
+            &MenuItem::with_id(app, ANSWER, answer, true, None::<&str>)?,
+            2,
+        )?;
+    }
+    Ok(menu)
 }
 
 fn current(app: &AppHandle) -> Option<MenuText> {
@@ -51,6 +59,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         status: "KeyHarbor".into(),
         waiting: String::new(),
         badge: None,
+        answer: None,
     });
     let icon = Image::from_bytes(include_bytes!("../../icons/menubar.png"))?;
     let tray = TrayIconBuilder::with_id("keyharbor")
@@ -60,6 +69,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .menu(&menu(app, &text)?)
         .on_menu_event(|app, event| match event.id().as_ref() {
             OPEN => show_window(app),
+            ANSWER => answer(app),
             QUIT => app.exit(0),
             _ => {}
         })
@@ -101,5 +111,13 @@ fn notify(app: &AppHandle, seen: &mut Seen) {
         let _ = mac_notification_sys::send_notification(&notice.title, None, &notice.body, None);
         #[cfg(not(target_os = "macos"))]
         let _ = notice;
+    }
+}
+
+/// Opens the secure input window on the oldest waiting request.
+fn answer(app: &AppHandle) {
+    let ctx = app.state::<Ctx>();
+    if let Ok(Some(path)) = commands::request_window_path(&ctx, None) {
+        let _ = super::request_window::open(app, path);
     }
 }

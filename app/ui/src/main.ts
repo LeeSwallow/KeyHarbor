@@ -5,7 +5,7 @@
 
 import { type Api, type Outcome, tauriApi } from "./api.js";
 import {
-  type State, type View, asking, closeForm, closePalette, edit, fail, go, hide, initial, openForm, openPalette,
+  type State, type View, alone, asking, closeForm, closePalette, edit, fail, go, hide, initial, openForm, openPalette,
   query, select, show,
 } from "./state.js";
 import { render } from "./view.js";
@@ -15,7 +15,8 @@ import { type Run, paletteCommands } from "./views/palette.js";
 
 const HIDE_AFTER_MS = 30_000;
 
-export function mount(root: HTMLElement, api: Api): { state: () => State } {
+/// `request` set: this is the secure input window (09 §9.4.5) for that request, showing its form only.
+export function mount(root: HTMLElement, api: Api, request: string | null = null): { state: () => State } {
   let state = initial;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
   const set = (next: State) => {
@@ -50,6 +51,8 @@ export function mount(root: HTMLElement, api: Api): { state: () => State } {
       ]);
       set({ ...state, overview, inbox, sessions, items, audit, handoffs, settings, policies, kinds });
     });
+  /// After a request is answered: the secure input window closes, the main window reloads.
+  const answered = () => (state.alone ? api.closeRequestWindow() : (set(closeForm(state)), load()));
   /// Sends a change; if it needs a person, asks first and resends it confirmed on "확인".
   const change = (send: (confirmed: boolean) => Promise<Outcome>) =>
     guard(async () => {
@@ -86,7 +89,8 @@ export function mount(root: HTMLElement, api: Api): { state: () => State } {
       void guard(() => api.recoverSession(id, box?.checked ?? false).then(load));
     }
     if (action === "open-form" && id) void guard(async () => set(openForm(state, await api.requestForm(id))));
-    if (action === "decline" && id) void guard(() => api.declineRequest(id).then(() => set(closeForm(state))).then(load));
+    if (action === "decline" && id) void guard(() => api.declineRequest(id).then(answered));
+    if (action === "open-window" && id) void guard(() => api.openRequestWindow(id));
     if (action === "resume" && session && id) void guard(() => api.resumeHandoff(session, id).then(load));
     if (action === "confirm" && name) void guard(() => api.confirmDraft(name).then(load));
     if (action === "discard" && name) void guard(() => api.discardDraft(name).then(load));
@@ -152,7 +156,7 @@ export function mount(root: HTMLElement, api: Api): { state: () => State } {
       const id = el.dataset.form;
       const values = formValues(data);
       el.reset();
-      void guard(() => api.fulfillRequest(id, values).then(() => set(closeForm(state))).then(load));
+      void guard(() => api.fulfillRequest(id, values).then(answered));
     } else if (el.dataset.editor === "new") {
       const { values, origins } = editorValues(data);
       const item = {
@@ -181,7 +185,11 @@ export function mount(root: HTMLElement, api: Api): { state: () => State } {
     }
   });
   set(state);
-  void load();
+  if (request) {
+    void api.requestForm(request).then((f) => set(alone(state, f)), () => set(alone(state, null)));
+  } else {
+    void load();
+  }
   return { state: () => state };
 }
 
@@ -192,4 +200,6 @@ declare global {
 }
 
 const root = typeof document !== "undefined" ? document.getElementById("app") : null;
-if (root && window.__TAURI__) mount(root, tauriApi(window.__TAURI__.core.invoke));
+if (root && window.__TAURI__) {
+  mount(root, tauriApi(window.__TAURI__.core.invoke), new URLSearchParams(location.search).get("request"));
+}

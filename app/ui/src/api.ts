@@ -56,6 +56,8 @@ export interface Api {
   addItem(form: NewItemForm): Promise<string>;
   editItem(name: string, form: ChangeForm, confirmed: boolean): Promise<Outcome>;
   removeItem(name: string): Promise<void>;
+  openRequestWindow(id: string): Promise<void>;
+  closeRequestWindow(): Promise<void>;
 }
 
 type Invoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -90,5 +92,7 @@ export function tauriApi(invoke: Invoke): Api {
     addItem: (form) => call("add_item", { form }),
     editItem: (name, form, confirmed) => call("edit_item", { name, form, confirmed }),
     removeItem: (name) => call("remove_item", { name }),
+    openRequestWindow: (id) => call("open_request_window", { id }),
+    closeRequestWindow: () => call("close_request_window"),
   };
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core events only. The app's own commands are its whole surface; there is no shell, file or network permission.",
-  "windows": ["main"],
+  "description": "The main window and the secure input window: core events only. The app's own commands are its whole surface; there is no shell, file or network permission.",
+  "windows": ["main", "request"],
   "permissions": ["core:default"]
 }
