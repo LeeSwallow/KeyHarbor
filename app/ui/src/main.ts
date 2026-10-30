@@ -112,6 +112,10 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
       const picked = matches()[Number(index)];
       if (picked) run(picked.run);
     }
+    const { key, value } = button.dataset;
+    if (action === "set-setting" && key && value !== undefined) {
+      void change((confirmed) => api.setSetting(key, value, confirmed));
+    }
     if (action === "ask-cancel") set(asking(state, null));
     if (action === "ask-confirm" && state.ask) {
       const { retry } = state.ask;

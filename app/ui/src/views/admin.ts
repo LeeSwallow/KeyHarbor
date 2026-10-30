@@ -1,21 +1,9 @@
-// Settings and policies (09 §9.4.4, §9.4.7), and the dialog that asks the person before a
+// Policies (09 §9.4.4), and the dialog that asks the person before a
 // change that weakens a protection.
 
-import type { Rule, Setting } from "../api.js";
+import type { Rule } from "../api.js";
 import type { Ask } from "../state.js";
 import { esc } from "../html.js";
-
-export function settings(list: Setting[]): string {
-  const rows = list
-    .map(
-      (s) => `<form class="kh-row" data-setting="${esc(s.key)}">
-        <span class="main"><strong>${esc(s.key)}</strong> <small>기본 ${esc(s.default)}</small></span>
-        <input class="kh-input" name="value" value="${esc(s.value)}" autocomplete="off" spellcheck="false">
-        <button class="kh-btn" type="submit">저장</button></form>`,
-    )
-    .join("");
-  return `<h2>설정</h2>${rows}<p class="kh-help">인증 방식: 없음 (macOS 인증 · 마스터 비밀번호 · 2FA는 준비 중)</p>`;
-}
 
 export function policies(rules: Rule[]): string {
   const rows = rules
