@@ -1,6 +1,6 @@
 {
   "name": "keyharbor-app-ui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "The KeyHarbor admin app's window: plain TypeScript over the design system (09, J-89).",
   "license": "MIT OR Apache-2.0",

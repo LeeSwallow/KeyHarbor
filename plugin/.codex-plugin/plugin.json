@@ -1,6 +1,6 @@
 {
   "name": "keyharbor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sign in to websites, create accounts and run commands that need API keys, with secrets kept in the user's local KeyHarbor vault.",
   "author": {
     "name": "LeeSwallow",
