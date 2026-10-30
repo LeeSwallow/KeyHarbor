@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-30
+
+### Added
+
+- 관리 앱: 항상 위에 뜨고 화면 캡처에서 빠지는 보안 입력 창, 항목 검색·필터(⌘F), 이름 바꾸기·옮기기, 삭제 실행 취소(10초), 명령 팔레트(⌘K), macOS 알림(종류마다 끌 수 있음), 클립보드 지우는 시간 설정.
+- `keyharbor vault import-chrome`: Chrome 비밀번호 내보내기(CSV)를 사이트에 묶인 login 항목으로 가져온다.
+- `keyharbor vault mv`: 항목 이름 바꾸기·옮기기(그 항목을 가리키는 정책 규칙이 있으면 거절).
+
+### Changed
+
+- 관리 앱의 모든 화면을 디자인 시스템 부품으로 다시 그렸다: 저장 값 대신 사람의 말, 버튼 변형, 탭·제목·팔레트의 아이콘, 스위치와 선택지로 된 설정.
+- 항목 삭제는 확인 창 대신 10초 동안 실행 취소할 수 있다.
+
+### Fixed
+
+- `keyharbor --help` 첫 줄이 브라우저 세션만 말하던 것.
+- 확인 대화상자가 창 전체를 덮지 않고 칸 하나에 끼어 그려지던 것.
+- 홈의 확인 대기 수가 옆 메뉴 배지와 다르던 것.
+
 ## [0.1.0] - 2026-10-30
 
 첫 릴리스. macOS 전용이고, 서명·공증하지 않았다.
@@ -29,6 +48,7 @@
 - 보호를 약하게 하는 변경(정책 allow, 기록 끄기, 포착, origin 추가, 클립보드 시간 늘리기 등)은 사람이 확인한다.
 - 관리 앱은 네트워크 listener를 열지 않고, 창의 capability는 `core:default`뿐이다.
 
-[Unreleased]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/LeeSwallow/KeyHarbor/releases/tag/v0.1.0
 

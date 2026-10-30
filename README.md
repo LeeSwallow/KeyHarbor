@@ -6,7 +6,7 @@
 
 KeyHarbor는 Claude Code·Codex 같은 AI 에이전트가 권한 정책 안에서 중단 없이 일하도록, 비밀번호·카드·개인정보·`.env` 변수와 브라우저 세션을 **내 컴퓨터 안에서만** 관리하는 무료 오픈소스 도구입니다. 외부 금고나 클라우드 계정이 필요 없습니다.
 
-> **상태: 첫 릴리스 v0.1.0 (macOS).** 들어 있는 것은 로컬 암호화 금고 CLI, 브라우저 세션·조작 MCP 도구, 에이전트가 값을 보지 않고 `{{secret:항목.필드}}`로 입력하는 치환·응답 마스킹·권한 정책·사용 기록, `.env` 변수를 자식 프로세스에만 넣는 `keyharbor run`입니다(macOS). Claude Code·Codex 플러그인([docs/plugin.md](docs/plugin.md))과 관리 앱(메뉴 막대 앱, 보안 입력 폼, 알림)도 있습니다. 남은 일은 [로드맵](ROADMAP.md)에 있습니다.
+> **상태: v0.1.1 (macOS).** 들어 있는 것은 로컬 암호화 금고 CLI, 브라우저 세션·조작 MCP 도구, 에이전트가 값을 보지 않고 `{{secret:항목.필드}}`로 입력하는 치환·응답 마스킹·권한 정책·사용 기록, `.env` 변수를 자식 프로세스에만 넣는 `keyharbor run`입니다(macOS). Claude Code·Codex 플러그인([docs/plugin.md](docs/plugin.md))과 관리 앱(메뉴 막대 앱, 보안 입력 폼, 알림)도 있습니다. 남은 일은 [로드맵](ROADMAP.md)에 있습니다.
 
 ## 설치
 

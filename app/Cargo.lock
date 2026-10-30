@@ -2457,7 +2457,7 @@ dependencies = [
 
 [[package]]
 name = "keyharbor-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "keyharbor-core",
@@ -2479,7 +2479,7 @@ dependencies = [
 
 [[package]]
 name = "keyharbor-broker"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -2493,7 +2493,7 @@ dependencies = [
 
 [[package]]
 name = "keyharbor-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "keyharbor-crypto",
@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "keyharbor-crypto"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "age",
  "anyhow",
@@ -2523,7 +2523,7 @@ dependencies = [
 
 [[package]]
 name = "keyharbor-domain"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -2534,7 +2534,7 @@ dependencies = [
 
 [[package]]
 name = "keyharbor-guard"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2546,7 +2546,7 @@ dependencies = [
 
 [[package]]
 name = "keyharbor-keystore"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "keyharbor-domain",
  "security-framework",
@@ -2555,7 +2555,7 @@ dependencies = [
 
 [[package]]
 name = "keyharbor-sqlite"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "diesel",
@@ -2567,7 +2567,7 @@ dependencies = [
 
 [[package]]
 name = "keyharbor-supervisor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "keyharbor-broker",
@@ -2582,7 +2582,7 @@ dependencies = [
 
 [[package]]
 name = "keyharbor-vault"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "keyharbor-crypto",
  "keyharbor-domain",
