@@ -6,7 +6,7 @@
 import { type Api, type Outcome, tauriApi } from "./api.js";
 import {
   type State, type View, alone, asking, closeForm, closePalette, edit, fail, go, hide, initial, openForm, openPalette,
-  query, select, show,
+  query, search, select, show,
 } from "./state.js";
 import { render } from "./view.js";
 import { editorValues } from "./views/editor.js";
@@ -19,11 +19,13 @@ const HIDE_AFTER_MS = 30_000;
 export function mount(root: HTMLElement, api: Api, request: string | null = null): { state: () => State } {
   let state = initial;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  /// Whether the person is typing in the item search, so a re-render gives it focus back.
+  let typing = false;
   const set = (next: State) => {
     state = next;
     root.innerHTML = render(state);
-    // Re-rendering replaces the palette input; keep typing where it was.
-    const input = root.querySelector<HTMLInputElement>("[data-palette]");
+    // Re-rendering replaces the palette and search inputs; keep typing where it was.
+    const input = root.querySelector<HTMLInputElement>("[data-palette]") ?? (typing ? root.querySelector<HTMLInputElement>("[data-search]") : null);
     if (input) {
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
@@ -65,6 +67,7 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
     });
 
   root.addEventListener("click", (event) => {
+    typing = false;
     const button = (event.target as HTMLElement).closest<HTMLElement>("[data-action]");
     if (!button) return;
     const { action, view, name, field, id, session, agent, resource, target } = button.dataset;
@@ -116,6 +119,8 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
     if (action === "set-setting" && key && value !== undefined) {
       void change((confirmed) => api.setSetting(key, value, confirmed));
     }
+    if (action === "filter-kind") set(search(state, { kind: button.dataset.kind || null }));
+    if (action === "filter-drafts") set(search(state, { drafts: !state.filter.drafts }));
     if (action === "ask-cancel") set(asking(state, null));
     if (action === "ask-confirm" && state.ask) {
       const { retry } = state.ask;
@@ -127,6 +132,10 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
   root.addEventListener("input", (event) => {
     const input = event.target as HTMLInputElement;
     if (input.dataset.palette !== undefined) set(query(state, input.value));
+    if (input.dataset.search !== undefined) {
+      typing = true;
+      set(search(state, { text: input.value }));
+    }
   });
 
   // 09 U6: ⌘K opens and closes the palette, ⌘N starts a new item, Esc closes what is open.
@@ -135,6 +144,11 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
     if (command && event.key === "k") {
       event.preventDefault();
       set(state.palette ? closePalette(state) : openPalette(state));
+    } else if (command && event.key === "f") {
+      event.preventDefault();
+      if (state.view !== "items") set(go(state, "items"));
+      typing = true;
+      root.querySelector<HTMLInputElement>("[data-search]")?.focus();
     } else if (command && event.key === "n") {
       event.preventDefault();
       run({ kind: "new-item" });

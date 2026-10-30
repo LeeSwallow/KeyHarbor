@@ -69,3 +69,8 @@ html, body { margin: 0; height: 100%; }
 .kh-shell .screen-head h2 { display: flex; align-items: center; gap: var(--space-2); }
 .kh-shell .screen-head h2 .kh-i { color: var(--c-accent); }
 .kh-shell .kh-dialog button.kh-row { gap: var(--space-2); }
+/* Item search (09 §9.4): the box, then chips; a chosen chip through the chip's own hooks. */
+.kh-shell .search { display: grid; gap: var(--space-2); padding: 0 var(--space-1) var(--space-2); }
+.kh-shell .search .chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.kh-shell button.kh-chip { cursor: pointer; }
+.kh-shell .kh-chip.is-on { --chip-bg: var(--c-accent-wash); --chip-fg: var(--c-accent-strong); --chip-border: var(--c-accent); }
