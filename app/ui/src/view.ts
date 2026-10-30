@@ -20,7 +20,7 @@ const NAV = SCREENS;
 function count(s: State, view: View): number {
   if (view === "inbox") return s.inbox.requests.length + s.inbox.drafts.length + s.handoffs.length;
   if (view === "sessions") return s.sessions.length;
-  if (view === "items") return s.items.length;
+  if (view === "items") return s.items.filter((i) => i.name !== s.removing).length;
   return 0;
 }
 
@@ -142,7 +142,7 @@ function searchBar(s: State): string {
 
 function itemList(s: State): string {
   const add = `<div class="list-head">${heading("items")}${btn("새 항목", `data-action="new-item"`, "primary")}</div>`;
-  const rows = filterItems(s.items, s.filter)
+  const rows = filterItems(s.items.filter((i) => i.name !== s.removing), s.filter)
     .map((i) => {
       const marks = [
         i.status === "draft" ? badge("draft", "draft") : "",
@@ -195,6 +195,9 @@ function audit(s: State): string {
 
 export function render(s: State): string {
   const error = s.error ? `<div class="kh-toast" role="alert">${esc(s.error)}</div>` : "";
+  const undo = s.removing
+    ? `<div class="kh-toast undo" role="status"><span class="msg">${esc(s.removing)}을(를) 지웠습니다</span><button type="button" class="act" data-action="undo-remove">실행 취소</button></div>`
+    : "";
   if (s.alone) {
     const body = s.form ? form(s.form) : `<div class="kh-empty">이 요청은 이미 끝났습니다</div>`;
     return `<section class="detail alone">${error}${body}</section>`;
@@ -207,5 +210,5 @@ export function render(s: State): string {
           policies: (x: State) => policies(x.policies),
           settings: (x: State) => settings(x.settings),
         }[s.view](s)];
-  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${main}</section>${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
+  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${main}</section>${undo}${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
 }

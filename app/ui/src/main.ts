@@ -6,7 +6,7 @@
 import { type Api, type Outcome, tauriApi } from "./api.js";
 import {
   type State, type View, alone, asking, closeForm, closePalette, edit, fail, go, hide, initial, openForm, openPalette,
-  query, search, select, show,
+  query, removing, search, select, show, undoRemove,
 } from "./state.js";
 import { render } from "./view.js";
 import { editorValues } from "./views/editor.js";
@@ -14,11 +14,15 @@ import { formValues } from "./views/form.js";
 import { type Run, paletteCommands } from "./views/palette.js";
 
 const HIDE_AFTER_MS = 30_000;
+/// How long a removed item can be brought back (09 §9.4 "실행 취소 10초"). Quitting before it
+/// runs out keeps the item: the safe way to fail.
+const UNDO_MS = 10_000;
 
 /// `request` set: this is the secure input window (09 §9.4.5) for that request, showing its form only.
 export function mount(root: HTMLElement, api: Api, request: string | null = null): { state: () => State } {
   let state = initial;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  let removeTimer: ReturnType<typeof setTimeout> | undefined;
   /// Whether the person is typing in the item search, so a re-render gives it focus back.
   let typing = false;
   const set = (next: State) => {
@@ -53,6 +57,14 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
       ]);
       set({ ...state, overview, inbox, sessions, items, audit, handoffs, settings, policies, kinds });
     });
+  /// Deletes the item waiting in `state.removing`, if any.
+  const commitRemoval = () => {
+    clearTimeout(removeTimer);
+    const name = state.removing;
+    if (!name) return;
+    set(undoRemove(state));
+    void guard(() => api.removeItem(name).then(load));
+  };
   /// After a request is answered: the secure input window closes, the main window reloads.
   const answered = () => (state.alone ? api.closeRequestWindow() : (set(closeForm(state)), load()));
   /// Sends a change; if it needs a person, asks first and resends it confirmed on "확인".
@@ -105,11 +117,14 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
     if (action === "rename-item" && name) set(edit(state, { mode: "rename", name }));
     if (action === "close-editor") set(edit(state, null));
     if (action === "remove-item" && name) {
-      set(asking(state, {
-        title: "항목을 지웁니다",
-        question: `${name}을(를) 지웁니다. 되돌릴 수 없습니다.`,
-        retry: () => api.removeItem(name).then(() => set(go(state, "items"))).then(load),
-      }));
+      // Another removal still waiting is carried out now; this one waits its own time.
+      commitRemoval();
+      set(removing(state, name));
+      removeTimer = setTimeout(commitRemoval, UNDO_MS);
+    }
+    if (action === "undo-remove") {
+      clearTimeout(removeTimer);
+      set(undoRemove(state));
     }
     const { index } = button.dataset;
     if (action === "run" && index !== undefined) {

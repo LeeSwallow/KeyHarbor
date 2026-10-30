@@ -74,3 +74,5 @@ html, body { margin: 0; height: 100%; }
 .kh-shell .search .chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .kh-shell button.kh-chip { cursor: pointer; }
 .kh-shell .kh-chip.is-on { --chip-bg: var(--c-accent-wash); --chip-fg: var(--c-accent-strong); --chip-border: var(--c-accent); }
+/* The undo notice sits at the bottom of the window while a removal can be taken back. */
+.kh-shell > .kh-toast.undo { position: fixed; left: 50%; bottom: var(--space-5); transform: translateX(-50%); z-index: 5; }
