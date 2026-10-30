@@ -21,6 +21,15 @@ const KO = {
   done: "넘겼습니다",
   doneDetail: "쿠키 {n}개 → {session}",
   unsupportedTitle: "이 페이지는 넘길 수 없습니다",
+  loginsTitle: "이 사이트의 로그인",
+  loginsEmpty: "이 사이트에 저장된 로그인이 없습니다.",
+  fill: "채우기",
+  filled: "채웠습니다",
+  fillNote: "채울 때마다 Touch ID로 확인합니다.",
+  save: "이 로그인 저장",
+  saved: "저장했습니다",
+  savedDetail: "{item} — KeyHarbor 앱에서 확정하세요",
+  known: "이미 저장된 로그인입니다",
   unsupportedBody: "http·https 사이트에서만 쓸 수 있습니다.",
 } as const;
 
@@ -41,6 +50,15 @@ const EN: Record<MessageKey, string> = {
   done: "Handed off",
   doneDetail: "{n} cookies → {session}",
   unsupportedTitle: "This page can't be handed off",
+  loginsTitle: "Logins for this site",
+  loginsEmpty: "No saved login for this site.",
+  fill: "Fill",
+  filled: "Filled",
+  fillNote: "Each fill is confirmed with Touch ID.",
+  save: "Save this login",
+  saved: "Saved",
+  savedDetail: "{item} — confirm it in the KeyHarbor app",
+  known: "This login is already saved",
   unsupportedBody: "Only http and https sites can be.",
 };
 
@@ -58,6 +76,9 @@ export const ERRORS: Record<Lang, Record<ErrorCode, string>> = {
     bad_reply: "KeyHarbor의 응답을 읽지 못했습니다.",
     storage_unavailable: "이 페이지의 localStorage를 읽지 못했습니다.",
     bad_command: "요청을 처리하지 못했습니다.",
+    not_confirmed: "Touch ID로 확인하지 않아 채우지 않았습니다.",
+    no_login_form: "이 페이지에서 비밀번호 칸을 찾지 못했습니다.",
+    page_changed: "그사이 페이지가 다른 사이트로 바뀌어 채우지 않았습니다.",
   },
   en: {
     unsupported_page: "This page can't be handed off.",
@@ -70,6 +91,9 @@ export const ERRORS: Record<Lang, Record<ErrorCode, string>> = {
     bad_reply: "KeyHarbor's answer could not be read.",
     storage_unavailable: "This page's localStorage could not be read.",
     bad_command: "The request could not be handled.",
+    not_confirmed: "Not confirmed with Touch ID, so nothing was filled.",
+    no_login_form: "No password field was found on this page.",
+    page_changed: "The page moved to another site meanwhile, so nothing was filled.",
   },
 };
 

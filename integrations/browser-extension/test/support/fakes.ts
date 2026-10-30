@@ -4,7 +4,11 @@
 import type { SiteCookie } from "../../src/domain/cookie.js";
 import { nativeHostOver } from "../../src/adapters/wire/native-host.js";
 import type { HostRequestWire } from "../../src/adapters/wire/protocol.js";
+import type { LoginValues } from "../../src/domain/login.js";
 import type { Ports, Tab } from "../../src/ports/index.js";
+
+/** A password no test output may ever contain. */
+export const PASSWORD = "pw-9f2c-never-logged";
 
 /** A cookie value no test output may ever contain. */
 export const SECRET = "s3cr3t-cookie-value-9f2c";
@@ -24,14 +28,35 @@ export const cookie = (over: Partial<SiteCookie> = {}): SiteCookie => ({
 });
 
 export interface FakePorts extends Ports {
-  sent: HostRequestWire[];
+  // Loosely typed so a test reads any request's fields.
+  sent: Array<HostRequestWire & Record<string, any>>;
+  /** What the page received from `fill`. */
+  filled: LoginValues[];
 }
 
-export function fakePorts(opts: { tab?: Tab | null; cookies?: SiteCookie[] | "throws"; storage?: Record<string, string> | "throws"; reply?: unknown | "throws" } = {}): FakePorts {
-  const sent: HostRequestWire[] = [];
+export function fakePorts(
+  opts: {
+    tab?: Tab | null;
+    cookies?: SiteCookie[] | "throws";
+    storage?: Record<string, string> | "throws";
+    reply?: unknown | "throws";
+    page?: { fill?: "filled" | "no_form" | "moved"; read?: LoginValues | null };
+  } = {},
+): FakePorts {
+  const sent: FakePorts["sent"] = [];
+  const filled: LoginValues[] = [];
   const tab = opts.tab === undefined ? { id: 7, url: "https://github.com/settings" } : opts.tab;
   return {
     sent,
+    filled,
+    page: {
+      fill: async (_tab, _origin, login) => {
+        const answer = opts.page?.fill ?? "filled";
+        if (answer === "filled") filled.push(login);
+        return answer;
+      },
+      read: async () => (opts.page && "read" in opts.page ? (opts.page.read ?? null) : { username: "amy", password: PASSWORD }),
+    },
     tabs: { active: async () => tab, find: async (id) => (tab && tab.id === id ? tab : null) },
     cookies: {
       readSiteCookies: async () => {
@@ -48,7 +73,17 @@ export function fakePorts(opts: { tab?: Tab | null; cookies?: SiteCookie[] | "th
     host: nativeHostOver(async (request) => {
       sent.push(request);
       if (opts.reply === "throws") throw new Error(`host gone ${SECRET}`);
-      return opts.reply ?? { v: 1, type: "received", session: request.session, cookies: request.cookies.length };
+      if (opts.reply !== undefined) return opts.reply;
+      switch (request.type) {
+        case "receive_site":
+          return { v: 1, type: "received", session: request.session, cookies: request.cookies.length };
+        case "autofill_list":
+          return { v: 1, type: "logins", items: ["github"] };
+        case "autofill_fill":
+          return { v: 1, type: "filled", username: "amy", password: PASSWORD };
+        case "save_login":
+          return { v: 1, type: "saved", item: "github~draft-1" };
+      }
     }),
   };
 }

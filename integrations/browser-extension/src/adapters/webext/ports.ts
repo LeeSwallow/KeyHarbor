@@ -4,6 +4,7 @@ import type { Ports } from "../../ports/index.js";
 import type { WebExtApi } from "./api.js";
 import { type CookieQueries, webextCookieSource } from "./cookies.js";
 import { webextNativeHost } from "./native-host.js";
+import { webextPageForm } from "./page-form.js";
 import { webextStorageSource } from "./storage.js";
 import { webextTabInfo } from "./tabs.js";
 
@@ -13,5 +14,6 @@ export function webextPorts(api: WebExtApi, cookieQueries: CookieQueries): Ports
     storage: webextStorageSource(api),
     host: webextNativeHost(api),
     tabs: webextTabInfo(api),
+    page: webextPageForm(api),
   };
 }

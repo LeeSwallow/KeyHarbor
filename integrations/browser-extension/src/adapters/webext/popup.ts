@@ -1,7 +1,7 @@
 // The popup's dependencies, from one browser namespace.
 
 import type { PopupDeps } from "../../ui/popup/deps.js";
-import { toHandOffCommandWire } from "../wire/command.js";
+import { type LoginCommandWire, toHandOffCommandWire } from "../wire/command.js";
 import type { WebExtApi } from "./api.js";
 import { webextTabInfo } from "./tabs.js";
 
@@ -14,6 +14,9 @@ export function webextPopupDeps(api: WebExtApi, language: string): PopupDeps {
     activeTab: () => tabs.active(),
     requestHostAccess: (origins) => api.permissions.request({ origins }),
     handOff: (ask) => api.runtime.sendMessage(toHandOffCommandWire(ask)) as ReturnType<PopupDeps["handOff"]>,
+    listLogins: (tabId) => api.runtime.sendMessage({ type: "list_logins", tabId } satisfies LoginCommandWire) as ReturnType<PopupDeps["listLogins"]>,
+    fillLogin: (tabId, item) => api.runtime.sendMessage({ type: "fill_login", tabId, item } satisfies LoginCommandWire) as ReturnType<PopupDeps["fillLogin"]>,
+    saveLogin: (tabId) => api.runtime.sendMessage({ type: "save_login", tabId } satisfies LoginCommandWire) as ReturnType<PopupDeps["saveLogin"]>,
     loadSession: async () => {
       const v = (await api.storage.local.get(LAST_SESSION))[LAST_SESSION];
       return typeof v === "string" ? v : null;

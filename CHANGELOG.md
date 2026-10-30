@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- 사람용 자동 완성과 저장(확장 팝업): 저장된 로그인을 그 사이트의 페이지에 채울 때마다 Touch ID로 확인하고, 페이지에서 친 로그인을 draft로 저장한다. 셸에서 native host를 직접 띄우면 값을 주지 않는다.
+- `keyharbor receive`와 MCP `session_wait_site`: 사람이 사이트를 넘길 때까지 기다린다.
+
 ## [0.1.1] - 2026-10-30
 
 ### Added

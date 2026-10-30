@@ -4,7 +4,11 @@
 import type { HandOffRequest } from "../domain/handoff.js";
 
 /** A checked command. A new command is a new member here. */
-export type Command = { type: "hand_off"; tabId: number; request: HandOffRequest };
+export type Command =
+  | { type: "hand_off"; tabId: number; request: HandOffRequest }
+  | { type: "list_logins"; tabId: number }
+  | { type: "fill_login"; tabId: number; item: string }
+  | { type: "save_login"; tabId: number };
 
 /** What the popup asks for, before any check. */
 export interface HandOffAsk {
