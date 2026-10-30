@@ -114,16 +114,16 @@ function sessions(s: State): string {
       const sites = x.sites
         .map((t) => `<li>${esc(t.origin)} ${badge(siteWord(t.state), t.state === "logged_in" ? "active" : t.state === "expired" ? "expiring" : "neutral")}</li>`)
         .join("");
-      return card({
+      return `<div data-session-drop="${esc(x.name)}">` + card({
         glyph: `<span class="glyph session">${icon("app-window")}</span>`,
         title: `${esc(x.name)} ${sessionBadge(x.state)}${x.cdp ? ` ${badge("raw CDP", "expiring")}` : ""}`,
         sub: x.description ? esc(x.description) : "",
         extra: sites ? `<ul class="sites">${sites}</ul>` : "",
         actions: sessionActions(x.id, x.state),
-      });
+      }) + "</div>";
     })
     .join("");
-  return `${heading("sessions", "에이전트가 쓰는 전용 브라우저입니다. 사이트별 로그인 상태가 함께 보입니다.")}${rows || empty("세션이 없습니다")}`;
+  return `${heading("sessions", "에이전트가 쓰는 전용 브라우저입니다. 평소 Chrome의 탭을 세션 카드에 끌어다 놓으면 그 사이트의 로그인을 넘깁니다(브라우저에서 한 번 더 누릅니다).")}${rows || empty("세션이 없습니다")}`;
 }
 
 /// The search box, a chip per kind the vault has, and "draft만" (09 §9.4 검색 · 필터).
@@ -195,6 +195,7 @@ function audit(s: State): string {
 
 export function render(s: State): string {
   const error = s.error ? `<div class="kh-toast" role="alert">${esc(s.error)}</div>` : "";
+  const notice = s.notice ? `<div class="kh-toast ok" role="status">${esc(s.notice)}</div>` : "";
   const undo = s.removing
     ? `<div class="kh-toast undo" role="status"><span class="msg">${esc(s.removing)}을(를) 지웠습니다</span><button type="button" class="act" data-action="undo-remove">실행 취소</button></div>`
     : "";
@@ -210,5 +211,5 @@ export function render(s: State): string {
           policies: (x: State) => policies(x.policies),
           settings: (x: State) => settings(x.settings),
         }[s.view](s)];
-  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${main}</section>${undo}${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
+  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${notice}${main}</section>${undo}${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
 }

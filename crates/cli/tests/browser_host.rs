@@ -328,3 +328,126 @@ fn autofill_lists_by_name_fills_only_after_touch_id_and_saves_drafts() {
     assert!(saved["item"].as_str().unwrap().starts_with("github~draft-"));
     assert!(!saved.to_string().contains("KH-PW-new-42"));
 }
+
+/// Reads one length-prefixed message from the host's stdout.
+fn read_framed(out: &mut impl std::io::Read) -> Value {
+    let mut length = [0u8; 4];
+    out.read_exact(&mut length).unwrap();
+    let mut body = vec![0u8; u32::from_ne_bytes(length) as usize];
+    out.read_exact(&mut body).unwrap();
+    serde_json::from_slice(&body).unwrap()
+}
+fn write_framed(input: &mut impl Write, message: &Value) {
+    let body = message.to_string().into_bytes();
+    input.write_all(&(body.len() as u32).to_ne_bytes()).unwrap();
+    input.write_all(&body).unwrap();
+    input.flush().unwrap();
+}
+
+#[test]
+fn the_bridge_carries_the_apps_ask_to_the_extension_and_its_answer_back() {
+    use keyharbor_supervisor::bridge::{SiteAnswer, SiteAsk, ask, bridge_socket};
+    let tmp = short_tempdir();
+    let data = tmp.path().join("data");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+        .arg("--data-dir")
+        .arg(&data)
+        .args([
+            "browser",
+            "host",
+            "chrome-extension://fimjcgdlhnkdmjnhcccnkpcnmcecgjoc/",
+        ])
+        .env("KEYHARBOR_TEST_PRESENCE", "yes")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let (mut to_host, mut from_host) = (child.stdin.take().unwrap(), child.stdout.take().unwrap());
+    write_framed(&mut to_host, &json!({"v": 1, "type": "bridge"}));
+    assert_eq!(
+        read_framed(&mut from_host),
+        json!({"v": 1, "type": "bridge_ready"})
+    );
+
+    let not_a_site = ask(
+        &data,
+        &SiteAsk {
+            session: "work".into(),
+            url: "file:///etc/passwd".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        not_a_site,
+        SiteAnswer::BadSite,
+        "refused before reaching the extension"
+    );
+
+    let asking = {
+        let data = data.clone();
+        std::thread::spawn(move || {
+            ask(
+                &data,
+                &SiteAsk {
+                    session: "work".into(),
+                    url: "https://github.com/settings".into(),
+                },
+            )
+        })
+    };
+    let request = read_framed(&mut from_host);
+    assert_eq!(
+        (
+            request["type"].as_str(),
+            request["session"].as_str(),
+            request["origin"].as_str()
+        ),
+        (
+            Some("request_site"),
+            Some("work"),
+            Some("https://github.com")
+        )
+    );
+    write_framed(
+        &mut to_host,
+        &json!({"v": 1, "type": "request_answer", "id": request["id"], "outcome": "handed_off", "cookies": 3}),
+    );
+    assert_eq!(
+        asking.join().unwrap().unwrap(),
+        SiteAnswer::HandedOff { cookies: 3 }
+    );
+
+    drop(to_host);
+    assert!(child.wait().unwrap().success());
+    assert!(
+        !bridge_socket(&data).exists(),
+        "the socket goes with the extension"
+    );
+}
+
+#[test]
+fn a_bridge_started_from_a_shell_is_refused() {
+    let tmp = short_tempdir();
+    let data = tmp.path().join("data");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_keyharbor"))
+        .arg("--data-dir")
+        .arg(&data)
+        .args(["browser", "host", "x"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    write_framed(
+        &mut child.stdin.take().unwrap(),
+        &json!({"v": 1, "type": "bridge"}),
+    );
+    let out = child.wait_with_output().unwrap();
+    let reply: Value = serde_json::from_slice(&out.stdout[4..]).unwrap();
+    assert_eq!(
+        reply,
+        json!({"v": 1, "type": "error", "code": "not_browser"})
+    );
+    assert!(!keyharbor_supervisor::bridge::bridge_socket(&data).exists());
+}

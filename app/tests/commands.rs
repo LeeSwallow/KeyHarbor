@@ -474,3 +474,36 @@ fn an_item_is_renamed_unless_a_rule_names_it() {
         .to_string();
     assert!(err.contains("policy rule(s) name this item"), "{err}");
 }
+
+#[test]
+fn a_site_dropped_on_a_session_is_asked_of_the_extension() {
+    use keyharbor_supervisor::bridge::bridge_socket;
+    use std::io::{BufRead, BufReader, Write};
+    let tmp = tempfile::Builder::new()
+        .prefix("kh")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let c = ctx(tmp.path());
+    let err = commands::request_site(&c, "work", "https://github.com/x")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("extension is not connected"), "{err}");
+
+    std::fs::create_dir_all(tmp.path().join("data/run")).unwrap();
+    let listener =
+        std::os::unix::net::UnixListener::bind(bridge_socket(&tmp.path().join("data"))).unwrap();
+    let bridge = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut line = String::new();
+        BufReader::new(&stream).read_line(&mut line).unwrap();
+        (&stream)
+            .write_all(b"{\"outcome\":\"handed_off\",\"cookies\":3}\n")
+            .unwrap();
+        line
+    });
+    assert_eq!(
+        commands::request_site(&c, "work", "https://github.com/x").unwrap(),
+        "쿠키 3개를 work 세션에 넘겼습니다"
+    );
+    assert!(bridge.join().unwrap().contains("\"session\":\"work\""));
+}

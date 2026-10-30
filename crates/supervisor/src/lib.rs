@@ -7,11 +7,13 @@
 //! - [`ProcessRuntime`] — the `SessionRuntime` that starts supervisors as `__supervise`
 //!   processes ([`SuperviseArgs`]) and talks to them.
 //! - [`lock_mcp_scope`] — the lock a session-scoped MCP server holds.
+//! - [`bridge`] — the admin app's asks to the browser extension (drag to hand off).
 //!
 //! Control requests reach the browser only through `ops`, which hands each one to
 //! `keyharbor_guard::GuardedBrowser`.
 
 mod argv;
+pub mod bridge;
 pub mod control;
 mod lock;
 pub(crate) mod ops;

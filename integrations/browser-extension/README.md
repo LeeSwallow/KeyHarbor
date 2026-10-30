@@ -110,9 +110,14 @@ host 이름은 `dev.keyharbor.host`. 요청 하나에 응답 하나.
 | `cookies` | 그 사이트의 쿠키 읽기(HttpOnly 포함) |
 | `nativeMessaging` | KeyHarbor host에 보내기 |
 | `activeTab` | 누른 탭의 URL |
-| `scripting` | 사람이 고를 때만 그 탭의 `localStorage` 읽기 |
+| `scripting` | 사람이 고를 때만 그 탭의 `localStorage` 읽기, 팝업의 [채우기]·[이 로그인 저장]에서 그 탭 최상위 frame의 로그인 폼 채우기·읽기 |
 | `storage` | 마지막 세션 이름 기억(값 아님) |
+| `notifications` | 앱에 끌어다 놓은 사이트를 넘기기 전에 브라우저에서 사람에게 묻기([끌어다 놓기 spec](../../docs/superpowers/specs/2026-10-31-drag-to-hand-off-design.md)). Chrome은 [넘기기] 버튼, Firefox는 알림을 누르는 것이 동의 |
 | `optional_host_permissions` `http(s)://*/*` | 설치 때는 아무 사이트도 받지 않는다. 넘길 때 그 사이트와 하위 도메인만 `permissions.request`로 묻는다 |
+
+## 끌어다 놓기 (7단계)
+
+백그라운드가 시작하면 `connectNative`로 host에 `bridge`를 보내 연결을 열어 둔다(`adapters/webext/bridge.ts`, 끊기면 1분 뒤 다시). 관리 앱의 세션 카드에 탭을 놓으면 host가 `request_site {id, session, origin}`을 보내고, 확장은 `app/site-request.ts`로 답한다: 사이트가 아니면 `bad_site`, 그 사이트 쿠키 권한이 아직 없으면 알림 없이 `no_permission`(권한은 팝업 클릭 안에서만 청할 수 있다), 알림을 닫으면 `declined`, [넘기기]를 누르면 기존 `receive_site`로 1시간 넘기고 `handed_off {cookies}`. 답은 `request_answer {id, outcome, cookies?}`이고 값이 없다.
 
 ## 만들기와 검사
 

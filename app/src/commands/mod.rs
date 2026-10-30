@@ -24,7 +24,9 @@ pub use overview::{
     AuditDto, MenuText, Notice, NoticeKinds, OverviewDto, Seen, Snapshot, audit, menu_text,
     notice_kinds, notices, overview, snapshot,
 };
-pub use sessions::{SessionDto, open_session, recover_session, sessions, stop_session};
+pub use sessions::{
+    SessionDto, open_session, recover_session, request_site, sessions, stop_session,
+};
 
 /// Errors cross to the window as text: a short reason, never a value.
 pub fn message(error: anyhow::Error) -> String {

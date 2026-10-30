@@ -5,6 +5,7 @@
 
 import type { HostReply, SiteHandoff } from "../../domain/handoff.js";
 import type { LoginChoice, LoginValues, SaveOutcome } from "../../domain/login.js";
+import type { SiteRequestOutcome } from "../../domain/site-request.js";
 import { type Result, err, ok } from "../../domain/result.js";
 import { type CdpCookieParam, toCookieParam } from "./cdp-cookie.js";
 
@@ -127,4 +128,30 @@ export function parseSaveReply(raw: unknown): Result<SaveOutcome> {
   if (refused) return refused;
   if ((raw.type !== "saved" && raw.type !== "known") || typeof raw.item !== "string") return err("bad_reply");
   return ok({ kind: raw.type, item: raw.item });
+}
+
+/** Opens the lasting connection the app's asks come through (spec 2026-10-31). */
+export interface BridgeWire {
+  v: typeof PROTOCOL_VERSION;
+  type: "bridge";
+}
+/** The app asks, through the host, to hand `origin` to `session`. */
+export interface RequestSiteWire {
+  v: typeof PROTOCOL_VERSION;
+  type: "request_site";
+  id: number;
+  session: string;
+  origin: string;
+}
+/** How the ask `id` ended. A code and a count; no value. */
+export type RequestAnswerWire = { v: typeof PROTOCOL_VERSION; type: "request_answer"; id: number } & SiteRequestOutcome;
+
+export const toBridgeWire = (): BridgeWire => ({ v: PROTOCOL_VERSION, type: "bridge" });
+export const toRequestAnswerWire = (id: number, outcome: SiteRequestOutcome): RequestAnswerWire => ({ v: PROTOCOL_VERSION, type: "request_answer", id, ...outcome });
+
+/** A `request_site` from the host, or null for anything else. */
+export function parseRequestSite(raw: unknown): { id: number; session: string; origin: string } | null {
+  if (!isRecord(raw) || raw.v !== PROTOCOL_VERSION || raw.type !== "request_site") return null;
+  if (!Number.isInteger(raw.id) || typeof raw.session !== "string" || typeof raw.origin !== "string") return null;
+  return { id: raw.id as number, session: raw.session, origin: raw.origin };
 }

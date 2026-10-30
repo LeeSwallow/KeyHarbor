@@ -4,6 +4,7 @@
 //! ([`autofill`], ADR-0017); no reply or error ever holds a cookie value.
 
 mod autofill;
+mod bridge;
 mod caller;
 mod receive;
 
@@ -96,13 +97,24 @@ fn answer(app: &App, body: &[u8]) -> Result<Value, Refusal> {
     }
 }
 
-/// Answers one request from the extension.
+/// Answers one request from the extension, or serves the bridge while it stays connected.
 pub fn serve(app: &App) -> Result<()> {
-    let mut reply =
-        match read_message(&mut std::io::stdin().lock()).and_then(|body| answer(app, &body)) {
-            Ok(reply) => reply,
-            Err(refusal) => json!({"type": "error", "code": refusal.code()}),
-        };
+    let first = read_message(&mut std::io::stdin().lock());
+    if let Ok(body) = &first
+        && bridge::is_bridge(body)
+    {
+        // Only a browser may open the bridge: another process must not sit on the socket.
+        if app.trusts_any_caller() || caller::parent_path().is_some_and(|p| caller::is_browser(&p))
+        {
+            return bridge::run(app);
+        }
+        let refused = json!({"v": VERSION, "type": "error", "code": Refusal::NotBrowser.code()});
+        return write_message(&mut std::io::stdout().lock(), &refused);
+    }
+    let mut reply = match first.and_then(|body| answer(app, &body)) {
+        Ok(reply) => reply,
+        Err(refusal) => json!({"type": "error", "code": refusal.code()}),
+    };
     reply["v"] = json!(VERSION);
     write_message(&mut std::io::stdout().lock(), &reply)
 }
