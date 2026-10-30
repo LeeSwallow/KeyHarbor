@@ -20,7 +20,10 @@ mod vault_cmd;
 use compose::App;
 
 #[derive(Parser)]
-#[command(version, about = "Local vault and browser sessions for AI agents: they use secrets without seeing them")]
+#[command(
+    version,
+    about = "Local vault and browser sessions for AI agents: they use secrets without seeing them"
+)]
 struct Cli {
     #[arg(long, global = true, env = "KEYHARBOR_HOME")]
     data_dir: Option<PathBuf>,
