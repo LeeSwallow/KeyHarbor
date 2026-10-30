@@ -3,42 +3,43 @@
 
 import type { Item, KindForm } from "../api.js";
 import { esc } from "../html.js";
+import { fieldWord, kindWord } from "../words.js";
 import type { Editor } from "../state.js";
 
 const quiet = 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"';
 
 const field = (name: string, secret: boolean, hint = "") =>
-  `<label class="kh-field"><span class="kh-label">${esc(name)}</span>
+  `<label class="kh-field"><span class="kh-label">${esc(fieldWord(name))}</span>
     <input class="kh-input" name="v:${esc(name)}" type="${secret ? "password" : "text"}" placeholder="${esc(hint)}" ${quiet}></label>`;
 
 function newItem(kinds: KindForm[], kind: string): string {
   const spec = kinds.find((k) => k.kind === kind) ?? kinds[0];
   if (!spec) return "";
   const picker = kinds
-    .map((k) => `<option value="${esc(k.kind)}"${k.kind === spec.kind ? " selected" : ""}>${esc(k.kind)}</option>`)
+    .map((k) => `<option value="${esc(k.kind)}"${k.kind === spec.kind ? " selected" : ""}>${esc(kindWord(k.kind))}</option>`)
     .join("");
   const inputs = spec.free_fields
     ? `<label class="kh-field"><span class="kh-label">KEY=VALUE (한 줄에 하나)</span><textarea class="kh-textarea" name="__env" rows="5" ${quiet}></textarea></label>`
     : spec.fields.map(([name, secret]) => field(name, secret)).join("");
   const generate = spec.kind === "login" ? `<label><input type="checkbox" name="generate"> 비밀번호 생성</label>` : "";
-  return `<form class="kh-dialog" data-editor="new" data-kind="${esc(spec.kind)}">
+  return `<form class="kh-dialog" data-editor="new" data-kind="${esc(spec.kind)}"><div class="body">
     <h2>새 항목</h2>
     <label class="kh-field"><span class="kh-label">종류</span><select class="kh-input" name="kind" data-action="pick-kind">${picker}</select></label>
     <label class="kh-field"><span class="kh-label">이름</span><input class="kh-input" name="name" placeholder="github 또는 myapp/prod/db" ${quiet}></label>
     ${inputs}${generate}
     <label class="kh-field"><span class="kh-label">사이트 (한 줄에 하나)</span><textarea class="kh-textarea" name="origins" rows="2" ${quiet}></textarea></label>
-    <button type="button" class="kh-btn" data-action="close-editor">취소</button>
-    <button type="submit" class="kh-btn">저장</button></form>`;
+    </div><div class="foot"><button type="button" class="kh-btn ghost" data-action="close-editor">취소</button>
+    <button type="submit" class="kh-btn primary">저장</button></div></form>`;
 }
 
 function change(item: Item): string {
   const inputs = item.fields.map((f) => field(f, !(f in item.plain_values), "비우면 그대로")).join("");
-  return `<form class="kh-dialog" data-editor="edit" data-name="${esc(item.name)}">
+  return `<form class="kh-dialog" data-editor="edit" data-name="${esc(item.name)}"><div class="body">
     <h2>${esc(item.name)} 편집</h2>${inputs}
     <label class="kh-field"><span class="kh-label">사이트 (한 줄에 하나)</span>
       <textarea class="kh-textarea" name="origins" rows="2" ${quiet}>${item.origins.map(esc).join("\n")}</textarea></label>
-    <button type="button" class="kh-btn" data-action="close-editor">취소</button>
-    <button type="submit" class="kh-btn">저장</button></form>`;
+    </div><div class="foot"><button type="button" class="kh-btn ghost" data-action="close-editor">취소</button>
+    <button type="submit" class="kh-btn primary">저장</button></div></form>`;
 }
 
 export function editor(e: Editor, kinds: KindForm[], items: Item[]): string {
