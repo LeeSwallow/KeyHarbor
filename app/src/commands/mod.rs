@@ -13,7 +13,7 @@ mod sessions;
 pub use admin::{RuleDto, SettingDto, policies, remove_policy, set_policy, set_setting, settings};
 pub use answers::{
     HandoffDto, RequestForm, fulfill_request, fulfill_with_item, handoffs, request_form,
-    resume_handoff,
+    request_window_path, resume_handoff,
 };
 pub use inbox::{InboxDto, confirm_draft, decline_request, discard_draft, inbox};
 pub use items::{ItemDto, copy_placeholder, copy_value, items, reveal};

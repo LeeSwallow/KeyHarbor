@@ -13,3 +13,6 @@ html, body { margin: 0; height: 100%; }
    scrim is drawn in place for its showcase. */
 .kh-shell > .kh-scrim { position: fixed; inset: 0; border-radius: 0; z-index: 10; }
 .kh-shell > .kh-scrim .kh-dialog { width: min(480px, calc(100vw - 32px)); }
+/* The secure input window shows the form alone, across the whole window. */
+.kh-shell:has(> .detail.alone) { grid-template-columns: minmax(0, 1fr); }
+.kh-shell .detail.alone > .kh-dialog { --dialog-width: 100%; box-shadow: none; border: 0; }

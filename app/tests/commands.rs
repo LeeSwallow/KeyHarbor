@@ -422,3 +422,34 @@ fn a_copied_value_is_cleared_after_the_set_time() {
     );
     assert!(start.elapsed().as_secs() >= 5);
 }
+
+#[test]
+fn the_secure_input_window_opens_only_for_a_pending_request() {
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    init_vault(tmp.path());
+    assert_eq!(
+        commands::request_window_path(&c, None).unwrap(),
+        None,
+        "nothing waits"
+    );
+    let id = ask_card(tmp.path());
+    let path = format!("index.html?request={id}");
+    assert_eq!(
+        commands::request_window_path(&c, Some(&id.to_uppercase())).unwrap(),
+        Some(path.clone()),
+        "the id is written back in one form"
+    );
+    assert_eq!(commands::request_window_path(&c, None).unwrap(), Some(path));
+    for bad in ["x\" onload=\"", "00000000-0000-4000-8000-000000000000"] {
+        assert!(
+            commands::request_window_path(&c, Some(bad)).is_err(),
+            "{bad}"
+        );
+    }
+    commands::decline_request(&c, &id).unwrap();
+    assert!(
+        commands::request_window_path(&c, Some(&id)).is_err(),
+        "no longer pending"
+    );
+}
