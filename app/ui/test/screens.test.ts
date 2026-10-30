@@ -57,3 +57,16 @@ describe("the home screen", () => {
     expect(html).toMatch(/확인 대기<span class="kh-count">3<\/span>/);
   });
 });
+
+describe("icons", () => {
+  const icons = { home: "house", inbox: "inbox", sessions: "app-window", items: "key-round", audit: "scroll-text", policies: "shield-check", settings: "settings" };
+
+  it("mark every tab, every screen title, and the app at the top of the side bar", () => {
+    for (const [view, name] of Object.entries(icons)) {
+      const html = render(go(state, view as keyof typeof icons));
+      expect(html, view).toMatch(new RegExp(`data-view="${view}"><span class="kh-i sm i-${name}"`));
+      expect(html, view).toMatch(new RegExp(`<h2><span class="kh-i i-${name}"[^>]*></span>`));
+      expect(html).toContain('<img class="brand-icon" src="app-icon.svg" alt="">');
+    }
+  });
+});

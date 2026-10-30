@@ -23,7 +23,7 @@ export function policies(rules: Rule[]): string {
     .join("");
   const options = (values: string[], word: (v: string) => string) =>
     values.map((v) => `<option value="${esc(v)}">${esc(word(v))}</option>`).join("");
-  return `${heading("에이전트와 정책", "규칙이 없으면 모두 허용합니다. 허용을 더하거나 거부를 지울 때는 확인합니다.")}
+  return `${heading("policies", "규칙이 없으면 모두 허용합니다. 허용을 더하거나 거부를 지울 때는 확인합니다.")}
     ${rows || empty("규칙이 없습니다 (모두 허용)")}
     <h3 class="section">규칙 추가</h3>
     <form class="rule-form" data-rule>

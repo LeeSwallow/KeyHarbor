@@ -14,7 +14,7 @@ const withItems = { ...initial, items: [item("github"), item("gitlab"), item("ba
 describe("the command palette", () => {
   it("lists every screen, a new item, and every item", () => {
     const labels = paletteCommands(withItems, "").map((c) => c.label);
-    expect(labels).toContain("확인 대기로 가기");
+    expect(labels).toContain("확인 대기 화면으로 가기");
     expect(labels).toContain("새 항목");
     expect(labels).toContain("github 열기");
     expect(labels).toHaveLength(7 + 1 + 3);
@@ -39,5 +39,12 @@ describe("the command palette", () => {
     const html = palette({ query: "<b>" }, [{ label: "<i>", run: { kind: "new-item" } }]);
     expect(html).not.toContain("<i>");
     expect(html).not.toContain('value="<b>"');
+  });
+});
+
+describe("palette icons", () => {
+  it("show the screen's icon beside a go-to command", () => {
+    const html = render(query(openPalette(withItems), "설정"));
+    expect(html).toContain('<span class="kh-i sm i-settings" aria-hidden="true"></span>설정 화면으로 가기');
   });
 });

@@ -35,6 +35,8 @@ for (const css of stylesheets()) cpSync(join(designDir, css), join(out, "design"
 // Icons, and a class per icon: the CSP has no 'unsafe-inline', so the design system's inline
 // `style="mask-image:…"` cannot be used; `<span class="kh-i i-key">` takes it from here.
 cpSync(join(designDir, "icons"), join(out, "design", "icons"), { recursive: true });
+// The app icon (docs/design/assets, also the bundle's icon) at the top of the side bar.
+cpSync(resolve(root, "../../docs/design/assets/app-icon.svg"), join(out, "app-icon.svg"));
 const icons = readdirSync(join(designDir, "icons")).filter((f) => f.endsWith(".svg")).map((f) => f.slice(0, -4));
 writeFileSync(join(out, "icons.css"), icons.map((i) => `.kh-i.i-${i} { mask-image: url(design/icons/${i}.svg); }`).join("\n") + "\n");
 console.log(`built ${out}`);

@@ -5,6 +5,7 @@
 
 import type { Setting } from "../api.js";
 import { esc } from "../html.js";
+import { heading } from "./parts.js";
 
 type Control = { kind: "switch" } | { kind: "choices"; choices: [value: string, label: string][] };
 interface Shown { group: string; label: string; help: string; control: Control }
@@ -79,5 +80,5 @@ export function settings(list: Setting[]): string {
   const auth = `<section class="settings-group"><h3>인증 방식</h3><div class="setting"><div><div class="title">앱과 값 보기 잠금</div>
     <div class="kh-help">인증 없음: 이 Mac 사용자 계정으로 접근할 수 있는 누구나 금고를 볼 수 있습니다.</div></div>
     <div class="kh-seg" role="group"><button type="button" class="is-on">없음</button><button type="button" disabled>macOS 인증 · 준비 중</button><button type="button" disabled>마스터 비밀번호 · 준비 중</button></div></div></section>`;
-  return `<h2>설정</h2>${sections}${others}${auth}`;
+  return `${heading("settings")}${sections}${others}${auth}`;
 }
