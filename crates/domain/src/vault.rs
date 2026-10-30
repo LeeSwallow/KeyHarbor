@@ -392,6 +392,13 @@ impl FieldName {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct Origin(String);
 impl Origin {
+    /// The origin of a page address (`https://github.com/login` → `https://github.com`), under the
+    /// same rules as [`Origin::parse`]; for imports, whose rows hold page addresses.
+    pub fn of_page(url: &str) -> Result<Self, InvalidValue> {
+        let url = url::Url::parse(url).map_err(|_| InvalidValue("invalid origin"))?;
+        Self::parse(&url.origin().ascii_serialization())
+    }
+
     pub fn parse(value: &str) -> Result<Self, InvalidValue> {
         let url = url::Url::parse(value).map_err(|_| InvalidValue("invalid origin"))?;
         if !url.username().is_empty()
@@ -605,6 +612,31 @@ mod tests {
                 .flat_map(|k| k.fields)
                 .all(|f| !f.description.is_empty())
         );
+    }
+
+    #[test]
+    fn a_page_address_gives_its_origin() {
+        let of = |url: &str| Origin::of_page(url).map(|o| o.as_str().to_owned());
+        assert_eq!(
+            of("https://GitHub.com/login?x=1#f").unwrap(),
+            "https://github.com"
+        );
+        assert_eq!(
+            of("https://shop.example:8443/").unwrap(),
+            "https://shop.example:8443"
+        );
+        assert_eq!(
+            of("http://localhost:3000/a").unwrap(),
+            "http://localhost:3000"
+        );
+        for bad in [
+            "android://abc.example/",
+            "http://plain.example/",
+            "not a url",
+            "",
+        ] {
+            assert!(of(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

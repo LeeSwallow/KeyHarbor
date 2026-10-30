@@ -95,6 +95,7 @@ cargo run -p keyharbor -- list
 | `vault revert <name> [--field F]…` | 필드를 마지막 변경 전 값으로 되돌린다(값이 있는 필드 전부, 또는 `--field`). 직전 값은 하나만 둔다. 다시 실행하면 되돌린 것을 되돌린다. 값은 출력하지 않는다 |
 | `vault list [--json] [--prefix P] [--tag T]` | 이름·종류·도메인·상태·사이트·필드 이름(만료가 있으면 `expires 2027-01-31`·`expired`, 태그가 있으면 `tags a,b`)만. `--prefix`는 이름이 P로 시작하는 항목만(`myapp/`), `--tag`는 그 태그가 있는 항목만. `--json`은 `run_allowed`·`expires_at`·`expired`·`description`·`field_descriptions`·`tags`·`plain_values`(비밀 아님으로 표시한 필드의 값)도. 값은 보여 주지 않는다 |
 | `vault import-env <name> <path>` | `.env` 파일을 env 항목으로 가져온다 |
+| `vault import-chrome <path>` | Chrome 비밀번호 내보내기(CSV)를 사이트마다 login 항목(`chrome/<호스트>`)으로 가져온다. 이미 있는 이름은 건너뛰고 개수만 출력한다 |
 | `vault export <path> [--passphrase-stdin]` | [age](https://age-encryption.org/v1) 형식의 암호화 백업. `age -d`로도 열린다. 기존 파일을 덮어쓰지 않는다 |
 | `vault import <path> [--passphrase-stdin]` | 같은 이름의 항목은 건너뛴다 |
 | `vault rotate-root` · `vault rotate-domain <credentials\|payment\|personal\|developer>` | 키 교체. 도중에 끊겨도 다음 실행 때 복구된다 |

@@ -70,7 +70,86 @@ struct ItemIn {
     fields: BTreeMap<String, String>,
 }
 
+/// What `import_chrome_csv` did. Counts only: names and values stay out of reports.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ChromeImportReport {
+    pub added: usize,
+    /// Rows whose name an item already had; that item is left as it was.
+    pub skipped_existing: usize,
+    /// Rows for no web address (`android://…`, plain HTTP): an origin cannot hold them.
+    pub skipped_not_web: usize,
+}
+
+/// Items from a Chrome export are named `chrome/<host>`, dots as `-`: `chrome/github-com`.
+const CHROME_PREFIX: &str = "chrome/";
+/// Room left for a `-<n>` suffix within the 64-character name limit.
+const CHROME_HOST_CHARS: usize = 52;
+
+/// `chrome/<host>`, or `chrome/<host>-<n>` for the n-th account on that site in this file.
+fn chrome_item_name(origin: &Origin, seen: &mut BTreeMap<String, usize>) -> Result<ItemName> {
+    let host = origin.as_str().split_once("://").map_or("", |(_, h)| h);
+    let host: String = host
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .take(CHROME_HOST_CHARS)
+        .collect();
+    let count = seen.entry(host.clone()).or_default();
+    *count += 1;
+    let name = match *count {
+        1 => format!("{CHROME_PREFIX}{host}"),
+        n => format!("{CHROME_PREFIX}{host}-{n}"),
+    };
+    ItemName::parse(&name).map_err(|e| anyhow!("{e}"))
+}
+
 impl Vault {
+    /// Adds a login for each row of a Chrome password export, bound to the row's site, with
+    /// the note in the login's secret `note` field. Existing names are not overwritten.
+    pub fn import_chrome_csv(&self, text: &str) -> Result<ChromeImportReport> {
+        let rows = crate::chrome_csv::parse_chrome_csv(text)?;
+        let existing: Vec<String> = self.list()?.into_iter().map(|i| i.name).collect();
+        let mut report = ChromeImportReport {
+            added: 0,
+            skipped_existing: 0,
+            skipped_not_web: 0,
+        };
+        let mut seen = BTreeMap::new();
+        for row in rows {
+            let Ok(origin) = Origin::of_page(&row.url) else {
+                report.skipped_not_web += 1;
+                continue;
+            };
+            let name = chrome_item_name(&origin, &mut seen)?;
+            if existing.iter().any(|e| e == name.as_str()) {
+                report.skipped_existing += 1;
+                continue;
+            }
+            let mut fields = Vec::new();
+            for (field, value) in [
+                ("username", row.username),
+                ("password", row.password),
+                ("note", row.note),
+            ] {
+                if !value.is_empty() {
+                    fields.push((FieldName::parse(field).map_err(|e| anyhow!("{e}"))?, value));
+                }
+            }
+            self.add(NewItem {
+                name,
+                kind: ItemKind::Login,
+                fields,
+                origins: vec![origin],
+                origin_binding: None,
+                status: ItemStatus::Active,
+                source: ItemSource::Import,
+                details: Default::default(),
+            })
+            .with_context(|| format!("line {}", row.line))?;
+            report.added += 1;
+        }
+        Ok(report)
+    }
+
     pub fn import_env(&self, name: ItemName, text: &str) -> Result<usize> {
         let fields = crate::dotenv::parse_dotenv(text)?;
         let count = fields.len();
@@ -256,6 +335,59 @@ mod tests {
             source: ItemSource::User,
             details: Default::default(),
         }
+    }
+
+    #[test]
+    fn a_chrome_export_becomes_one_login_per_row_bound_to_its_site() {
+        let e = env();
+        let v = init(&e);
+        v.add(login("chrome/bank-example", "kept")).unwrap();
+        let csv = "name,url,username,password,note\n\
+            github.com,https://github.com/login,amy,pw-1,\"recovery\ncodes\"\n\
+            github.com,https://github.com/,bob,pw-2,\n\
+            bank,https://bank.example/,c,pw-3,\n\
+            app,android://x@com.example/,d,pw-4,\n";
+        let report = v.import_chrome_csv(csv).unwrap();
+        assert_eq!(
+            report,
+            super::ChromeImportReport {
+                added: 2,
+                skipped_existing: 1,
+                skipped_not_web: 1
+            }
+        );
+        assert_eq!(
+            &*v.resolve(&pref("chrome/github-com", "password")).unwrap(),
+            "pw-1"
+        );
+        assert_eq!(
+            &*v.resolve(&pref("chrome/github-com", "note")).unwrap(),
+            "recovery\ncodes"
+        );
+        assert_eq!(
+            &*v.resolve(&pref("chrome/github-com-2", "username")).unwrap(),
+            "bob"
+        );
+        assert_eq!(
+            &*v.resolve(&pref("chrome/bank-example", "password")).unwrap(),
+            "kept",
+            "not overwritten"
+        );
+        let github = v
+            .list()
+            .unwrap()
+            .into_iter()
+            .find(|i| i.name == "chrome/github-com")
+            .unwrap();
+        assert_eq!(
+            (github.kind, github.source),
+            (ItemKind::Login, ItemSource::Import)
+        );
+        assert_eq!(github.origins, ["https://github.com"]);
+        assert!(
+            github.description.is_none(),
+            "the note is a secret field, not a plaintext description"
+        );
     }
 
     #[test]

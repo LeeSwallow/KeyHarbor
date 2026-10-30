@@ -108,6 +108,8 @@ pub enum VaultCmd {
     },
     /// Import a .env file as an env item
     ImportEnv { name: String, path: PathBuf },
+    /// Import a Chrome password export (CSV): one login per row, named chrome/<site>
+    ImportChrome { path: PathBuf },
     /// Write an age-encrypted export (passphrase protected)
     Export {
         path: PathBuf,
@@ -309,6 +311,17 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
             );
             let count = app.vault()?.import_env(name.clone(), &text)?;
             println!("imported\t{}\t{count} variables", name.as_str());
+        }
+        VaultCmd::ImportChrome { path } => {
+            let text = Zeroizing::new(
+                std::fs::read_to_string(&path)
+                    .with_context(|| format!("cannot read {}", path.display()))?,
+            );
+            let report = app.vault()?.import_chrome_csv(&text)?;
+            println!(
+                "imported\t{} logins\tskipped {} existing, {} without a web address",
+                report.added, report.skipped_existing, report.skipped_not_web
+            );
         }
         VaultCmd::Export {
             path,

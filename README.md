@@ -40,6 +40,7 @@ printf '{"password":"…"}' | keyharbor vault add blog \
 keyharbor vault list                                   # 이름·종류·사이트만, 값은 보이지 않음
 keyharbor vault list --prefix myapp/ --tag prod            # 경로 이름(myapp/prod/db)과 태그로 거르기
 keyharbor vault import-env myapp ./.env                # .env 변수 묶음 가져오기
+keyharbor vault import-chrome ~/Downloads/passwords.csv  # Chrome 비밀번호 내보내기 가져오기
 keyharbor vault export ~/keyharbor-backup.age          # age 형식 암호화 백업
 keyharbor run --env myapp -- npm test                  # 자식에만 변수 주입, 출력의 값은 가려짐
 keyharbor policy deny --agent codex --resource domain --target payment
