@@ -1,12 +1,15 @@
 //! The key-store adapter (`KeyStore` port, #19): [`KeychainKeyStore`] is the system store,
 //! [`FileKeyStore`] the plaintext store tests use. Which one a process uses is chosen by the
-//! binary's composition root, which also reads [`TEST_KEYSTORE_ENV`].
+//! binary's composition root, which also reads [`TEST_KEYSTORE_ENV`]. [`LocalAuthConfirm`] is the
+//! `Confirm` port as Touch ID, for autofill (ADR-0017).
 
 mod file;
 mod keychain;
+pub mod presence;
 
 pub use file::FileKeyStore;
 pub use keychain::KeychainKeyStore;
+pub use presence::{LocalAuthConfirm, TEST_PRESENCE_ENV, test_presence};
 
 use keyharbor_domain::secret::{SecretKey, VaultError};
 use std::{ffi::OsString, path::PathBuf};

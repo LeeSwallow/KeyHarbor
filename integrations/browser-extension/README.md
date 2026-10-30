@@ -78,6 +78,14 @@ host 이름은 `dev.keyharbor.host`. 요청 하나에 응답 하나.
 
 응답: `{"v":1,"type":"received","session":"work","cookies":3}` 또는 `{"v":1,"type":"error","code":"no_session"}`. 응답에 쿠키 값은 없다.
 
+자동 완성과 저장(7단계, [ADR-0017](../../docs/design/adr/0017-human-autofill-channel.md)):
+
+| 요청 | 응답 | 값 |
+|---|---|---|
+| `{"v":1,"type":"autofill_list","origin":"https://github.com"}` | `{"type":"logins","items":["github"]}` | 없음 |
+| `{"v":1,"type":"autofill_fill","origin":…,"item":"github"}` | Touch ID 뒤 `{"type":"filled","username":…,"password":…}` | **있음**: 평문이 나가는 유일한 답. 부모가 브라우저가 아니면 `not_browser`, 확인하지 않으면 `not_confirmed`, 그 origin의 로그인이 아니면 `refused` |
+| `{"v":1,"type":"save_login","origin":…,"username":…,"password":…}` | `{"type":"saved","item":"github~draft-1"}` 또는 `{"type":"known","item":"github"}` | 응답에는 없음 |
+
 `session`은 Rust `SessionName::parse`(`crates/domain`)와 같은 규칙이다: 앞뒤 Unicode 공백을 지우고, 1–120 UTF-8 바이트, 제어 문자(Cc) 없음. 판정 기준은 Rust이고 확장은 같은 규칙으로 미리 검사한다(`domain/session-name.ts`). 두 쪽 테스트가 저장소 루트의 [`contracts/session-names.json`](../../contracts/session-names.json)을 함께 읽는다(`contracts/`: 언어 사이의 계약 fixture).
 
 쿠키 변환 규칙(`adapters/wire/cdp-cookie.ts`, 어느 쿠키를 넘길지는 `domain/cookie.ts`):

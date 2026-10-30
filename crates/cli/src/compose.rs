@@ -9,7 +9,10 @@
 use anyhow::Result;
 use keyharbor_core::Vault;
 use keyharbor_domain::ports::{Clock, KeyStore, SessionRuntime, Store};
-use keyharbor_keystore::{FileKeyStore, KeychainKeyStore, TEST_KEYSTORE_ENV, test_keystore_dir};
+use keyharbor_keystore::{
+    FileKeyStore, KeychainKeyStore, LocalAuthConfirm, TEST_KEYSTORE_ENV, TEST_PRESENCE_ENV,
+    presence::FixedConfirm, test_keystore_dir, test_presence,
+};
 use keyharbor_sqlite::{SqliteStore, SqliteStores};
 use keyharbor_supervisor::{Adapters, ProcessRuntime};
 use std::{
@@ -54,6 +57,21 @@ impl App {
         Self {
             root,
             clock: Arc::new(SystemClock),
+        }
+    }
+
+    /// Test builds with a fixed Touch ID answer (`KEYHARBOR_TEST_PRESENCE`) also skip the check
+    /// that the host was started by a browser; release builds never honour the variable.
+    pub fn trusts_any_caller(&self) -> bool {
+        test_presence(std::env::var_os(TEST_PRESENCE_ENV)).is_some()
+    }
+
+    /// How a person confirms an autofill (ADR-0017): Touch ID, or a fixed test answer in test
+    /// builds that set `KEYHARBOR_TEST_PRESENCE`.
+    pub fn presence(&self) -> Box<dyn keyharbor_domain::ports::Confirm> {
+        match test_presence(std::env::var_os(TEST_PRESENCE_ENV)) {
+            Some(answer) => Box::new(FixedConfirm(answer)),
+            None => Box::new(LocalAuthConfirm),
         }
     }
 
