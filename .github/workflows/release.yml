@@ -43,3 +43,38 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+  app:
+    # The admin app (app/, J-93): KeyHarbor.app with the CLI in Contents/Helpers, as a DMG,
+    # added to the release GoReleaser made. Apple silicon only, not signed or notarized.
+    needs: release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            app
+      - run: cargo install tauri-cli --locked --version ^2
+      - run: npm ci
+        working-directory: app/ui
+      # beforeBuildCommand builds the UI and the CLI (tauri.conf.json).
+      - run: cargo tauri build
+        working-directory: app
+      - name: name, verify and upload the DMG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          dmg="keyharbor-app-${version}-arm64.dmg"
+          cp app/target/release/bundle/dmg/KeyHarbor_${version}_aarch64.dmg "$dmg"
+          hdiutil verify "$dmg"
+          shasum -a 256 "$dmg" > "$dmg.sha256"
+          gh release upload "$GITHUB_REF_NAME" "$dmg" "$dmg.sha256" --clobber
