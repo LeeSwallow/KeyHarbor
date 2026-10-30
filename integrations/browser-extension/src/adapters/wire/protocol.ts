@@ -1,8 +1,10 @@
 // The Native Messaging protocol between the extension and the KeyHarbor native host (phase 4).
 // Wire types end in `Wire`; this file is the only place that builds or reads them.
-// Version 1: one request (`receive_site`) and its reply.
+// Version 1: `receive_site` (hand a site over) and, from phase 7, `autofill_list`, `autofill_fill`
+// and `save_login` (ADR-0017). `filled` is the one reply that carries a value.
 
 import type { HostReply, SiteHandoff } from "../../domain/handoff.js";
+import type { LoginChoice, LoginValues, SaveOutcome } from "../../domain/login.js";
 import { type Result, err, ok } from "../../domain/result.js";
 import { type CdpCookieParam, toCookieParam } from "./cdp-cookie.js";
 
@@ -27,8 +29,32 @@ export interface ReceiveSiteWire {
   session: string;
 }
 
+/** The saved logins that may fill `origin` (names only). */
+export interface AutofillListWire {
+  v: typeof PROTOCOL_VERSION;
+  type: "autofill_list";
+  origin: string;
+}
+
+/** The values of `item` for `origin`; the host asks Touch ID first. */
+export interface AutofillFillWire {
+  v: typeof PROTOCOL_VERSION;
+  type: "autofill_fill";
+  origin: string;
+  item: string;
+}
+
+/** What the page held when the person pressed save. Values travel only inside this message. */
+export interface SaveLoginWire {
+  v: typeof PROTOCOL_VERSION;
+  type: "save_login";
+  origin: string;
+  username?: string;
+  password: string;
+}
+
 /** Every message the extension sends. A new request is a new member here. */
-export type HostRequestWire = ReceiveSiteWire;
+export type HostRequestWire = ReceiveSiteWire | AutofillListWire | AutofillFillWire | SaveLoginWire;
 
 /** What the host answers. Neither form carries a cookie value. */
 export type HostReplyWire =
@@ -61,4 +87,44 @@ export function toReceiveSiteWire(handoff: SiteHandoff): ReceiveSiteWire {
   };
   if (handoff.localStorage) wire.local_storage = handoff.localStorage;
   return wire;
+}
+
+const hostError = (raw: Record<string, unknown>): Result<never> | null =>
+  raw.type === "error" && typeof raw.code === "string" ? err(raw.code === "not_confirmed" ? "not_confirmed" : "host_refused") : null;
+
+export const toAutofillListWire = (origin: string): AutofillListWire => ({ v: PROTOCOL_VERSION, type: "autofill_list", origin });
+export const toAutofillFillWire = (origin: string, item: string): AutofillFillWire => ({ v: PROTOCOL_VERSION, type: "autofill_fill", origin, item });
+export function toSaveLoginWire(origin: string, login: LoginValues): SaveLoginWire {
+  const wire: SaveLoginWire = { v: PROTOCOL_VERSION, type: "save_login", origin, password: login.password };
+  if (login.username) wire.username = login.username;
+  return wire;
+}
+
+/** `logins {items}`: names of logins, nothing else. */
+export function parseLoginsReply(raw: unknown): Result<LoginChoice[]> {
+  if (!isRecord(raw) || raw.v !== PROTOCOL_VERSION) return err("bad_reply");
+  const refused = hostError(raw);
+  if (refused) return refused;
+  if (raw.type !== "logins" || !Array.isArray(raw.items) || !raw.items.every((i) => typeof i === "string")) return err("bad_reply");
+  return ok((raw.items as string[]).map((item) => ({ item })));
+}
+
+/** `filled {username?, password}`: the values, to put into the page and drop. */
+export function parseFillReply(raw: unknown): Result<LoginValues> {
+  if (!isRecord(raw) || raw.v !== PROTOCOL_VERSION) return err("bad_reply");
+  const refused = hostError(raw);
+  if (refused) return refused;
+  if (raw.type !== "filled" || typeof raw.password !== "string") return err("bad_reply");
+  const values: LoginValues = { password: raw.password };
+  if (typeof raw.username === "string") values.username = raw.username;
+  return ok(values);
+}
+
+/** `saved {item}` (a draft) or `known {item}`. */
+export function parseSaveReply(raw: unknown): Result<SaveOutcome> {
+  if (!isRecord(raw) || raw.v !== PROTOCOL_VERSION) return err("bad_reply");
+  const refused = hostError(raw);
+  if (refused) return refused;
+  if ((raw.type !== "saved" && raw.type !== "known") || typeof raw.item !== "string") return err("bad_reply");
+  return ok({ kind: raw.type, item: raw.item });
 }

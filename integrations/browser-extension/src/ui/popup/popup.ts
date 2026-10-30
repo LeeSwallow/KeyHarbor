@@ -29,10 +29,14 @@ export async function mountPopup(doc: Document, deps: PopupDeps): Promise<void> 
   }
   state = { kind: "ready", origin: scope.value.origin, session: (await deps.loadSession()) ?? DEFAULT_SESSION, ttlSeconds: TTL_CHOICES[0], includeLocalStorage: false, busy: false };
   draw();
+  void deps.listLogins(tab.id).then(
+    (r) => update({ logins: r.ok ? r.value : null }),
+    () => update({ logins: null }),
+  );
 
   const update = (patch: Partial<Extract<PopupState, { kind: "ready" }>>) => {
     if (state.kind !== "ready") return;
-    const { error: _e, done: _d, ...rest } = state;
+    const { error: _e, done: _d, login: _l, ...rest } = state;
     state = { ...rest, ...patch };
     draw();
   };
@@ -42,8 +46,20 @@ export async function mountPopup(doc: Document, deps: PopupDeps): Promise<void> 
     if (target.id === "session" && state.kind === "ready") state = { ...state, session: target.value }; // parseSessionName trims, as Rust does
   });
   root.addEventListener("click", async (e) => {
-    const el = (e.target as HTMLElement).closest("[data-ttl], #ls, #submit");
+    const el = (e.target as HTMLElement).closest("[data-ttl], #ls, #submit, [data-fill], #save-login");
     if (!el || state.kind !== "ready" || state.busy) return;
+    // A fill or a save: the background does it; the popup sees names and codes only.
+    if (el instanceof HTMLElement && el.dataset.fill) {
+      const item = el.dataset.fill;
+      update({ busy: true });
+      const result = await deps.fillLogin(tab.id, item).catch(() => ({ ok: false as const, error: "host_unavailable" as const }));
+      return update(result.ok ? { busy: false, login: { kind: "filled", item } } : { busy: false, error: result.error });
+    }
+    if (el.id === "save-login") {
+      update({ busy: true });
+      const result = await deps.saveLogin(tab.id).catch(() => ({ ok: false as const, error: "host_unavailable" as const }));
+      return update(result.ok ? { busy: false, login: result.value } : { busy: false, error: result.error });
+    }
     if (el instanceof HTMLElement && el.dataset.ttl) return update({ ttlSeconds: Number(el.dataset.ttl) });
     if (el.id === "ls") return update({ includeLocalStorage: !state.includeLocalStorage });
     // The permission prompt must open inside this click.

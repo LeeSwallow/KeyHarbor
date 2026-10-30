@@ -10,6 +10,6 @@
 | 4 | 사이트별 로그인 상태, 금고 등록 경로(생성·요청·위임 저장·포착, draft), grant, 사이트 넘기기(native host) | **완료 (v0.1.0)** — `session receive`는 7단계에서 더했고, 끌어다 놓기는 7단계에서 한다(R-46) |
 | 5 | 관리 앱(Tauri): 금고·세션·정책·기록 화면, 보안 입력 창, 메뉴 막대 | **완료** — 홈·확인 대기·세션·항목·기록 보기, 보안 입력 창(항상 위, 화면 캡처 제외), 값 보기, 요청 거절, draft 확정·폐기, 보안 입력 폼, 인계 재개, 정책·설정 화면(약화 변경은 확인 창), 값·placeholder 복사(가린 표시, 설정한 시간 뒤 지우기), 세션 열기·중지·복구, 항목 추가·편집·삭제, 메뉴 막대, 알림, 명령 팔레트(⌘K), 로컬 번들(`.app`·`.dmg`, CLI는 `Contents/Helpers`). 항목 검색·필터(⌘F), 이름 바꾸기·옮기기, 삭제 실행 취소(10초). 인증 방식은 이후(ADR-0017 결정 대기) |
 | 6 | Claude Code·Codex 플러그인 (`plugin/`, [docs/plugin.md](docs/plugin.md)) | **완료 (v0.1.0)** |
-| 7 | 사람용: Chrome 비밀번호 가져오기, 자동 완성·저장(확장) | **진행 중** — CSV 가져오기(`vault import-chrome`), `session receive`·`session_wait_site`(에이전트가 넘겨받기를 기다림). 남은 순서: 자동 완성(Touch ID)·저장(팝업에서 누를 때만), 끌어다 놓기. 자동 완성·저장은 [ADR-0017](docs/design/adr/0017-human-autofill-channel.md)·R-46에 따라 구현 중 |
+| 7 | 사람용: Chrome 비밀번호 가져오기, 자동 완성·저장(확장) | **진행 중** — CSV 가져오기(`vault import-chrome`), `session receive`·`session_wait_site`(에이전트가 넘겨받기를 기다림). 자동 완성(Touch ID)·저장(팝업에서 누를 때만). 남은 순서: 끌어다 놓기. 자동 완성·저장은 [ADR-0017](docs/design/adr/0017-human-autofill-channel.md)·R-46에 따라 구현 중 |
 
 첫 릴리스는 1–6단계가 갖춰진 뒤에 낸다. 웹 페이지가 "예정"으로 보여 주는 대표 장면 — 에이전트가 블로그에 스스로 로그인해 글을 발행하는 흐름 — 은 1·3단계가 끝나면 실제로 동작한다.

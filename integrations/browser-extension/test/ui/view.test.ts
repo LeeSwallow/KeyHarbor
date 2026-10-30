@@ -42,3 +42,19 @@ describe("renderPopup", () => {
     expect(renderPopup({ kind: "unsupported" }, "en")).toContain("kh-empty");
   });
 });
+
+describe("the login section", () => {
+  it("lists saved logins with a fill button and offers to save, without any value", () => {
+    const html = renderPopup({ ...ready, logins: [{ item: "github" }] }, "ko");
+    expect(html).toContain('data-fill="github"');
+    expect(html).toContain('id="save-login"');
+    expect(html).toContain("Touch ID");
+    expect(renderPopup({ ...ready, logins: [] }, "en")).toContain("No saved login for this site.");
+    expect(renderPopup(ready, "en")).not.toContain('id="save-login"');
+  });
+
+  it("says what a fill or a save did", () => {
+    expect(renderPopup({ ...ready, logins: [], login: { kind: "saved", item: "github~draft-1" } }, "ko")).toContain("github~draft-1 — KeyHarbor 앱에서 확정하세요");
+    expect(renderPopup({ ...ready, logins: [], login: { kind: "filled", item: "github" } }, "en")).toContain("Filled");
+  });
+});

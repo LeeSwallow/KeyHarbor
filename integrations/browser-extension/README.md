@@ -45,8 +45,9 @@ flowchart LR
 |---|---|---|
 | `src/domain/` | `scope.ts`(등록 가능 도메인 + 하위 도메인, 허용 스킴), `cookie.ts`(`SiteCookie`와 넘길 쿠키 고르기: 범위·파티션·first-party), `session-name.ts`(Rust `SessionName::parse`와 같은 규칙), `handoff.ts`(TTL 검사, `SiteHandoff`, `HostReply`), `result.ts`(오류는 코드뿐) | 없음 |
 | `src/ports/` | 유스케이스가 쓰는 인터페이스 넷. `NativeHost.receiveSite(SiteHandoff)`는 우리 말로 주고받는다 | 없음 |
-| `src/app/` | `makeHandOffSite(ports)` 유스케이스, 검사를 마친 `Command`와 팝업이 묻는 `HandOffAsk` | 없음 |
+| `src/app/` | `makeHandOffSite(ports)`, 7단계의 `makeListLogins`·`makeFillLogin`·`makeSaveLogin`(`autofill.ts`) 유스케이스, 검사를 마친 `Command`와 팝업이 묻는 `HandOffAsk` | 없음 |
 | `src/adapters/wire/` | `protocol.ts`(Native Messaging v1 판별 유니온, 만들기·읽기는 여기서만), `cdp-cookie.ts`(`SiteCookie` → CDP `Network.CookieParam`), `native-host.ts`(전송 위의 `NativeHost`: 번역만), `command.ts`(팝업 → 백그라운드 메시지와 그 검증 한 곳) | 없음 |
+| `src/adapters/webext/page-form.ts` | 최상위 frame에서 도는 `fillPageLogin`·`readPageLogin`(`scripting.executeScript`, 탭 접근은 팝업 클릭의 `activeTab`). 넣기 직전에 `location.origin`이 요청한 origin인지 다시 본다 | 있음 |
 | `src/adapters/webext/` | 두 브라우저에 공통인 포트 구현. 손으로 쓴 API 부분 타입 `WebExtApi` | 있음 |
 | `src/adapters/chrome/`, `firefox/` | 브라우저마다 다른 쿠키 조회와 진입점(백그라운드, 팝업) | 있음 |
 | `src/ui/popup/` | 디자인 시스템 클래스로만 그리는 팝업. 상태 → HTML은 순수 함수 | 진입점이 준 deps만 |
@@ -124,7 +125,7 @@ npm run lint      # tsc + build + web-ext lint (경고도 실패)
 npm run check     # lint + test (CI가 이것을 돈다)
 ```
 
-- `KEYHARBOR_TEST_CHROME`에 Chrome 실행 파일을 주면 `test/smoke/chrome.test.ts`가 빌드한 확장을 headless Chrome에 올리고(CDP `Extensions.loadUnpacked`, 정식 Chrome은 `--load-extension`을 무시한다) 팝업을 열어 본다.
+- `KEYHARBOR_TEST_CHROME`에 Chrome 실행 파일을 주면 `test/smoke/chrome.test.ts`가 빌드한 확장을 headless Chrome에 올리고(CDP `Extensions.loadUnpacked`, 정식 Chrome은 `--load-extension`을 무시한다) 팝업을 열어 본다. `test/smoke/page-form.test.ts`는 로컬 http 사이트의 로그인 폼에서 채우기·읽기 함수를 돌려 본다(이메일 칸과 비밀번호 칸만 채우고 `input` 이벤트가 나는지, 다른 origin이면 하지 않는지).
 - 의존성은 정확한 버전으로 고정하고 `package-lock.json`을 커밋한다. vitest는 4.0.18이다: 4.1 이후는 npm 10.9의 peer 해석 버그(`Cannot read properties of null (reading 'edgesOut')`)로 설치가 깨진다.
 - 팝업 CSS와 아이콘은 빌드가 `design-system/`에서 복사한다(`scripts/design-assets.mjs`). 소스 트리에 사본을 두지 않는다. 팝업이 쓰는 `kh-*` 클래스와 아이콘은 Rust `design-check`가 디자인 시스템과 대조한다([ADR-0015](../../docs/design/adr/0015-design-system-layers.md)).
 

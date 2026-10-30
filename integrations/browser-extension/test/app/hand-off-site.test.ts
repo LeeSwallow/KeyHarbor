@@ -26,7 +26,7 @@ describe("handOffSite", () => {
     expect(result).toEqual({ ok: true, value: { session: "work", origin: "https://github.com", cookies: 1, localStorage: false } });
     expect(ports.sent).toHaveLength(1);
     expect(ports.sent[0]).toMatchObject({ v: 1, type: "receive_site", origin: "https://github.com", session: "work", ttl_seconds: 3600 });
-    expect(ports.sent[0]?.cookies.map((c) => c.name)).toEqual(["user_session"]);
+    expect(ports.sent[0]?.cookies.map((c: { name: string }) => c.name)).toEqual(["user_session"]);
     expect(ports.sent[0]).not.toHaveProperty("local_storage");
   });
 

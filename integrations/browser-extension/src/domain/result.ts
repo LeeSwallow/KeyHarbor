@@ -10,7 +10,10 @@ export type ErrorCode =
   | "host_refused" // the host answered with an error
   | "bad_reply" // the host's answer is not protocol v1
   | "storage_unavailable" // localStorage could not be read
-  | "bad_command"; // a popup message the background does not understand
+  | "bad_command" // a popup message the background does not understand
+  | "not_confirmed" // the person did not confirm the fill (Touch ID)
+  | "no_login_form" // the page has no password field to fill or read
+  | "page_changed"; // the tab left the site before the values arrived: nothing was filled
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: ErrorCode };
 

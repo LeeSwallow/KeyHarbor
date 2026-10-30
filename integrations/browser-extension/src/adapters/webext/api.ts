@@ -32,7 +32,10 @@ export interface WebExtApi {
     query(query: { active: true; currentWindow: true }): Promise<TabWire[]>;
     get(tabId: number): Promise<TabWire>;
   };
-  scripting: { executeScript(injection: { target: { tabId: number }; func: () => unknown }): Promise<Array<{ result?: unknown }>> };
+  scripting: {
+    // Without frameIds the target is the top frame only.
+    executeScript<A extends unknown[]>(injection: { target: { tabId: number }; func: (...args: A) => unknown; args?: A }): Promise<Array<{ result?: unknown }>>;
+  };
   runtime: {
     sendNativeMessage(application: string, message: unknown): Promise<unknown>;
     sendMessage(message: unknown): Promise<unknown>;
