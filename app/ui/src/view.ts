@@ -3,7 +3,8 @@
 
 import type { Item } from "./api.js";
 import { SCREENS, type State, type View } from "./state.js";
-import { dialog, policies, settings } from "./views/admin.js";
+import { dialog, policies } from "./views/admin.js";
+import { settings } from "./views/settings.js";
 import { editor } from "./views/editor.js";
 import { form } from "./views/form.js";
 import { palette, paletteCommands } from "./views/palette.js";
