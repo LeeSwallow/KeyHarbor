@@ -8,7 +8,7 @@ import { settings } from "./views/settings.js";
 import { editor } from "./views/editor.js";
 import { form } from "./views/form.js";
 import { palette, paletteCommands } from "./views/palette.js";
-import { badge, btn, card, empty, glyph, heading, icon } from "./views/parts.js";
+import { badge, btn, card, empty, glyph, heading, icon, screenIcon } from "./views/parts.js";
 import { auditWord, fieldWord, kindWord, sessionWord, siteWord, sourceWord } from "./words.js";
 
 import { esc } from "./html.js";
@@ -28,9 +28,9 @@ function side(s: State): string {
   const links = NAV.map(([view, label]) => {
     const n = count(s, view);
     const badge = n > 0 ? `<span class="kh-count">${n}</span>` : "";
-    return `<button class="nav${s.view === view ? " is-on" : ""}" data-action="go" data-view="${view}">${esc(label)}${badge}</button>`;
+    return `<button class="nav${s.view === view ? " is-on" : ""}" data-action="go" data-view="${view}">${icon(screenIcon(view))}${esc(label)}${badge}</button>`;
   }).join("");
-  return `<nav class="side" aria-label="KeyHarbor">${links}<div class="group">인증 없음</div></nav>`;
+  return `<nav class="side" aria-label="KeyHarbor"><div class="brand"><img class="brand-icon" src="app-icon.svg" alt="">KeyHarbor</div>${links}<div class="group">인증 없음</div></nav>`;
 }
 
 /// `2026-10-29T05:02:00Z` → `10-29 05:02` (UTC as stored; the record is a glance, not a log).
@@ -49,12 +49,12 @@ function event(e: AuditEvent): string {
 function home(s: State): string {
   const o = s.overview;
   if (o && !o.vault_ready) {
-    return `${heading("홈")}<div class="kh-empty"><p>금고가 없습니다. 터미널에서 <code>keyharbor vault init</code>을 실행하세요.</p></div>`;
+    return `${heading("home")}<div class="kh-empty"><p>금고가 없습니다. 터미널에서 <code>keyharbor vault init</code>을 실행하세요.</p></div>`;
   }
   const stat = (label: string, n: number | undefined, view: View) =>
     `<button type="button" class="stat" data-action="go" data-view="${view}"><span class="kh-help">${esc(label)}</span><strong>${n ?? "…"}</strong></button>`;
   const recent = s.audit.slice(0, 6).map(event).join("");
-  return `${heading("홈")}<div class="stats">${stat("실행 중인 세션", o?.sessions_open, "sessions")}${stat("확인 대기", o ? count(s, "inbox") : undefined, "inbox")}${stat("항목", s.items.length, "items")}</div>
+  return `${heading("home")}<div class="stats">${stat("실행 중인 세션", o?.sessions_open, "sessions")}${stat("확인 대기", o ? count(s, "inbox") : undefined, "inbox")}${stat("항목", s.items.length, "items")}</div>
     <h3 class="section">최근 활동</h3>${recent || empty("기록이 없습니다")}`;
 }
 
@@ -90,7 +90,7 @@ function inbox(s: State): string {
     }),
   );
   const all = [...handoffs, ...requests, ...drafts].join("");
-  return `${heading("확인 대기", "에이전트가 사람을 기다리는 것들입니다. 에이전트는 값을 보지 못합니다.")}${all || empty("확인할 것이 없습니다")}`;
+  return `${heading("inbox", "에이전트가 사람을 기다리는 것들입니다. 에이전트는 값을 보지 못합니다.")}${all || empty("확인할 것이 없습니다")}`;
 }
 
 /// [열기]/[중지], or [복구…] for a session whose supervisor is gone (after a checkbox).
@@ -123,11 +123,11 @@ function sessions(s: State): string {
       });
     })
     .join("");
-  return `${heading("세션", "에이전트가 쓰는 전용 브라우저입니다. 사이트별 로그인 상태가 함께 보입니다.")}${rows || empty("세션이 없습니다")}`;
+  return `${heading("sessions", "에이전트가 쓰는 전용 브라우저입니다. 사이트별 로그인 상태가 함께 보입니다.")}${rows || empty("세션이 없습니다")}`;
 }
 
 function itemList(s: State): string {
-  const add = `<div class="list-head">${btn("새 항목", `data-action="new-item"`, "primary")}</div>`;
+  const add = `<div class="list-head">${heading("items")}${btn("새 항목", `data-action="new-item"`, "primary")}</div>`;
   const rows = s.items
     .map((i) => {
       const marks = [
@@ -174,7 +174,7 @@ function detail(s: State): string {
 }
 
 function audit(s: State): string {
-  return `${heading("사용 기록", "최근 50개. 값은 기록하지 않습니다.")}${s.audit.map(event).join("") || empty("기록이 없습니다")}`;
+  return `${heading("audit", "최근 50개. 값은 기록하지 않습니다.")}${s.audit.map(event).join("") || empty("기록이 없습니다")}`;
 }
 
 export function render(s: State): string {

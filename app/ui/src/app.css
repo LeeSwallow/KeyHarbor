@@ -40,7 +40,8 @@ html, body { margin: 0; height: 100%; }
 .kh-shell .kh-row .actions { display: flex; align-items: center; gap: var(--space-2); flex: none; }
 .kh-shell .kh-row .sites { margin: var(--space-1) 0 0; padding: 0; list-style: none; display: grid; gap: var(--space-half); font: var(--text-small); color: var(--c-ink-2); }
 .kh-shell .list { gap: var(--space-1); }
-.kh-shell .list-head { display: flex; justify-content: flex-end; padding-bottom: var(--space-2); }
+.kh-shell .list-head { display: flex; align-items: center; justify-content: space-between; padding: var(--space-1) var(--space-1) var(--space-2); }
+.kh-shell .list-head .screen-head { margin: 0; }
 .kh-shell .list .kh-row .main { display: grid; }
 .kh-shell .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
 .kh-shell button.stat { appearance: none; text-align: left; font: inherit; color: inherit; cursor: pointer; display: grid; gap: var(--space-1);
@@ -60,3 +61,11 @@ html, body { margin: 0; height: 100%; }
 .kh-shell .item-head .glyph.pay { background: var(--c-dom-pay-wash); color: var(--c-dom-pay); }
 .kh-shell .item-head .glyph.personal { background: var(--c-dom-personal-wash); color: var(--c-dom-personal); }
 .kh-shell .item-head .glyph.dev { background: var(--c-dom-dev-wash); color: var(--c-dom-dev); }
+/* Icons in the side bar tabs, the screen titles and the palette (SCREENS in state.ts). */
+.kh-shell .side .brand { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2) var(--space-3); font: var(--text-body-strong); }
+.kh-shell .side .brand-icon { width: var(--size-glyph); height: var(--size-glyph); border-radius: var(--radius-glyph); }
+.kh-shell .nav .kh-i { color: var(--c-ink-3); }
+.kh-shell .nav.is-on .kh-i { color: var(--c-accent); }
+.kh-shell .screen-head h2 { display: flex; align-items: center; gap: var(--space-2); }
+.kh-shell .screen-head h2 .kh-i { color: var(--c-accent); }
+.kh-shell .kh-dialog button.kh-row { gap: var(--space-2); }

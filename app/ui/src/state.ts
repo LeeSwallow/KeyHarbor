@@ -6,15 +6,16 @@ import type { AuditEvent, Handoff, Inbox, Item, KindForm, Overview, RequestForm,
 
 export type View = "home" | "inbox" | "sessions" | "items" | "audit" | "policies" | "settings";
 
-/// The screens in the side bar and the palette, in order.
-export const SCREENS: [View, string][] = [
-  ["home", "홈"],
-  ["inbox", "확인 대기"],
-  ["sessions", "세션"],
-  ["items", "항목"],
-  ["audit", "사용 기록"],
-  ["policies", "에이전트와 정책"],
-  ["settings", "설정"],
+/// The screens in the side bar and the palette, in order, with the design-system icon each
+/// shows in its tab, its title and the palette.
+export const SCREENS: [View, string, string][] = [
+  ["home", "홈", "house"],
+  ["inbox", "확인 대기", "inbox"],
+  ["sessions", "세션", "app-window"],
+  ["items", "항목", "key-round"],
+  ["audit", "사용 기록", "scroll-text"],
+  ["policies", "에이전트와 정책", "shield-check"],
+  ["settings", "설정", "settings"],
 ];
 
 /// The command palette, open, with what was typed.
