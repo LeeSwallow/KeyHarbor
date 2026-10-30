@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { asking, edit, go, initial, select } from "../src/state.js";
 import { render } from "../src/view.js";
+import { droppedUrl } from "../src/drop.js";
 
 /// Text between tags, so attribute values (data-*, class) do not count as shown words.
 const shownText = (html: string) => html.replace(/<[^>]*>/g, " ");
@@ -85,5 +86,27 @@ describe("renaming an item", () => {
     expect(html).toContain('data-editor="rename" data-name="github"');
     expect(html).toContain("{{secret:github.password}}");
     expect(html).toContain("에이전트 설정에 옛 이름이 있으면 고쳐야 합니다");
+  });
+});
+
+describe("dropping a site on a session", () => {
+  it("makes every session card a drop target and says how to use it", () => {
+    const html = render(go(state, "sessions"));
+    expect(html).toContain('data-session-drop="work"');
+    expect(html).toContain("끌어다 놓으면");
+  });
+
+  it("shows how a drop ended", () => {
+    const html = render({ ...go(state, "sessions"), notice: "쿠키 3개를 work 세션에 넘겼습니다" });
+    expect(html).toContain('class="kh-toast ok"');
+    expect(html).toContain("쿠키 3개를 work 세션에 넘겼습니다");
+  });
+});
+
+describe("the URL taken from a drop", () => {
+  it("is the first http(s) line of a uri-list, or nothing", () => {
+    expect(droppedUrl("# comment\nhttps://github.com/settings\nhttps://x.example")).toBe("https://github.com/settings");
+    expect(droppedUrl("file:///etc/passwd")).toBeNull();
+    expect(droppedUrl("")).toBeNull();
   });
 });

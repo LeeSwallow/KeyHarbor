@@ -28,6 +28,8 @@ export const cookie = (over: Partial<SiteCookie> = {}): SiteCookie => ({
 });
 
 export interface FakePorts extends Ports {
+  /** The notifications shown: [origin, session]. */
+  asked: Array<[string, string]>;
   // Loosely typed so a test reads any request's fields.
   sent: Array<HostRequestWire & Record<string, any>>;
   /** What the page received from `fill`. */
@@ -41,14 +43,27 @@ export function fakePorts(
     storage?: Record<string, string> | "throws";
     reply?: unknown | "throws";
     page?: { fill?: "filled" | "no_form" | "moved"; read?: LoginValues | null };
+    /** Host access granted before (default yes). */
+    granted?: boolean;
+    /** What the person does with the browser notification (default: presses it). */
+    pressed?: boolean;
   } = {},
 ): FakePorts {
   const sent: FakePorts["sent"] = [];
   const filled: LoginValues[] = [];
+  const asked: Array<[string, string]> = [];
   const tab = opts.tab === undefined ? { id: 7, url: "https://github.com/settings" } : opts.tab;
   return {
     sent,
     filled,
+    asked,
+    permissions: { has: async () => opts.granted ?? true },
+    notifier: {
+      askHandOff: async (origin, session) => {
+        asked.push([origin, session]);
+        return opts.pressed ?? true;
+      },
+    },
     page: {
       fill: async (_tab, _origin, login) => {
         const answer = opts.page?.fill ?? "filled";

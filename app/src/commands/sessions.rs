@@ -93,3 +93,28 @@ pub fn recover_session(ctx: &Ctx, id: &str, browser_closed: bool) -> Result<()> 
     }
     session::recover(&*ctx.store()?, &*ctx.runtime(), session_id(id)?)
 }
+
+/// Asks the browser extension to hand the site of `url` to the session `name` (drag to hand
+/// off, spec 2026-10-31). The extension asks the person in their browser first, so this waits
+/// for them; the text says how it ended. No value comes back.
+pub fn request_site(ctx: &Ctx, name: &str, url: &str) -> Result<String> {
+    use keyharbor_supervisor::bridge::{SiteAnswer, SiteAsk, ask};
+    let answer = ask(
+        ctx.root(),
+        &SiteAsk {
+            session: name.to_owned(),
+            url: url.to_owned(),
+        },
+    )?;
+    Ok(match answer {
+        SiteAnswer::HandedOff { cookies } => format!("쿠키 {cookies}개를 {name} 세션에 넘겼습니다"),
+        SiteAnswer::Declined => "브라우저에서 넘기지 않았습니다".to_owned(),
+        SiteAnswer::NoPermission => {
+            "확장이 이 사이트에 접근할 수 없습니다. 확장 팝업에서 한 번 넘겨 허용하세요".to_owned()
+        }
+        SiteAnswer::NoSession => format!("실행 중인 {name} 세션이 없습니다"),
+        SiteAnswer::BadSite => "http·https 사이트만 넘길 수 있습니다".to_owned(),
+        SiteAnswer::Timeout => "브라우저에서 답이 오지 않았습니다".to_owned(),
+        SiteAnswer::Failed => "넘기지 못했습니다".to_owned(),
+    })
+}

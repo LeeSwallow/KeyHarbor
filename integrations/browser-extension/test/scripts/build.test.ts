@@ -22,7 +22,8 @@ describe.each(["chrome", "firefox"])("dist/%s", (target) => {
   it("has the manifest, scripts and popup page", () => {
     const manifest = JSON.parse(read(target, "manifest.json"));
     expect(manifest.manifest_version).toBe(3);
-    expect(manifest.permissions).toEqual(["cookies", "nativeMessaging", "activeTab", "scripting", "storage"]);
+    // notifications: the browser asks before a dragged site goes over (spec 2026-10-31).
+    expect(manifest.permissions).toEqual(["cookies", "nativeMessaging", "activeTab", "scripting", "storage", "notifications"]);
     expect(manifest.host_permissions).toBeUndefined(); // asked for at use time
     for (const f of ["background.js", "popup.js", "popup.html"]) expect(existsSync(join(out, target, f))).toBe(true);
   });
@@ -39,6 +40,7 @@ describe.each(["chrome", "firefox"])("dist/%s", (target) => {
     expect(icons).toContain("hand");
     for (const name of icons) expect(existsSync(join(out, target, "design/icons", `${name}.svg`))).toBe(true);
     expect(existsSync(join(out, target, "design/icons/LICENSE"))).toBe(true);
+    expect(existsSync(join(out, target, "icon-128.png"))).toBe(true);
   });
 });
 

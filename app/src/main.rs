@@ -63,6 +63,12 @@ fn open_request_window(app: tauri::AppHandle, ctx: State<'_, Ctx>, id: String) -
     shell::request_window::open(&app, path).map_err(|e| e.to_string())
 }
 
+/// Waits for the person to answer in their browser (up to two minutes), so it runs off the UI thread.
+#[tauri::command(async)]
+fn request_site(ctx: State<'_, Ctx>, session: String, url: String) -> Reply<String> {
+    commands::request_site(&ctx, &session, &url).map_err(message)
+}
+
 #[tauri::command]
 fn close_request_window(app: tauri::AppHandle) {
     shell::request_window::close(&app);
@@ -236,6 +242,7 @@ fn main() {
             request_form,
             open_request_window,
             close_request_window,
+            request_site,
             fulfill_request,
             fulfill_with_item,
             handoffs,

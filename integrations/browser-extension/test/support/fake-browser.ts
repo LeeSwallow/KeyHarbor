@@ -32,12 +32,22 @@ export function fakeBrowser(opts: { cookies?: CookieWire[]; tabUrl?: string; rep
       },
       sendMessage: async (m) => m,
       onMessage: { addListener: (l) => void listeners.push(l) },
+      connectNative: () => ({ postMessage: () => undefined, onMessage: { addListener: () => undefined }, onDisconnect: { addListener: () => undefined } }),
+      getURL: (p) => `chrome-extension://test/${p}`,
     },
     permissions: {
       request: async ({ origins }) => {
         calls.requested.push(origins);
         return true;
       },
+      contains: async () => true,
+    },
+    notifications: {
+      create: async (id) => id,
+      clear: async () => true,
+      onClicked: { addListener: () => undefined },
+      onButtonClicked: { addListener: () => undefined },
+      onClosed: { addListener: () => undefined },
     },
     storage: {
       local: {

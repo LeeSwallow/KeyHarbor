@@ -50,6 +50,8 @@ export interface State {
   ask: Ask | null;
   palette: Palette | null;
   filter: Filter;
+  /// A short note of how something ended (a dropped site), shown until the next move.
+  notice: string | null;
   /// An item removed a moment ago and hidden; it is deleted only when the undo time runs out.
   removing: string | null;
   /// The secure input window (09 §9.4.5): only the form for one request, nothing else.
@@ -76,6 +78,7 @@ export const initial: State = {
   palette: null,
   filter: NO_FILTER,
   removing: null,
+  notice: null,
   alone: false,
   selected: null,
   revealed: null,
@@ -83,7 +86,7 @@ export const initial: State = {
 };
 
 export const go = (s: State, view: View): State =>
-  ({ ...s, view, selected: null, revealed: null, form: null, ask: null, editor: null, error: null, filter: NO_FILTER });
+  ({ ...s, view, selected: null, revealed: null, form: null, ask: null, editor: null, error: null, notice: null, filter: NO_FILTER });
 export const removing = (s: State, name: string): State => ({ ...s, removing: name, selected: null, editor: null, revealed: null });
 export const undoRemove = (s: State): State => ({ ...s, removing: null });
 export const search = (s: State, patch: Partial<Filter>): State => ({ ...s, filter: { ...s.filter, ...patch } });

@@ -9,6 +9,7 @@ import {
   query, removing, search, select, show, undoRemove,
 } from "./state.js";
 import { render } from "./view.js";
+import { droppedUrl } from "./drop.js";
 import { editorValues } from "./views/editor.js";
 import { formValues } from "./views/form.js";
 import { type Run, paletteCommands } from "./views/palette.js";
@@ -143,6 +144,22 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
       set(asking(state, null));
       void guard(retry);
     }
+  });
+
+  // A tab dragged from the browser onto a session card (spec 2026-10-31): the extension asks the
+  // person in their browser, so the answer may take a while.
+  root.addEventListener("dragover", (event) => {
+    if ((event.target as HTMLElement).closest("[data-session-drop]")) event.preventDefault();
+  });
+  root.addEventListener("drop", (event) => {
+    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-session-drop]");
+    if (!card) return;
+    event.preventDefault();
+    const session = card.dataset.sessionDrop ?? "";
+    const url = droppedUrl(event.dataTransfer?.getData("text/uri-list") || event.dataTransfer?.getData("text/plain") || "");
+    if (!url) return set(fail(state, "브라우저의 탭이나 주소를 끌어다 놓으세요"));
+    set({ ...state, notice: `${session} 세션에 넘길지 브라우저에서 확인하세요…`, error: null });
+    void guard(() => api.requestSite(session, url).then((text) => set({ ...state, notice: text })).then(load));
   });
 
   root.addEventListener("input", (event) => {
