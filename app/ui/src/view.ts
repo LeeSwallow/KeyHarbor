@@ -2,7 +2,7 @@
 // `state.revealed`. Buttons carry `data-action` for the one click handler in main.ts.
 
 import type { AuditEvent, Item } from "./api.js";
-import { SCREENS, type State, type View } from "./state.js";
+import { SCREENS, type State, type View, filterItems } from "./state.js";
 import { dialog, policies } from "./views/admin.js";
 import { settings } from "./views/settings.js";
 import { editor } from "./views/editor.js";
@@ -126,9 +126,23 @@ function sessions(s: State): string {
   return `${heading("sessions", "에이전트가 쓰는 전용 브라우저입니다. 사이트별 로그인 상태가 함께 보입니다.")}${rows || empty("세션이 없습니다")}`;
 }
 
+/// The search box, a chip per kind the vault has, and "draft만" (09 §9.4 검색 · 필터).
+function searchBar(s: State): string {
+  const f = s.filter;
+  const chip = (label: string, on: boolean, attrs: string) =>
+    `<button type="button" class="kh-chip${on ? " is-on" : ""}" ${attrs}>${esc(label)}</button>`;
+  const kinds = [...new Set(s.items.map((i) => i.kind))];
+  const chips = [
+    chip("모두", !f.kind, `data-action="filter-kind" data-kind=""`),
+    ...kinds.map((k) => chip(kindWord(k), f.kind === k, `data-action="filter-kind" data-kind="${esc(k)}"`)),
+    chip("draft만", f.drafts, `data-action="filter-drafts"`),
+  ].join("");
+  return `<div class="search"><span class="kh-inputwrap">${icon("search")}<input class="kh-input" data-search placeholder="이름, 사이트, 태그 (⌘F)" value="${esc(f.text)}" autocomplete="off" spellcheck="false"></span><div class="chips">${chips}</div></div>`;
+}
+
 function itemList(s: State): string {
   const add = `<div class="list-head">${heading("items")}${btn("새 항목", `data-action="new-item"`, "primary")}</div>`;
-  const rows = s.items
+  const rows = filterItems(s.items, s.filter)
     .map((i) => {
       const marks = [
         i.status === "draft" ? badge("draft", "draft") : "",
@@ -139,7 +153,8 @@ function itemList(s: State): string {
         <span class="main"><span class="title">${esc(i.name)}</span><span class="sub">${esc(kindWord(i.kind))}${i.origins[0] ? ` · ${esc(i.origins[0])}` : ""}</span></span>${marks}</button>`;
     })
     .join("");
-  return add + (rows || empty("항목이 없습니다"));
+  const none = s.items.length ? empty("맞는 항목이 없습니다") : empty("항목이 없습니다");
+  return add + (s.items.length ? searchBar(s) : "") + (rows || none);
 }
 
 function fieldRow(s: State, item: Item, field: string, placeholder: string): string {
