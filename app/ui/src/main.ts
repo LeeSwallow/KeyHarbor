@@ -5,11 +5,13 @@
 
 import { type Api, type Outcome, tauriApi } from "./api.js";
 import {
-  type State, type View, asking, closeForm, edit, fail, go, hide, initial, openForm, select, show,
+  type State, type View, asking, closeForm, closePalette, edit, fail, go, hide, initial, openForm, openPalette,
+  query, select, show,
 } from "./state.js";
 import { render } from "./view.js";
 import { editorValues } from "./views/editor.js";
 import { formValues } from "./views/form.js";
+import { type Run, paletteCommands } from "./views/palette.js";
 
 const HIDE_AFTER_MS = 30_000;
 
@@ -19,7 +21,20 @@ export function mount(root: HTMLElement, api: Api): { state: () => State } {
   const set = (next: State) => {
     state = next;
     root.innerHTML = render(state);
+    // Re-rendering replaces the palette input; keep typing where it was.
+    const input = root.querySelector<HTMLInputElement>("[data-palette]");
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
   };
+  const run = (r: Run) => {
+    const closed = closePalette(state);
+    if (r.kind === "go") set(go(closed, r.view));
+    if (r.kind === "select") set(select(go(closed, "items"), r.name));
+    if (r.kind === "new-item") set(edit(go(closed, "items"), { mode: "new", kind: state.kinds[0]?.kind ?? "login" }));
+  };
+  const matches = () => (state.palette ? paletteCommands(state, state.palette.query) : []);
   const guard = async (work: () => Promise<unknown>) => {
     try {
       await work();
@@ -88,11 +103,39 @@ export function mount(root: HTMLElement, api: Api): { state: () => State } {
         retry: () => api.removeItem(name).then(() => set(go(state, "items"))).then(load),
       }));
     }
+    const { index } = button.dataset;
+    if (action === "run" && index !== undefined) {
+      const picked = matches()[Number(index)];
+      if (picked) run(picked.run);
+    }
     if (action === "ask-cancel") set(asking(state, null));
     if (action === "ask-confirm" && state.ask) {
       const { retry } = state.ask;
       set(asking(state, null));
       void guard(retry);
+    }
+  });
+
+  root.addEventListener("input", (event) => {
+    const input = event.target as HTMLInputElement;
+    if (input.dataset.palette !== undefined) set(query(state, input.value));
+  });
+
+  // 09 U6: ⌘K opens and closes the palette, ⌘N starts a new item, Esc closes what is open.
+  root.ownerDocument.addEventListener("keydown", (event) => {
+    const command = event.metaKey || event.ctrlKey;
+    if (command && event.key === "k") {
+      event.preventDefault();
+      set(state.palette ? closePalette(state) : openPalette(state));
+    } else if (command && event.key === "n") {
+      event.preventDefault();
+      run({ kind: "new-item" });
+    } else if (event.key === "Escape" && state.palette) {
+      set(closePalette(state));
+    } else if (event.key === "Enter" && state.palette) {
+      event.preventDefault();
+      const first = matches()[0];
+      if (first) run(first.run);
     }
   });
 

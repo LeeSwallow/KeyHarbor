@@ -6,6 +6,20 @@ import type { AuditEvent, Handoff, Inbox, Item, KindForm, Overview, RequestForm,
 
 export type View = "home" | "inbox" | "sessions" | "items" | "audit" | "policies" | "settings";
 
+/// The screens in the side bar and the palette, in order.
+export const SCREENS: [View, string][] = [
+  ["home", "홈"],
+  ["inbox", "확인 대기"],
+  ["sessions", "세션"],
+  ["items", "항목"],
+  ["audit", "사용 기록"],
+  ["policies", "에이전트와 정책"],
+  ["settings", "설정"],
+];
+
+/// The command palette, open, with what was typed.
+export interface Palette { query: string }
+
 /// A question a change is waiting on, and the change to send again once confirmed.
 export interface Ask { question: string; retry: () => Promise<unknown>; title?: string }
 
@@ -29,6 +43,7 @@ export interface State {
   kinds: KindForm[];
   editor: Editor | null;
   ask: Ask | null;
+  palette: Palette | null;
   selected: string | null;
   revealed: Revealed | null;
   error: string | null;
@@ -48,6 +63,7 @@ export const initial: State = {
   kinds: [],
   editor: null,
   ask: null,
+  palette: null,
   selected: null,
   revealed: null,
   error: null,
@@ -63,4 +79,7 @@ export const edit = (s: State, editor: Editor | null): State => ({ ...s, editor,
 export const show = (s: State, revealed: Revealed): State =>
   s.selected === revealed.item ? { ...s, revealed } : s;
 export const hide = (s: State): State => ({ ...s, revealed: null });
+export const openPalette = (s: State): State => ({ ...s, palette: { query: "" } });
+export const query = (s: State, typed: string): State => (s.palette ? { ...s, palette: { query: typed } } : s);
+export const closePalette = (s: State): State => ({ ...s, palette: null });
 export const fail = (s: State, error: string): State => ({ ...s, error });

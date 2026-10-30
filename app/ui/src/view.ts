@@ -2,24 +2,17 @@
 // `state.revealed`. Buttons carry `data-action` for the one click handler in main.ts.
 
 import type { Item } from "./api.js";
-import type { State, View } from "./state.js";
+import { SCREENS, type State, type View } from "./state.js";
 import { dialog, policies, settings } from "./views/admin.js";
 import { editor } from "./views/editor.js";
 import { form } from "./views/form.js";
+import { palette, paletteCommands } from "./views/palette.js";
 
 import { esc } from "./html.js";
 
 export { esc };
 
-const NAV: [View, string][] = [
-  ["home", "홈"],
-  ["inbox", "확인 대기"],
-  ["sessions", "세션"],
-  ["items", "항목"],
-  ["audit", "사용 기록"],
-  ["policies", "에이전트와 정책"],
-  ["settings", "설정"],
-];
+const NAV = SCREENS;
 
 function count(s: State, view: View): number {
   if (view === "inbox") return s.inbox.requests.length + s.inbox.drafts.length + s.handoffs.length;
@@ -150,5 +143,5 @@ export function render(s: State): string {
           policies: (x: State) => policies(x.policies),
           settings: (x: State) => settings(x.settings),
         }[s.view](s)];
-  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${main}</section>${dialog(s.ask)}`;
+  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${main}</section>${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
 }
