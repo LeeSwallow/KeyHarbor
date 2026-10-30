@@ -23,6 +23,9 @@ pub enum SessionOp {
     /// not put a sign-in prompt in front of the user.
     WaitAuth(SessionId),
     WaitForResume(SessionId),
+    /// Waiting for the person to hand a site over: it tells the agent what the session can now
+    /// reach, so it needs the session.
+    WaitSite(SessionId),
     Endpoint(SessionId),
     /// Reading or recording a site's sign-in state: it tells an agent where the session is
     /// signed in, so it needs the session.
@@ -42,6 +45,7 @@ impl SessionOp {
             | Self::Stop(id)
             | Self::WaitAuth(id)
             | Self::WaitForResume(id)
+            | Self::WaitSite(id)
             | Self::SiteState(id) => {
                 vec![Action::OpenSession(id)]
             }
@@ -73,6 +77,7 @@ mod tests {
             SessionOp::Stop(id),
             SessionOp::WaitAuth(id),
             SessionOp::WaitForResume(id),
+            SessionOp::WaitSite(id),
             SessionOp::SiteState(id),
         ] {
             assert_eq!(op.actions(), vec![Action::OpenSession(id)], "{op:?}");

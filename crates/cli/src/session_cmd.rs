@@ -5,13 +5,13 @@ use crate::compose::App;
 use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use keyharbor_core::{
-    LOCAL_AGENT,
-    session::{self as lifecycle, DisplayState, OpenOptions, SessionView},
+    LOCAL_AGENT, grant,
+    session::{self as lifecycle, DisplayState, OpenOptions, ResumeWait, SessionView, poll},
 };
 use keyharbor_domain::{
     SessionId, SessionName, State,
     ports::{Clock, SessionRuntime, Store},
-    vault::Description,
+    vault::{Description, Origin},
 };
 use keyharbor_supervisor::{DEFAULT_BROWSER, SUPERVISE_COMMAND, SuperviseArgs};
 use std::{ffi::OsString, path::PathBuf};
@@ -60,6 +60,17 @@ pub enum SessionCmd {
         /// Site origin the user should sign in to, e.g. https://example.com
         #[arg(long)]
         origin: Option<String>,
+    },
+    /// Wait until the person hands a site over to this session from their browser (the
+    /// extension), then print its origin
+    Receive {
+        id: String,
+        /// Only this site, e.g. https://github.com
+        #[arg(long)]
+        origin: Option<String>,
+        /// How long to wait, 1–300 seconds (default 120)
+        #[arg(long)]
+        timeout_seconds: Option<u64>,
     },
     /// Show the pending authentication request
     Handoff { id: String },
@@ -167,6 +178,23 @@ impl Ports<'_> {
                     LOCAL_AGENT,
                 )?;
                 println!("{id}\t{}\t{request}", State::AwaitingUser.as_str());
+            }
+            SessionCmd::Receive {
+                id,
+                origin,
+                timeout_seconds,
+            } => {
+                let id = session_id(&id)?;
+                let origin = origin
+                    .map(|o| Origin::parse(&o).map_err(|e| anyhow::anyhow!("{e}")))
+                    .transpose()?;
+                let wait = ResumeWait::seconds(timeout_seconds)?;
+                let since = self.clock.unix_seconds();
+                let check = || grant::handed_off(&*self.store, id, since, origin.as_ref());
+                let Some(grant) = poll(wait, check, std::thread::sleep)? else {
+                    bail!("no site was handed over before the wait ran out");
+                };
+                println!("{id}\treceived\t{}", grant.origin.as_str());
             }
             SessionCmd::Handoff { id } => {
                 let id = session_id(&id)?;

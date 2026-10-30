@@ -46,6 +46,7 @@ cargo run -p keyharbor -- list
 | `open <id> [--url U] [--cdp] [--browser PATH]` | 기본 브라우저는 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`. `--url`은 HTTPS(또는 localhost HTTP), 자격 증명·query·fragment 없이 |
 | `stop <id>` | 감독자에게 `close`를 보내 `Browser.close`로 끝내고 `stopped`까지 기다린다(10초 안에 안 끝나면 강제 종료) |
 | `wait-auth <id> [--origin O]` · `handoff <id>` · `resume <id> <request-id>` | 사용자에게 로그인을 넘기고, 같은 request id로만 재개. 새 요청은 이전 대기 요청을 대체한다 |
+| `receive <id> [--origin O] [--timeout-seconds N]` | 사람이 평소 Chrome(확장)에서 이 세션으로 사이트를 넘길 때까지 기다렸다가 `id received origin`을 출력한다(1–300초, 기본 120). 사람이 직접 만든 grant는 넘김으로 치지 않는다 |
 | `recover <id> --confirm-browser-closed` | 감독자가 죽은 세션(`recovery_required`·`failed`)을 `stopped`로. 감독자가 살아 있으면 거부 |
 | `endpoint <id>` | `--cdp`로 연 세션의 raw CDP 주소(`ws://127.0.0.1:…`). **켜면 KeyHarbor의 보호가 우회된다** |
 | `mcp [--session ID] [--allow-cdp] [--agent NAME] [--browser PATH]` | stdio MCP 서버. `--agent`가 없으면 에이전트 이름은 `mcp` |
@@ -62,7 +63,7 @@ cargo run -p keyharbor -- list
 
 | 분류 | 도구 |
 |---|---|
-| 세션 | `session_list`(설명 포함), `session_create {name, description?}`, `session_open {id, url?, cdp?}`, `session_stop`, `session_wait_auth {id, origin?}`, `session_wait_for_resume {id, request_id, timeout_seconds 1–300}` |
+| 세션 | `session_list`(설명 포함), `session_create {name, description?}`, `session_open {id, url?, cdp?}`, `session_stop`, `session_wait_auth {id, origin?}`, `session_wait_for_resume {id, request_id, timeout_seconds 1–300}`, `session_wait_site {id, origin?, timeout_seconds}`(사람이 사이트를 넘길 때까지, `received`·`waiting`) |
 | 세션 (선택) | `session_endpoint` — `--allow-cdp`일 때만 등록 |
 | 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_type`, `browser_login {item, submit?}`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` — 모두 `session` 인자 |
 | 금고 | `vault_list` {prefix?, tag?} — 이름·종류·도메인·필드 이름·필드별 placeholder·설명(항목·필드)·태그·비밀 아닌 필드의 값(`plain_values`)·origin·바인딩·`run_allowed`·`expires_at`·`expired`·상태·출처만. 메타 MAC이 맞지 않는 항목은 이름과 `tampered: true`만 |

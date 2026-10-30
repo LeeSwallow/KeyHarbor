@@ -59,6 +59,7 @@ fn session_tools_with_fake_browser() {
         "session_stop",
         "session_wait_auth",
         "session_wait_for_resume",
+        "session_wait_site",
         "browser_navigate",
         "browser_snapshot",
         "browser_screenshot",
@@ -123,6 +124,12 @@ fn session_tools_with_fake_browser() {
     );
     mcp.err("session_open", json!({"id": id}));
     mcp.err("session_endpoint", json!({"id": id}));
+    let none = mcp.ok("session_wait_site", json!({"id": id, "timeout_seconds": 1}));
+    assert_eq!(none["status"], "waiting", "{none}");
+    mcp.err(
+        "session_wait_site",
+        json!({"id": id, "origin": "http://plain.example", "timeout_seconds": 1}),
+    );
 
     let handoff = mcp.ok(
         "session_wait_auth",
@@ -309,6 +316,7 @@ fn an_agent_denied_a_session_cannot_stop_it_or_ask_the_user_in_it() {
             "session_wait_for_resume",
             json!({"id": id, "request_id": request, "timeout_seconds": 1}),
         ),
+        ("session_wait_site", json!({"id": id, "timeout_seconds": 1})),
     ] {
         let denied = codex.err(tool, arguments);
         assert!(
