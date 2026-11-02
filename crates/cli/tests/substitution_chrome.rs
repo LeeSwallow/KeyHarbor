@@ -316,3 +316,49 @@ fn select_chooses_an_option_from_a_placeholder_without_showing_it() {
         .to_string();
     assert_eq!(missing, "no option matches");
 }
+
+#[test]
+fn upload_puts_only_allowed_files_into_a_file_input() {
+    let Some(browser) = chrome() else { return };
+    let base = common::serve_fn(|_| {
+        "<!doctype html><title>Apply</title>\
+         <label>Resume <input id=cv type=file></label><p id=got></p>\
+         <script>document.getElementById('cv').addEventListener('change', e => \
+         document.getElementById('got').textContent = 'got ' + e.target.files[0].name + ' ' + e.target.files[0].size)</script>"
+            .to_owned()
+    });
+    let mut h = Harness::new();
+    let folder = common::short_tempdir();
+    let resume = folder.path().join("resume.pdf");
+    std::fs::write(&resume, "%PDF-1.4 test").unwrap();
+    let outside = common::short_tempdir();
+    let secret = outside.path().join("id_rsa");
+    std::fs::write(&secret, "private").unwrap();
+    let resume = resume.to_str().unwrap().to_owned();
+    let secret = secret.to_str().unwrap().to_owned();
+    h.open(&browser);
+    h.ok_call(json!({"op": "navigate", "url": format!("{base}/")}));
+    let refused = h
+        .call(json!({"op": "upload", "target": {"selector": "#cv"}, "files": [resume]}))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.starts_with("upload_dirs is not set"), "{refused}");
+    h.confirmed(&[
+        "settings",
+        "set",
+        "upload_dirs",
+        folder.path().to_str().unwrap(),
+    ]);
+    let out = h.ok_call(json!({"op": "upload", "target": {"selector": "#cv"}, "files": [resume]}));
+    assert_eq!(out, json!({"uploaded": ["resume.pdf"]}));
+    h.ok_call(json!({"op": "wait", "selector": "#got"}));
+    assert!(h.snapshot().contains("got resume.pdf 13"));
+    let outside_refused = h
+        .call(json!({"op": "upload", "target": {"selector": "#cv"}, "files": [secret]}))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        outside_refused.ends_with("is outside upload_dirs"),
+        "{outside_refused}"
+    );
+}

@@ -20,6 +20,7 @@ pub(crate) mod ops;
 mod paths;
 mod process;
 mod runtime;
+mod upload_files;
 
 pub use argv::{SUPERVISE_COMMAND, SuperviseArgs};
 pub use keyharbor_broker::DEFAULT_BROWSER;

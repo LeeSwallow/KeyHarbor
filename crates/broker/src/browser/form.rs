@@ -1,5 +1,6 @@
-//! Choosing an option of a `<select>` (`browser_select`). The page function picks the option
-//! and fires `input` and `change` so frameworks see the choice as if a person made it.
+//! Form controls that are not typed into: choosing an option of a `<select>`
+//! (`browser_select`; the page function fires `input` and `change` so frameworks see a
+//! person's choice) and putting files into a file input (`browser_upload`).
 
 use super::CdpBrowser;
 use anyhow::{Context, Result};
@@ -55,5 +56,27 @@ impl CdpBrowser {
             anyhow::bail!("browser_select needs a <select> element");
         }
         Ok(u32::try_from(index).ok())
+    }
+}
+
+impl CdpBrowser {
+    /// Puts local files into a file input, as a person choosing them in the file dialog.
+    pub(super) async fn put_files(
+        &self,
+        session: &str,
+        node: u64,
+        paths: &[std::path::PathBuf],
+    ) -> Result<()> {
+        let files: Vec<String> = paths
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        self.call(
+            "DOM.setFileInputFiles",
+            json!({"files": files, "backendNodeId": node}),
+            session,
+        )
+        .await?;
+        Ok(())
     }
 }
