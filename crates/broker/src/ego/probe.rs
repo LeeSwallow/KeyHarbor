@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn auto_falls_back_when_probe_times_out() {
-        let tmp = super::super::test_dir("probe");
+        let tmp = super::super::test_dir("slow");
         let slow = script(&tmp, "sleep 10");
         let started = Instant::now();
         assert!(!answers(&slow, Duration::from_millis(300)));

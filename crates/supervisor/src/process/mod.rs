@@ -7,14 +7,19 @@ mod prepare;
 
 use crate::{argv::SuperviseArgs, control, lock::acquire_lock_within, ops::Ops, paths};
 use anyhow::{Context, Result, bail};
-use keyharbor_broker::chrome::{self, ChromeLaunch};
+use keyharbor_broker::{
+    chrome::{self, ChromeLaunch},
+    ego::{self, EgoLaunch},
+};
 use keyharbor_core::{
     grant,
     session::supervision::{self, BrowserExit},
 };
 use keyharbor_domain::{
     Generation, SessionId,
+    browser_choice::BrowserKind,
     ports::{Clock, Store, StoreFactory},
+    settings::EGO_POLL_MS,
 };
 use keyharbor_guard::{Guard, SharedStore, VaultOpener};
 use prepare::{bind, prepare};
@@ -35,6 +40,29 @@ pub struct Adapters {
     pub clock: Arc<dyn Clock>,
     /// Start the browser headless (`KEYHARBOR_BROWSER_HEADLESS=1`, tests and CI).
     pub headless: bool,
+}
+
+/// The browser a run starts: Chrome over its pipe, or ego lite through the relay.
+enum Launch {
+    Chrome(ChromeLaunch),
+    Ego(EgoLaunch),
+}
+
+impl Launch {
+    /// How this browser keeps out-of-grant documents out.
+    fn gate(&self) -> keyharbor_broker::Gate {
+        match self {
+            Self::Chrome(_) => keyharbor_broker::Gate::Intercept,
+            Self::Ego(_) => keyharbor_broker::Gate::AfterCommit,
+        }
+    }
+
+    async fn spawn(&self) -> Result<chrome::Chrome> {
+        match self {
+            Self::Chrome(launch) => chrome::spawn(launch),
+            Self::Ego(launch) => ego::spawn(launch).await,
+        }
+    }
 }
 
 /// How long the browser gets to exit after `close` before it is killed.
@@ -85,11 +113,11 @@ pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
         supervision::mark_failed(store, id, generation, &error);
         error
     };
-    if kind == keyharbor_domain::browser_choice::BrowserKind::EgoLite {
-        // The relay that drives ego lite comes with #121.
+    let is_ego = kind == BrowserKind::EgoLite;
+    if is_ego && cdp {
         return Err(fail(
             &*store,
-            anyhow::anyhow!("ego lite support is not built yet"),
+            anyhow::anyhow!("raw CDP is not available in ego lite sessions"),
         ));
     }
     let url = match url
@@ -109,19 +137,37 @@ pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
             anyhow::anyhow!("denied: navigation (out-of-grant)"),
         ));
     }
-    let prepared = match prepare(data, &id, cdp) {
+    let prepared = match prepare(data, &id, cdp, !is_ego) {
         Ok(prepared) => prepared,
         Err(error) => return Err(fail(&*store, error)),
     };
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    let launch = ChromeLaunch {
-        executable: browser,
-        profile: prepared.profile,
-        url,
-        debug_port: cdp,
-        headless: adapters.headless || headless,
+    let launch = if is_ego {
+        let space = match store.get(id)? {
+            Some(row) => format!("keyharbor-{}-{}", row.name.as_str(), &id.to_string()[..8]),
+            None => return Err(fail(&*store, anyhow::anyhow!("session not found"))),
+        };
+        let poll = keyharbor_core::settings::get(&*store, EGO_POLL_MS)?
+            .parse()
+            .context("invalid ego_poll_ms")?;
+        Launch::Ego(EgoLaunch {
+            command: browser,
+            socket: paths::ego_socket_path(data, &id),
+            log: paths::ego_log_path(data, &id),
+            space,
+            url,
+            poll: Duration::from_millis(poll),
+        })
+    } else {
+        Launch::Chrome(ChromeLaunch {
+            executable: browser,
+            profile: prepared.profile,
+            url,
+            debug_port: cdp,
+            headless: adapters.headless || headless,
+        })
     };
     let run = Run {
         id,
@@ -145,7 +191,7 @@ async fn supervise(
     run: Run,
     store: Box<dyn Store>,
     (open_vault, clock): (VaultOpener, Arc<dyn Clock>),
-    launch: ChromeLaunch,
+    launch: Launch,
 ) -> Result<()> {
     let Run {
         id,
@@ -161,10 +207,11 @@ async fn supervise(
         Ok(listener) => listener,
         Err(error) => return Err(fail(&*store, error)),
     };
+    let gate = launch.gate();
     let chrome::Chrome {
         process: mut child,
         link,
-    } = match chrome::spawn(&launch) {
+    } = match launch.spawn().await {
         Ok(spawned) => spawned,
         Err(error) => {
             let _ = fs::remove_file(&socket);
@@ -195,7 +242,7 @@ async fn supervise(
         close: tokio::sync::Notify::new(),
         close_requested: false.into(),
     });
-    watch_pages(&shared, &link, clock.clone());
+    watch_pages(&shared, &link, clock.clone(), gate);
     sweep_ended_grants(&shared, &link, clock);
     let watcher = shared.clone();
     tokio::spawn(async move {
@@ -272,7 +319,12 @@ async fn record_exit(shared: &Shared, status: ExitStatus) {
 /// Watches every page: document loads are held to the session's grants (R-43), and every
 /// sign-in the browser reports goes to the guard, which keeps it only during a handoff with
 /// capture on (08 §8.2 ②). Values stay in this process.
-fn watch_pages(shared: &Arc<Shared>, link: &chrome::CdpLink, clock: Arc<dyn Clock>) {
+fn watch_pages(
+    shared: &Arc<Shared>,
+    link: &chrome::CdpLink,
+    clock: Arc<dyn Clock>,
+    gate: keyharbor_broker::Gate,
+) {
     let (sender, mut captured) = tokio::sync::mpsc::channel(16);
     let rule_shared = shared.clone();
     let documents: keyharbor_broker::DocumentRule = Arc::new(move |url: &str| {
@@ -285,6 +337,7 @@ fn watch_pages(shared: &Arc<Shared>, link: &chrome::CdpLink, clock: Arc<dyn Cloc
     let hooks = keyharbor_broker::PageHooks {
         captured: sender,
         documents,
+        gate,
     };
     let link = link.clone();
     tokio::spawn(async move { link.watch_pages(hooks).await });

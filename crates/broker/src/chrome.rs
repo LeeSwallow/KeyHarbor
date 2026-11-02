@@ -40,6 +40,10 @@ impl CdpLink {
         self.0.clone()
     }
 
+    pub(crate) fn from_cdp(cdp: Arc<Cdp>) -> Self {
+        Self(cdp)
+    }
+
     /// The raw browser adapter over this pipe. Must be called inside a Tokio runtime.
     /// Screenshots are written into `shots`, a private directory that already exists, as
     /// `<prefix>-<n>.png`.

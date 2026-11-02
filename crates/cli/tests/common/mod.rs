@@ -46,6 +46,15 @@ pub fn chrome() -> Option<PathBuf> {
     }
 }
 
+/// Whether to run the tests against a real ego lite (`KEYHARBOR_TEST_EGO=1`, ADR-0018).
+pub fn ego() -> bool {
+    let on = std::env::var_os("KEYHARBOR_TEST_EGO").is_some_and(|v| !v.is_empty());
+    if !on {
+        eprintln!("skipped: set KEYHARBOR_TEST_EGO=1 with ego lite running to run");
+    }
+    on
+}
+
 /// A tiny HTTP server: `/` is a login form, `/done?user=…` the page after it.
 pub fn serve_site() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

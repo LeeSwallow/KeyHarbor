@@ -409,7 +409,7 @@ flowchart LR
 ```
 
 - 이 세션에서는 S1(에이전트가 평문을 보지 않는다)을 약속하지 않는다. 사람이 받아들였다(R-47(2)). 마스킹·origin 확인·사용 기록은 그대로 돈다: MCP로 돌아가는 결과에서는 값이 가려진다.
-- grant 밖 문서 막기는 이벤트를 꺼내 오는 간격만큼 늦다. 막는다고 약속하지 않는다.
+- grant 밖 문서는 막지 못하고 **열린 뒤 `about:blank`로 바꾼다**. ego는 한 Page의 CDP 명령을 하나씩만 처리해서, 문서 요청을 멈춰 세우면(Fetch) 그 탐색이 끝나기를 기다리는 동안 풀어 줄 명령도 줄 뒤에서 기다린다(구현 중 시험으로 확인, J-116). 그 사이 페이지가 잠깐 보이고 그 사이트의 요청은 이미 나갔다. 막는다고 약속하지 않는다.
 - `session_list`·앱 세션 카드·사용 기록에 `protection: shared`로 표시한다. 정책으로 막는다: `keyharbor policy deny --agent '*' --resource browser --target ego-lite`.
 
 ## 3.14 파일 올리기 (`browser_upload`)
