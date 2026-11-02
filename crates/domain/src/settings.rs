@@ -39,6 +39,11 @@ pub const BROWSER: &str = "browser";
 pub const EGO_PROBE_SECONDS: &str = "ego_probe_seconds";
 const EGO_PROBE_RANGE: std::ops::RangeInclusive<u64> = 1..=30;
 
+/// How often (ms) the ego lite relay takes page events (ADR-0018). Shorter reacts faster,
+/// longer costs less; ego offers no push.
+pub const EGO_POLL_MS: &str = "ego_poll_ms";
+const EGO_POLL_RANGE: std::ops::RangeInclusive<u64> = 5..=1000;
+
 /// The `default_item_ttl` value meaning "never expire".
 pub const NO_TTL: &str = "none";
 
@@ -59,6 +64,8 @@ pub enum SettingFormat {
     Browser,
     /// Whole seconds within [`EGO_PROBE_RANGE`].
     ProbeSeconds,
+    /// Milliseconds within [`EGO_POLL_RANGE`].
+    PollMillis,
 }
 
 /// Which change to a setting weakens a protection and needs a person.
@@ -148,6 +155,12 @@ pub const SETTINGS: &[SettingSpec] = &[
         format: SettingFormat::ProbeSeconds,
         weakening: SettingWeakening::Never,
     },
+    SettingSpec {
+        key: EGO_POLL_MS,
+        default: "20",
+        format: SettingFormat::PollMillis,
+        weakening: SettingWeakening::Never,
+    },
     notice(NOTIFY_REQUESTS),
     notice(NOTIFY_HANDOFFS),
     notice(NOTIFY_DRAFTS),
@@ -198,6 +211,14 @@ impl SettingSpec {
                     "must be whole seconds from {} to {}",
                     EGO_PROBE_RANGE.start(),
                     EGO_PROBE_RANGE.end()
+                ))),
+            },
+            SettingFormat::PollMillis => match value.parse::<u64>() {
+                Ok(n) if EGO_POLL_RANGE.contains(&n) => Ok(()),
+                _ => Err(InvalidSetting(format!(
+                    "must be whole milliseconds from {} to {}",
+                    EGO_POLL_RANGE.start(),
+                    EGO_POLL_RANGE.end()
                 ))),
             },
             SettingFormat::ClearSeconds => match clear_seconds(value) {

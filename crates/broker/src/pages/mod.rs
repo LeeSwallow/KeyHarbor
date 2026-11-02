@@ -14,10 +14,22 @@ use serde_json::json;
 use std::{collections::HashSet, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 
+/// How documents outside the session's grants are kept out (R-43, ADR-0018).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Gate {
+    /// Every document request waits until the rule allows it (Chrome).
+    Intercept,
+    /// A document the rule refuses is replaced by `about:blank` once it is reported
+    /// committed. ego lite runs one command per page at a time, so a paused request could
+    /// never be answered while the navigation that made it waits.
+    AfterCommit,
+}
+
 /// Where page reports go.
 pub struct PageHooks {
     pub captured: mpsc::Sender<CapturedLogin>,
     pub documents: DocumentRule,
+    pub gate: Gate,
 }
 
 impl CdpLink {
@@ -49,10 +61,22 @@ impl CdpLink {
                     };
                     if params["targetInfo"]["type"] == "page" {
                         ours.insert(page.to_owned());
-                        tokio::spawn(instrument(cdp.clone(), page.to_owned()));
+                        tokio::spawn(instrument(cdp.clone(), page.to_owned(), hooks.gate));
                     } else {
                         tokio::spawn(resume(cdp.clone(), page.to_owned()));
                     }
+                }
+                Some("Page.frameNavigated")
+                    if hooks.gate == Gate::AfterCommit && ours.contains(session) =>
+                {
+                    let url = event["params"]["frame"]["url"].as_str().unwrap_or_default();
+                    let (rule, url) = (hooks.documents.clone(), url.to_owned());
+                    tokio::spawn(gate::after_commit(
+                        cdp.clone(),
+                        rule,
+                        session.to_owned(),
+                        url,
+                    ));
                 }
                 Some("Fetch.requestPaused") if ours.contains(session) => {
                     let (rule, params) = (hooks.documents.clone(), event["params"].clone());
@@ -75,9 +99,11 @@ impl CdpLink {
 
 /// Gates and instruments a new page before it loads anything, then lets it run. A page that
 /// cannot be gated is closed rather than left ungated.
-async fn instrument(cdp: Arc<Cdp>, session: String) {
+async fn instrument(cdp: Arc<Cdp>, session: String, mode: Gate) {
     let ready = async {
-        gate::enable(&cdp, &session).await?;
+        if mode == Gate::Intercept {
+            gate::enable(&cdp, &session).await?;
+        }
         capture::instrument(&cdp, &session).await
     }
     .await;

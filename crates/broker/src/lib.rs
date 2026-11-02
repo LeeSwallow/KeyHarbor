@@ -15,4 +15,4 @@ mod pages;
 
 pub use browser::CdpBrowser;
 pub use chrome::DEFAULT_BROWSER;
-pub use pages::{DocumentRule, PageHooks};
+pub use pages::{DocumentRule, Gate, PageHooks};

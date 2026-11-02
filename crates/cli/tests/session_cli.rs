@@ -568,7 +568,7 @@ fn auto_picks_ego_lite_when_it_answers() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(!out.status.success());
     assert!(
-        err.contains("session did not start (failed: ego lite support is not built yet)"),
+        err.contains("session did not start (failed: ego relay exited before it connected"),
         "{err}"
     );
 }

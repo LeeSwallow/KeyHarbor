@@ -18,10 +18,18 @@ pub(super) struct Prepared {
     pub shots: PathBuf,
 }
 
-pub(super) fn prepare(data: &Path, id: &SessionId, cdp: bool) -> Result<Prepared> {
+pub(super) fn prepare(
+    data: &Path,
+    id: &SessionId,
+    cdp: bool,
+    profile_needed: bool,
+) -> Result<Prepared> {
     let profile = paths::profile_dir(data, id);
-    paths::private_dir(profile.parent().context("invalid profile path")?)?;
-    paths::private_dir(&profile)?;
+    // ego lite runs on the person's own ego profile (ADR-0018): no profile of ours.
+    if profile_needed {
+        paths::private_dir(profile.parent().context("invalid profile path")?)?;
+        paths::private_dir(&profile)?;
+    }
     if cdp {
         let port_file = profile.join(DEVTOOLS_ACTIVE_PORT);
         match fs::symlink_metadata(&port_file) {

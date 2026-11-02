@@ -25,6 +25,13 @@ pub fn mcp_lock_path(data: &Path, id: &SessionId) -> PathBuf {
 pub fn socket_path(data: &Path, id: &SessionId) -> PathBuf {
     run_dir(data).join(format!("{id}.sock"))
 }
+/// The socket an ego lite relay connects to, and where its error output goes (ADR-0018).
+pub fn ego_socket_path(data: &Path, id: &SessionId) -> PathBuf {
+    run_dir(data).join(format!("{id}.ego"))
+}
+pub fn ego_log_path(data: &Path, id: &SessionId) -> PathBuf {
+    run_dir(data).join(format!("{id}.ego.log"))
+}
 pub fn shots_dir(data: &Path) -> PathBuf {
     run_dir(data).join("shots")
 }

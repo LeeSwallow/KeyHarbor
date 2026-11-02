@@ -40,3 +40,24 @@ pub(super) async fn answer(cdp: Arc<Cdp>, rule: DocumentRule, session: String, p
     };
     let _ = cdp.call(method, body, Some(&session)).await;
 }
+
+/// [`Gate::AfterCommit`](super::Gate): a document the rule refuses has already loaded, so the
+/// page is sent to `about:blank`. Later than interception, and a frame's document may be
+/// seen before it is replaced (03 §3.13).
+pub(super) async fn after_commit(cdp: Arc<Cdp>, rule: DocumentRule, session: String, url: String) {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return;
+    }
+    let allowed = tokio::task::spawn_blocking(move || rule(&url))
+        .await
+        .is_ok_and(|decision| decision.unwrap_or(false));
+    if !allowed {
+        let _ = cdp
+            .call(
+                "Page.navigate",
+                json!({"url": "about:blank"}),
+                Some(&session),
+            )
+            .await;
+    }
+}
