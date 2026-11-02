@@ -473,10 +473,10 @@ flowchart TB
 | 개발자 | `secret` | `value`, `note` | API 키 등 단일 값 | 꺼짐 (브라우저 입력은 origin 목록 필요, R-36) |
 | 개발자 | `env` | 사용자가 정한 변수 이름들 (`DATABASE_URL`, `OPENAI_API_KEY` …), `note` | `keyharbor run` | 해당 없음 |
 | 결제 | `card` | `holder`, `number`, `exp_month`, `exp_year`, `cvc`, `billing_address`(address ID), `note` | 결제 폼 (대개 결제사 iframe) | 켜짐 — 결제사 origin을 함께 등록 |
-| 개인정보 | `identity` | `full_name`, `given_name`, `family_name`, `email`, `phone`, `birth_date`, `note` | 가입·주문 폼 | 꺼짐 |
+| 개인정보 | `identity` | `full_name`, `given_name`, `family_name`, `email`, `phone`, `birth_date`, `english_name`, `hanja_name`, `gender`, `nationality`, `emergency_phone`, `military_service`·`disability`·`veterans`(비밀), `note`, 사용자 정의 필드 | 가입·주문 폼, 채용 지원서 | 꺼짐 |
 | 개인정보 | `address` | `recipient`, `line1`, `line2`, `city`, `region`, `postal_code`, `country`, `phone`, `note` | 배송·청구 주소 | 꺼짐 |
 
-- 종류마다 필드 스키마를 정해 두되, 사용자가 **사용자 정의 필드**를 더할 수 있다. 모든 필드는 소속 도메인의 키로 암호화한다.
+- 종류마다 필드 스키마를 정해 두고, `identity`·`address`에는 사용자가 **사용자 정의 필드**(`school`, `gpa` …)를 더할 수 있다(`KindSpec.custom_fields`, J-111). 사용자 정의 필드는 비밀이고 가려진다. 모든 필드는 소속 도메인의 키로 암호화한다.
 - `identity`·`address`의 origin 바인딩 기본값을 끈 이유는 여러 사이트에서 쓰는 정보이기 때문이다. 켤 수 있다. [설계자 판단]
 - `totp_seed`는 저장만 하고 코드 생성·입력은 하지 않는다. 인증 코드 처리는 범위 밖이다(R-07). [설계자 판단]
 - `username`도 암호화한다. 계정 이름도 민감한 정보이기 때문이다. [설계자 판단]

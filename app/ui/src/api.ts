@@ -17,13 +17,13 @@ export interface AuditEvent { at: string; agent: string; kind: string; item: str
 export interface FormField { name: string; secret: boolean }
 export interface RequestForm {
   id: string; agent: string; kind: string; name: string; origin: string | null; reason: string;
-  fields: FormField[]; free_fields: boolean;
+  fields: FormField[]; free_fields: boolean; custom_fields: boolean;
 }
 export interface Handoff { session: string; session_name: string; request_id: string; origin: string | null }
 export interface Setting { key: string; value: string; default: string }
 export interface Rule { agent: string; resource: string; target: string; effect: string }
 /// A change that may need a person: done, or the question to put to them.
-export interface KindForm { kind: string; domain: string; fields: [string, boolean][]; free_fields: boolean }
+export interface KindForm { kind: string; domain: string; fields: [string, boolean][]; free_fields: boolean; custom_fields: boolean }
 export interface NewItemForm { name: string; kind: string; origins: string[]; values: Record<string, string>; generate_password: boolean }
 export interface ChangeForm { values: Record<string, string>; origins?: string[] }
 export type Outcome = { outcome: "done" } | { outcome: "ask"; question: string };

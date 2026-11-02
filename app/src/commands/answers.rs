@@ -31,6 +31,7 @@ pub struct RequestForm {
     pub fields: Vec<FormField>,
     /// Free-form names (env items): the person names each variable.
     pub free_fields: bool,
+    pub custom_fields: bool,
 }
 
 fn request_id(id: &str) -> Result<RequestId> {
@@ -77,6 +78,7 @@ pub fn request_form(ctx: &Ctx, id: &str) -> Result<RequestForm> {
             })
             .collect(),
         free_fields: spec.free_fields,
+        custom_fields: spec.custom_fields,
     })
 }
 
