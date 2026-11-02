@@ -339,6 +339,8 @@ classDiagram
 8. 약화 작업의 터미널 확인은 pty를 흉내 내는 프로그램이 대신 답할 수 있다.
 9. 엔트로피가 낮은 값(짧은 PIN)은 세션을 여러 번 열면 마스커 거부로 조금씩 추측할 수 있다.
 10. 확인과 입력 사이의 탐색은 이벤트가 늦게 오면 놓칠 수 있다.
+11. 4자보다 짧은 값(세 글자 이름 등)은 가리지 않는다. KeyHarbor가 채운 입력칸은 snapshot에서 가려지지만, 페이지가 그 값을 다른 곳에 다시 쓰면 결과에 보인다.
+12. ego lite 세션은 셸을 가진 에이전트가 채운 값을 읽을 수 있다(§3.13).
 
 ## 3.12 열린 질문 — 셸을 가진 에이전트와 CLI 평문 경로
 
@@ -394,3 +396,22 @@ sequenceDiagram
 | 기록 없이 채우기 | 채운 것마다 `value_autofilled`(항목, origin, 값 없음) | — |
 
 목록(`autofill_list`)은 이름만, 저장(`save_login`)은 값을 받아 draft로 두기만 하므로 Touch ID를 묻지 않는다. 저장한 draft는 사람이 앱에서 확정하기 전에는 채우기 후보가 되지 않는다.
+
+## 3.13 ego lite 세션 (ADR-0018)
+
+ego lite 세션은 감독자가 CDP를 혼자 쥐지 않는다. ego 서비스는 SDK를 쓰는 다른 스크립트에게도 같은 브라우저를 준다. 셸이 있는 에이전트는 `ego-browser nodejs`로 KeyHarbor가 채운 입력칸 값을 읽을 수 있다.
+
+```mermaid
+flowchart LR
+  A["에이전트"] -->|"MCP: placeholder"| G["guard"] -->|"평문"| E["ego lite 입력칸"]
+  A -.->|"셸: ego-browser nodejs<br/>page.evaluate()"| E
+  linkStyle 2 stroke:#d73a4a,stroke-width:3px
+```
+
+- 이 세션에서는 S1(에이전트가 평문을 보지 않는다)을 약속하지 않는다. 사람이 받아들였다(R-47(2)). 마스킹·origin 확인·사용 기록은 그대로 돈다: MCP로 돌아가는 결과에서는 값이 가려진다.
+- grant 밖 문서 막기는 이벤트를 꺼내 오는 간격만큼 늦다. 막는다고 약속하지 않는다.
+- `session_list`·앱 세션 카드·사용 기록에 `protection: shared`로 표시한다. 정책으로 막는다: `keyharbor policy deny --agent '*' --resource browser --target ego-lite`.
+
+## 3.14 파일 올리기 (`browser_upload`)
+
+에이전트가 이 Mac의 파일을 사이트에 올리면 그것도 금고 밖으로 나가는 길이다. 그래서 설정 `upload_dirs`(기본 비어 있음, 비면 거절) 안의 정규 파일만, 그 세션의 grant 안 origin에 있는 `input type=file`에만 넣는다. 경로는 심볼릭 링크를 푼 뒤 비교한다. 폴더를 더하는 것은 약화 작업이다(§3.12.1). 사용 기록 `file_uploaded`에는 파일 이름과 origin만 남는다.
