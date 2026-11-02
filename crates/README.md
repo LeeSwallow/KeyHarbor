@@ -44,7 +44,7 @@ cargo run -p keyharbor -- list
 | `create <name> [--description TEXT]` · `list` (`ls`) | `list`는 `id 이름 상태[ cdp][ 설명]`. 상태가 활성인데 감독자가 없으면 `recovery_required` |
 | `rm <세션>… [--force]` | 멈춘 세션(이름 또는 id)과 그 프로필 폴더를 지운다. 인계 요청·사이트 상태도 함께 지워지고 사용 기록 `session_removed`가 남는다. 멈추지 않은 세션은 거절하고, `--force`면 먼저 닫는다(감독자가 없으면 `recover`처럼 되돌린다) |
 | `edit <id> --description TEXT \| --no-description` | 세션 설명(에이전트에게 보인다, 비밀 아님) |
-| `open <id> [--url U] [--cdp] [--browser auto\|chrome\|ego-lite\|PATH] [--headless]` | `--browser`가 없으면 설정 `browser`(기본 `auto`)를 따른다. `auto`는 `ego-browser`가 `ego_probe_seconds`(기본 5) 안에 답하면 ego lite, 아니면 Chrome(`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`). `ego-lite`인데 답하지 않으면 예약하기 전에 거절한다. `ego-browser`는 `KEYHARBOR_EGO_BROWSER`, `PATH`, `~/.local/bin` 순으로 찾는다. ego lite 세션은 `ls`에 `ego-lite`로, `session_list`에 `protection: shared`로 보인다(ADR-0018). `--headless`는 Chrome을 창 없이. `--url`은 HTTPS(또는 localhost HTTP), 자격 증명·query·fragment 없이. 감독자가 시작하지 못하면 이유를 함께 알린다(`session did not start (failed: …)`, `session_list`의 `failure`). 데이터 폴더가 길어 socket 경로가 103바이트를 넘으면 예약하기 전에 거절한다 |
+| `open <id> [--url U] [--cdp] [--browser auto\|chrome\|ego-lite\|PATH] [--headless]` | `--browser`가 없으면 설정 `browser`(기본 `auto`)를 따른다. `auto`는 `ego-browser`가 `ego_probe_seconds`(기본 5) 안에 답하면 ego lite, 아니면 Chrome. `chrome`은 설치된 곳을 찾는다: `/Applications`와 `~/Applications`의 Google Chrome·Chromium, 그다음 `PATH`의 `google-chrome`·`google-chrome-stable`·`chromium`·`chromium-browser`. 다른 곳이면 `settings set browser <경로>`. `ego-lite`인데 답하지 않으면 예약하기 전에 거절한다. `ego-browser`는 `KEYHARBOR_EGO_BROWSER`, `PATH`, `~/.local/bin` 순으로 찾는다. ego lite 세션은 `ls`에 `ego-lite`로, `session_list`에 `protection: shared`로 보인다(ADR-0018). `--headless`는 Chrome을 창 없이. `--url`은 HTTPS(또는 localhost HTTP), 자격 증명·query·fragment 없이. 감독자가 시작하지 못하면 이유를 함께 알린다(`session did not start (failed: …)`, `session_list`의 `failure`). 데이터 폴더가 길어 socket 경로가 103바이트를 넘으면 예약하기 전에 거절한다 |
 | `stop <id>` | 감독자에게 `close`를 보내 `Browser.close`로 끝내고 `stopped`까지 기다린다(10초 안에 안 끝나면 강제 종료) |
 | `wait-auth <id> [--origin O]` · `handoff <id>` · `resume <id> <request-id>` | 사용자에게 로그인을 넘기고, 같은 request id로만 재개. 새 요청은 이전 대기 요청을 대체한다 |
 | `receive <id> [--origin O] [--timeout-seconds N]` | 사람이 평소 Chrome(확장)에서 이 세션으로 사이트를 넘길 때까지 기다렸다가 `id received origin`을 출력한다(1–300초, 기본 120). 사람이 직접 만든 grant는 넘김으로 치지 않는다 |
@@ -211,3 +211,18 @@ keyharbor browser install-host                         # Chrome·Chromium(ego li
 - 마스킹 오토마톤이 가진 값 사본과 자식 프로세스 환경 변수 사본은 메모리에서 지워지지 않는다.
 - 사용 기록 쓰기는 최선 노력이다. 기록에 실패해도 이미 한 입력·변경은 그대로다.
 - 실제 Keychain에서 감독자의 첫 치환 때 접근 확인창이 뜨는지는 아직 확인하지 않았다.
+
+## 환경에 대한 가정
+
+사람마다 다른 설치 위치를 고정 경로로 두지 않는다. 남은 가정과 바꾸는 방법:
+
+| 가정 | 어디 | 다르면 |
+|---|---|---|
+| macOS와 로그인 Keychain | 루트 키 | 다른 OS는 빌드·대부분의 테스트만 된다 |
+| 데이터 폴더 `~/Library/Application Support/KeyHarbor` | CLI·앱 | `--data-dir`, `KEYHARBOR_HOME` |
+| socket 경로 103바이트 이하 | 감독자 | 짧은 `--data-dir`. 넘으면 `open`이 예약 전에 이유와 함께 거절 |
+| Chrome 위치 | `chrome::locate` | `/Applications`·`~/Applications`·`PATH` 순. 그 밖이면 `settings set browser <경로>` |
+| `ego-browser` 위치 | `ego::probe::locate` | `KEYHARBOR_EGO_BROWSER`, `PATH`, `~/.local/bin` 순. 없으면 `auto`는 Chrome |
+| ego SDK v2.2.0의 API | `ego/relay.js` | ego가 바뀌어 중계기가 실패하면 `run/<id>.ego.log`에 남고 `open`이 실패 이유를 보인다 |
+| 확장 native host 폴더 | `install-host` | 브라우저마다 관례대로. ego lite는 Chromium 폴더(J-117) |
+| host 호출자 검사의 `.app` 번들 이름 | `host/caller.rs` | macOS 밖에서는 자동 완성을 거절한다(닫히는 쪽으로 실패) |
