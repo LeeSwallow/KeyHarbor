@@ -29,6 +29,9 @@ pub enum BrowserCmd {
 pub enum HostBrowser {
     Chrome,
     Chromium,
+    /// ego lite (Citro Labs), a Chromium that loads Chrome extensions (ADR-0018).
+    #[value(name = "ego-lite")]
+    EgoLite,
     Firefox,
     All,
 }

@@ -137,16 +137,18 @@ npm run check     # lint + test (CI가 이것을 돈다)
 ## 설치 (개발용, 압축 해제)
 
 - **Chrome**: `chrome://extensions` → 개발자 모드 → "압축해제된 확장 프로그램 로드" → `dist/chrome`. 매니페스트의 `key` 덕분에 ID는 항상 `fimjcgdlhnkdmjnhcccnkpcnmcecgjoc`다(공개 키만 커밋, 개인 키는 만들지 않았다).
+- **ego lite**: Chromium이라 Chrome과 같은 `dist/chrome`을 쓴다. ego의 확장 관리 화면(개발자 모드 → 압축해제된 확장 프로그램 로드)에서 불러오거나, 시험할 때는 `--load-extension=<dist/chrome>`으로 띄운다. ID도 같다. native host는 `install-host --browser ego-lite`(= Chromium 폴더)로 등록한다.
 - **Firefox**: `about:debugging#/runtime/this-firefox` → "임시 부가 기능 로드" → `dist/firefox/manifest.json`. 또는 `npx web-ext run --source-dir dist/firefox`. ID는 `browser-extension@keyharbor.dev`. Firefox 팝업 화면은 자동 검사가 없어서 이 방법으로 눈으로 확인한다(`web-ext run --arg=--headless`로 설치까지는 된다).
 
 ### native host 매니페스트 (4단계)
 
-`native-host/`의 두 파일은 모양을 보여 주는 예시다. 실제 매니페스트는 `keyharbor browser install-host [--browser chrome|chromium|firefox|all]`가 아래 위치에 쓴다. `path`는 데이터 폴더의 `native-host` 스크립트(0700)이고, 이 스크립트가 `keyharbor --data-dir <데이터 폴더> browser host`를 실행한다(브라우저는 매니페스트의 실행 파일에 우리 인자를 넘기지 않는다).
+`native-host/`의 두 파일은 모양을 보여 주는 예시다. 실제 매니페스트는 `keyharbor browser install-host [--browser chrome|chromium|ego-lite|firefox|all]`가 아래 위치에 쓴다. `path`는 데이터 폴더의 `native-host` 스크립트(0700)이고, 이 스크립트가 `keyharbor --data-dir <데이터 폴더> browser host`를 실행한다(브라우저는 매니페스트의 실행 파일에 우리 인자를 넘기지 않는다).
 
 | 브라우저 | macOS 위치 | 허용 |
 |---|---|---|
 | Chrome | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/dev.keyharbor.host.json` | `allowed_origins: ["chrome-extension://fimjcgdlhnkdmjnhcccnkpcnmcecgjoc/"]` |
 | Chromium | `~/Library/Application Support/Chromium/NativeMessagingHosts/` | 같음 |
+| ego lite | Chromium과 같은 폴더. ego lite(0.6.2.5)는 브랜드 없는 Chromium 빌드라 자기 데이터 폴더(`Citro Labs/ego lite`)나 프로필의 `NativeMessagingHosts`를 읽지 않고 Chromium 폴더를 읽는다(J-117) | 같음 |
 | Firefox | `~/Library/Application Support/Mozilla/NativeMessagingHosts/dev.keyharbor.host.json` | `allowed_extensions: ["browser-extension@keyharbor.dev"]` |
 
 ## 받는 쪽 (4단계, Rust)
