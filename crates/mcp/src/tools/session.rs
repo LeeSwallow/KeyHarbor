@@ -7,6 +7,7 @@ use keyharbor_core::session::{
 };
 use keyharbor_domain::{
     RequestId, SessionName, State,
+    browser_choice::BrowserChoice,
     vault::{Description, Origin},
 };
 use keyharbor_guard::session::SessionOp;
@@ -35,6 +36,9 @@ struct OpenSession {
     /// Also expose a raw CDP endpoint (bypasses KeyHarbor); needs the server's --allow-cdp.
     #[serde(default)]
     cdp: bool,
+    /// auto (ego lite if it answers, else Chrome), chrome or ego-lite. Default: the person's
+    /// setting. In ego lite other programs can read what is typed (protection: shared).
+    browser: Option<String>,
 }
 #[derive(Deserialize, schemars::JsonSchema)]
 struct WaitAuth {
@@ -71,6 +75,8 @@ fn view_json(view: &SessionView) -> Value {
         "name": row.name.as_str(),
         "state": view.state.as_str(),
         "cdp": row.cdp,
+        "browser": row.browser.map(|b| b.as_str()),
+        "protection": row.browser.map(|b| b.protection().as_str()),
         "description": row.description.as_ref().map(|d| d.as_str()),
         "failure": row.failure,
     })
@@ -126,7 +132,12 @@ impl Server {
     )]
     async fn session_open(
         &self,
-        Parameters(OpenSession { id, url, cdp }): Parameters<OpenSession>,
+        Parameters(OpenSession {
+            id,
+            url,
+            cdp,
+            browser,
+        }): Parameters<OpenSession>,
     ) -> CallToolResult {
         if cdp && !self.inner.allow_cdp {
             return fail(
@@ -139,11 +150,24 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                inner.allow(SessionOp::Open { id, cdp })?;
+                let choice = match browser.as_deref() {
+                    Some(value) if value.starts_with('/') => {
+                        anyhow::bail!("only the person may name a browser executable")
+                    }
+                    Some(value) => Some(BrowserChoice::parse(value).map_err(|e| anyhow::anyhow!("{e}"))?),
+                    None => inner.browser.clone(),
+                };
+                let resolved = lifecycle::resolve_browser(
+                    &**inner.store()?,
+                    &*inner.runtime,
+                    choice.as_ref(),
+                )?;
+                inner.allow(SessionOp::Open { id, cdp, browser: resolved.kind })?;
                 let options = OpenOptions {
                     url: url.as_deref(),
                     cdp,
-                    browser: &inner.browser,
+                    browser: &resolved,
+                    headless: false,
                     agent: inner.agent(),
                 };
                 lifecycle::open(
@@ -153,7 +177,8 @@ impl Server {
                     id,
                     &options,
                 )?;
-                Ok(json!({"id": id.to_string(), "state": State::Running.as_str()}))
+                let kind = resolved.kind;
+                Ok(json!({"id": id.to_string(), "state": State::Running.as_str(), "browser": kind.as_str(), "protection": kind.protection().as_str()}))
             })
             .await,
         )

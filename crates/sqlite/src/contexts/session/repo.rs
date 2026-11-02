@@ -12,6 +12,7 @@ use anyhow::{Result, bail};
 use diesel::{dsl::exists, prelude::*, upsert::excluded};
 use keyharbor_domain::{
     Generation, HandoffStatus, RequestId, Session, SessionId, SessionName, State,
+    browser_choice::BrowserKind,
     ports::{SessionRow, SessionStore},
     vault::{Description, Origin},
 };
@@ -48,6 +49,7 @@ fn load_rows(conn: &mut SqliteConnection, id: Option<&str>) -> Result<Vec<Sessio
             sessions::state,
             generations::generation.nullable(),
             generations::cdp.nullable(),
+            generations::browser.nullable(),
             sessions::description,
             sessions::failure,
         ))
@@ -122,7 +124,12 @@ impl SessionStore for SqliteStore {
         })
     }
 
-    fn reserve(&self, id: SessionId, cdp: bool) -> Result<Option<Generation>> {
+    fn reserve(
+        &self,
+        id: SessionId,
+        cdp: bool,
+        browser: BrowserKind,
+    ) -> Result<Option<Generation>> {
         let id = id.to_string();
         self.write(|conn| {
             let changed = diesel::update(
@@ -144,12 +151,14 @@ impl SessionStore for SqliteStore {
                     session_id: &id,
                     generation: &generation.to_string(),
                     cdp,
+                    browser: browser.as_str(),
                 })
                 .on_conflict(generations::session_id)
                 .do_update()
                 .set((
                     generations::generation.eq(excluded(generations::generation)),
                     generations::cdp.eq(excluded(generations::cdp)),
+                    generations::browser.eq(excluded(generations::browser)),
                 ))
                 .execute(conn)?;
             Ok(Some(generation))
@@ -357,7 +366,14 @@ mod tests {
     }
     fn running(store: &SqliteStore, name: &str) -> (keyharbor_domain::SessionId, Generation) {
         let id = store.create(SessionName::parse(name).unwrap()).unwrap().id;
-        let generation = store.reserve(id, false).unwrap().unwrap();
+        let generation = store
+            .reserve(
+                id,
+                false,
+                keyharbor_domain::browser_choice::BrowserKind::Chrome,
+            )
+            .unwrap()
+            .unwrap();
         assert!(
             store
                 .transition(id, generation, State::Starting, State::Running)
@@ -373,7 +389,14 @@ mod tests {
             .create(SessionName::parse("broken").unwrap())
             .unwrap()
             .id;
-        let generation = store.reserve(id, false).unwrap().unwrap();
+        let generation = store
+            .reserve(
+                id,
+                false,
+                keyharbor_domain::browser_choice::BrowserKind::Chrome,
+            )
+            .unwrap()
+            .unwrap();
         assert!(
             store
                 .fail(id, generation, "browser executable not found")
@@ -387,8 +410,40 @@ mod tests {
             "only from starting"
         );
         assert!(store.force_stopped(id).unwrap());
-        store.reserve(id, false).unwrap().unwrap();
+        store
+            .reserve(
+                id,
+                false,
+                keyharbor_domain::browser_choice::BrowserKind::Chrome,
+            )
+            .unwrap()
+            .unwrap();
         assert_eq!(store.get(id).unwrap().unwrap().failure, None);
+    }
+
+    #[test]
+    fn a_run_remembers_its_browser() {
+        use keyharbor_domain::browser_choice::BrowserKind;
+        let (_tmp, store) = store();
+        let id = store.create(SessionName::parse("ego").unwrap()).unwrap().id;
+        assert_eq!(store.get(id).unwrap().unwrap().browser, None);
+        store
+            .reserve(id, false, BrowserKind::EgoLite)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            store.get(id).unwrap().unwrap().browser,
+            Some(BrowserKind::EgoLite)
+        );
+        assert!(store.force_stopped(id).unwrap());
+        store
+            .reserve(id, false, BrowserKind::Chrome)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            store.get(id).unwrap().unwrap().browser,
+            Some(BrowserKind::Chrome)
+        );
     }
 
     #[test]
@@ -402,7 +457,14 @@ mod tests {
         assert_eq!(row.state, State::Stopped);
         assert_eq!(row.generation, None);
         assert!(!row.cdp);
-        let generation = store.reserve(id, true).unwrap().unwrap();
+        let generation = store
+            .reserve(
+                id,
+                true,
+                keyharbor_domain::browser_choice::BrowserKind::Chrome,
+            )
+            .unwrap()
+            .unwrap();
         let row = store.get(id).unwrap().unwrap();
         assert_eq!(row.state, State::Starting);
         assert_eq!(row.generation, Some(generation));
@@ -416,7 +478,17 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        assert!(store.reserve(id, false).unwrap().is_none(), "not stopped");
+        assert!(
+            store
+                .reserve(
+                    id,
+                    false,
+                    keyharbor_domain::browser_choice::BrowserKind::Chrome
+                )
+                .unwrap()
+                .is_none(),
+            "not stopped"
+        );
     }
 
     #[test]
@@ -564,7 +636,14 @@ mod tests {
                 .transition(id, generation, State::Stopped, State::Starting)
                 .unwrap()
         );
-        let next = store.reserve(id, false).unwrap().unwrap();
+        let next = store
+            .reserve(
+                id,
+                false,
+                keyharbor_domain::browser_choice::BrowserKind::Chrome,
+            )
+            .unwrap()
+            .unwrap();
         assert_ne!(next, generation);
         assert!(
             !store
@@ -577,14 +656,39 @@ mod tests {
     fn failed_sessions_can_be_force_stopped() {
         let (_tmp, store) = store();
         let id = store.create(SessionName::parse("f").unwrap()).unwrap().id;
-        let generation = store.reserve(id, false).unwrap().unwrap();
+        let generation = store
+            .reserve(
+                id,
+                false,
+                keyharbor_domain::browser_choice::BrowserKind::Chrome,
+            )
+            .unwrap()
+            .unwrap();
         assert!(
             store
                 .transition(id, generation, State::Starting, State::Failed)
                 .unwrap()
         );
-        assert!(store.reserve(id, false).unwrap().is_none());
+        assert!(
+            store
+                .reserve(
+                    id,
+                    false,
+                    keyharbor_domain::browser_choice::BrowserKind::Chrome
+                )
+                .unwrap()
+                .is_none()
+        );
         assert!(store.force_stopped(id).unwrap());
-        assert!(store.reserve(id, false).unwrap().is_some());
+        assert!(
+            store
+                .reserve(
+                    id,
+                    false,
+                    keyharbor_domain::browser_choice::BrowserKind::Chrome
+                )
+                .unwrap()
+                .is_some()
+        );
     }
 }

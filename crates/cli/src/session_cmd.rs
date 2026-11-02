@@ -13,11 +13,12 @@ use keyharbor_core::{
 };
 use keyharbor_domain::{
     SessionId, SessionName, State,
+    browser_choice::{BrowserChoice, BrowserKind},
     ports::{Clock, SessionRuntime, Store},
     vault::{Description, Origin},
 };
-use keyharbor_supervisor::{DEFAULT_BROWSER, SUPERVISE_COMMAND, SuperviseArgs};
-use std::{ffi::OsString, path::PathBuf};
+use keyharbor_supervisor::{SUPERVISE_COMMAND, SuperviseArgs};
+use std::ffi::OsString;
 
 #[derive(Subcommand)]
 pub enum SessionCmd {
@@ -62,8 +63,13 @@ pub enum SessionCmd {
         /// Also expose a raw CDP endpoint; this bypasses KeyHarbor's protections
         #[arg(long)]
         cdp: bool,
+        /// auto, chrome, ego-lite or an absolute path to a Chrome-like executable (default:
+        /// the `browser` setting)
+        #[arg(long, value_parser = crate::parse_browser)]
+        browser: Option<BrowserChoice>,
+        /// Run Chrome without a window
         #[arg(long)]
-        browser: Option<PathBuf>,
+        headless: bool,
     },
     /// Close the browser and stop the session
     Stop { id: String },
@@ -114,11 +120,14 @@ fn session_id(value: &str) -> Result<SessionId> {
     SessionId::parse(value).context("invalid session id")
 }
 
-/// `id  name  state[  cdp][  description]`.
+/// `id  name  state[  cdp][  ego-lite][  description]`.
 fn view_line(view: &SessionView) -> String {
     let row = &view.row;
-    let cdp = if row.cdp && view.state != DisplayState::Stored(State::Stopped) {
-        "\tcdp"
+    let live = view.state != DisplayState::Stored(State::Stopped);
+    let cdp = if row.cdp && live { "\tcdp" } else { "" };
+    // Chrome is the usual case; only a browser others can drive is named (03 §3.13).
+    let ego = if live && row.browser == Some(BrowserKind::EgoLite) {
+        "\tego-lite"
     } else {
         ""
     };
@@ -128,7 +137,7 @@ fn view_line(view: &SessionView) -> String {
         .map(|d| format!("\t{}", d.as_str().replace(['\t', '\n'], " ")))
         .unwrap_or_default();
     format!(
-        "{}\t{}\t{}{cdp}{about}",
+        "{}\t{}\t{}{cdp}{ego}{about}",
         row.id,
         row.name.as_str(),
         view.state
@@ -175,7 +184,8 @@ impl Ports<'_> {
                 url,
                 cdp,
                 browser,
-            } => self.open(&id, url.as_deref(), cdp, browser)?,
+                headless,
+            } => self.open(&id, url.as_deref(), cdp, browser.as_ref(), headless)?,
             SessionCmd::Stop { id } => {
                 let id = session_id(&id)?;
                 let state =
@@ -265,13 +275,21 @@ impl Ports<'_> {
         Ok(())
     }
 
-    fn open(&self, id: &str, url: Option<&str>, cdp: bool, browser: Option<PathBuf>) -> Result<()> {
+    fn open(
+        &self,
+        id: &str,
+        url: Option<&str>,
+        cdp: bool,
+        browser: Option<&BrowserChoice>,
+        headless: bool,
+    ) -> Result<()> {
         let id = session_id(id)?;
-        let browser = browser.unwrap_or_else(|| PathBuf::from(DEFAULT_BROWSER));
+        let browser = lifecycle::resolve_browser(&*self.store, &*self.runtime, browser)?;
         let options = OpenOptions {
             url,
             cdp,
             browser: &browser,
+            headless,
             agent: LOCAL_AGENT,
         };
         lifecycle::open(&*self.store, &*self.runtime, self.clock, id, &options)?;

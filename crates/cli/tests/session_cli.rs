@@ -546,3 +546,67 @@ fn long_data_dir_is_refused_before_spawn() {
         "nothing was reserved: {listed}"
     );
 }
+
+fn fake_ego(env: &Env, body: &str) -> PathBuf {
+    let path = env.path("ego-browser");
+    fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+    path
+}
+
+#[test]
+fn auto_picks_ego_lite_when_it_answers() {
+    let env = Env::new();
+    let id = env.create("ego");
+    let ego = fake_ego(&env, "exit 0");
+    let out = env
+        .cmd()
+        .env("KEYHARBOR_EGO_BROWSER", &ego)
+        .args(["open", &id, "--browser", "auto"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success());
+    assert!(
+        err.contains("session did not start (failed: ego lite support is not built yet)"),
+        "{err}"
+    );
+}
+
+#[test]
+fn ego_lite_that_does_not_answer_is_refused_before_anything_starts() {
+    let env = Env::new();
+    let id = env.create("ego");
+    let ego = fake_ego(&env, "exit 1");
+    let out = env
+        .cmd()
+        .env("KEYHARBOR_EGO_BROWSER", &ego)
+        .args(["open", &id, "--browser", "ego-lite"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("ego lite is not available"), "{err}");
+    assert_eq!(env.state(&id), "stopped");
+}
+
+#[test]
+fn open_follows_the_browser_setting() {
+    let env = Env::new();
+    let id = env.create("set");
+    env.ok(&["settings", "set", "browser", env.browser.to_str().unwrap()]);
+    assert!(
+        env.cmd()
+            .args(["open", &id])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert_eq!(env.state(&id), "running");
+    env.ok(&["stop", &id]);
+    let bad = env.fails(&["settings", "set", "browser", "firefox"]);
+    assert!(
+        bad.contains("browser must be auto, chrome, ego-lite or an absolute path"),
+        "{bad}"
+    );
+}

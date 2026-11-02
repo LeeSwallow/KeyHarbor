@@ -190,6 +190,11 @@ fn session_tools_with_fake_browser() {
     let list = mcp.ok("session_list", json!({}));
     assert_eq!(list[0]["name"], "--help");
     assert_eq!(list[0]["state"], "stopped");
+    assert_eq!(
+        list[0]["browser"], "chrome",
+        "the last run's browser: {list}"
+    );
+    assert_eq!(list[0]["protection"], "owned");
     mcp.err("session_wait_auth", json!({"id": "not-a-session"}));
     assert!(
         mcp.err("browser_snapshot", json!({"session": id}))

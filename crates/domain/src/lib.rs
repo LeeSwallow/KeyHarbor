@@ -277,6 +277,7 @@ mod tests {
     }
 }
 pub mod audit;
+pub mod browser_choice;
 pub mod date;
 pub mod denial;
 pub mod grant;

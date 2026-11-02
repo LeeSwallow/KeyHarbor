@@ -14,11 +14,11 @@ pub use server::DEFAULT_AGENT;
 
 use anyhow::{Result, anyhow};
 use keyharbor_domain::{
+    browser_choice::BrowserChoice,
     policy::AgentName,
     ports::{Clock, SessionRuntime},
 };
 use keyharbor_guard::{SharedStore, VaultOpener};
-use keyharbor_supervisor::DEFAULT_BROWSER;
 use rmcp::{ServiceExt, transport::stdio};
 pub use server::Interaction;
 use server::{Inner, Server};
@@ -32,7 +32,8 @@ pub struct Options {
     pub allow_cdp: bool,
     /// The agent's name for policies and the usage record; `mcp` when absent.
     pub agent: Option<String>,
-    pub browser: Option<PathBuf>,
+    /// `--browser`; `None` follows the `browser` setting.
+    pub browser: Option<BrowserChoice>,
     /// `--non-interactive`: wait tools do not wait (#119).
     pub interaction: Interaction,
 }
@@ -72,9 +73,7 @@ pub fn run(options: Options, deps: Deps) -> Result<()> {
         scope: scope.as_ref().map(|(id, _)| *id),
         allow_cdp: options.allow_cdp,
         agent,
-        browser: options
-            .browser
-            .unwrap_or_else(|| PathBuf::from(DEFAULT_BROWSER)),
+        browser: options.browser,
         interaction: options.interaction,
     });
     tokio::runtime::Builder::new_multi_thread()

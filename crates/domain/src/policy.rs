@@ -19,14 +19,17 @@ pub enum Resource {
     CreateSession,
     /// Opening or reading a raw CDP endpoint (target: `*`).
     RawCdp,
+    /// Opening a session in a kind of browser (target: `chrome`, `ego-lite` or `*`; #120).
+    Browser,
 }
 impl Resource {
-    pub const ALL: [Resource; 5] = [
+    pub const ALL: [Resource; 6] = [
         Self::Session,
         Self::Item,
         Self::Domain,
         Self::CreateSession,
         Self::RawCdp,
+        Self::Browser,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -35,6 +38,7 @@ impl Resource {
             Self::Domain => "domain",
             Self::CreateSession => "create_session",
             Self::RawCdp => "raw_cdp",
+            Self::Browser => "browser",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {
@@ -163,6 +167,9 @@ pub fn normalize_target(resource: Resource, target: &str) -> Result<String, Inva
                     "domain target must be credentials, payment, personal, developer or *",
                 ))
         }
+        Resource::Browser => crate::browser_choice::BrowserKind::parse(target)
+            .map(|kind| kind.as_str().to_owned())
+            .ok_or(InvalidValue("browser target must be chrome, ego-lite or *")),
         Resource::CreateSession | Resource::RawCdp => Err(InvalidValue(
             "create_session and raw_cdp rules take only the target *",
         )),

@@ -189,7 +189,14 @@ mod capture_tests {
             .create(SessionName::parse("work").unwrap())
             .unwrap()
             .id;
-        let generation = store.reserve(id, false).unwrap().unwrap();
+        let generation = store
+            .reserve(
+                id,
+                false,
+                keyharbor_domain::browser_choice::BrowserKind::Chrome,
+            )
+            .unwrap()
+            .unwrap();
         assert!(
             store
                 .transition(id, generation, State::Starting, State::Running)

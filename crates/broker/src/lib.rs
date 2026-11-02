@@ -10,6 +10,7 @@
 mod browser;
 mod cdp;
 pub mod chrome;
+pub mod ego;
 mod pages;
 
 pub use browser::CdpBrowser;

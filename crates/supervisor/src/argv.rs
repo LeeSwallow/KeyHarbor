@@ -1,8 +1,9 @@
 //! The supervisor process's command line, written and read here only:
-//! `exe --data-dir DATA __supervise ID GENERATION BROWSER [--url URL] [--cdp]`.
+//! `exe --data-dir DATA __supervise ID GENERATION BROWSER [--url URL] [--cdp] [--ego-lite]
+//! [--headless]`.
 
 use anyhow::{Context, Result, bail};
-use keyharbor_domain::{Generation, SessionId};
+use keyharbor_domain::{Generation, SessionId, browser_choice::BrowserKind};
 use std::{ffi::OsString, path::PathBuf};
 
 /// The hidden subcommand the binary runs a supervisor under.
@@ -17,6 +18,8 @@ pub struct SuperviseArgs {
     /// Already validated by `validate_start_url`.
     pub url: Option<String>,
     pub cdp: bool,
+    pub kind: BrowserKind,
+    pub headless: bool,
 }
 
 impl SuperviseArgs {
@@ -36,13 +39,19 @@ impl SuperviseArgs {
         if self.cdp {
             argv.push("--cdp".into());
         }
+        if self.kind == BrowserKind::EgoLite {
+            argv.push("--ego-lite".into());
+        }
+        if self.headless {
+            argv.push("--headless".into());
+        }
         argv
     }
 
     /// Reads the arguments after [`SUPERVISE_COMMAND`].
     pub fn parse(args: &[OsString]) -> Result<Self> {
         let mut positional = Vec::new();
-        let (mut url, mut cdp) = (None, false);
+        let (mut url, mut cdp, mut kind, mut headless) = (None, false, BrowserKind::Chrome, false);
         let mut args = args.iter();
         while let Some(arg) = args.next() {
             match arg.to_str() {
@@ -51,6 +60,8 @@ impl SuperviseArgs {
                     url = Some(value.to_str().context("--url is not UTF-8")?.to_owned());
                 }
                 Some("--cdp") => cdp = true,
+                Some("--ego-lite") => kind = BrowserKind::EgoLite,
+                Some("--headless") => headless = true,
                 _ => positional.push(arg),
             }
         }
@@ -65,6 +76,8 @@ impl SuperviseArgs {
             browser: PathBuf::from(browser),
             url,
             cdp,
+            kind,
+            headless,
         })
     }
 }
@@ -81,6 +94,8 @@ mod tests {
             browser: PathBuf::from("/bin/chrome"),
             url: Some("https://example.com/".into()),
             cdp: true,
+            kind: BrowserKind::EgoLite,
+            headless: true,
         };
         let argv = args.to_argv(std::path::Path::new("/data"));
         assert_eq!(
@@ -95,6 +110,8 @@ mod tests {
         let plain = SuperviseArgs {
             url: None,
             cdp: false,
+            kind: BrowserKind::Chrome,
+            headless: false,
             ..args
         };
         assert_eq!(

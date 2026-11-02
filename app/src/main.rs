@@ -141,8 +141,8 @@ fn copy_placeholder(ctx: State<'_, Ctx>, text: String) -> Reply<()> {
     commands::copy_placeholder(&ctx, &text).map_err(message)
 }
 #[tauri::command]
-fn open_session(ctx: State<'_, Ctx>, id: String) -> Reply<()> {
-    commands::open_session(&ctx, &id).map_err(message)
+fn open_session(ctx: State<'_, Ctx>, id: String, browser: Option<String>) -> Reply<()> {
+    commands::open_session(&ctx, &id, browser.as_deref()).map_err(message)
 }
 #[tauri::command]
 fn stop_session(ctx: State<'_, Ctx>, id: String) -> Reply<()> {

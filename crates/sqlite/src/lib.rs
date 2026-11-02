@@ -107,7 +107,13 @@ mod tests {
                 std::thread::spawn(move || {
                     let store = SqliteStore::open(&root).unwrap();
                     barrier.wait();
-                    store.reserve(id, false).unwrap()
+                    store
+                        .reserve(
+                            id,
+                            false,
+                            keyharbor_domain::browser_choice::BrowserKind::Chrome,
+                        )
+                        .unwrap()
                 })
             })
             .collect();
@@ -137,7 +143,14 @@ mod tests {
                 .transition(id, generation, State::Running, State::Stopped)
                 .unwrap()
         );
-        let next = store.reserve(id, false).unwrap().unwrap();
+        let next = store
+            .reserve(
+                id,
+                false,
+                keyharbor_domain::browser_choice::BrowserKind::Chrome,
+            )
+            .unwrap()
+            .unwrap();
         assert_ne!(generation, next);
         assert!(
             !store
@@ -174,7 +187,14 @@ mod tests {
         let store = SqliteStore::open(&root).unwrap();
         let rows = store.list().unwrap();
         assert_eq!((rows[0].id, rows[0].cdp), (id, false));
-        let generation = store.reserve(id, true).unwrap().unwrap();
+        let generation = store
+            .reserve(
+                id,
+                true,
+                keyharbor_domain::browser_choice::BrowserKind::Chrome,
+            )
+            .unwrap()
+            .unwrap();
         assert_eq!(store.get(id).unwrap().unwrap().generation, Some(generation));
         assert!(store.cdp_enabled(id).unwrap());
         use keyharbor_domain::ports::SettingsStore;

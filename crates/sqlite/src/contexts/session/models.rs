@@ -20,6 +20,7 @@ pub struct SessionModel {
     pub state: String,
     pub generation: Option<String>,
     pub cdp: Option<bool>,
+    pub browser: Option<String>,
     pub description: Option<String>,
     pub failure: Option<String>,
 }
@@ -30,6 +31,7 @@ pub struct NewGeneration<'a> {
     pub session_id: &'a str,
     pub generation: &'a str,
     pub cdp: bool,
+    pub browser: &'a str,
 }
 
 #[derive(Insertable)]

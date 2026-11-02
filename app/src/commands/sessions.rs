@@ -20,6 +20,11 @@ pub struct SessionDto {
     /// `running`, `stopped`, `awaiting_user`, `recovery_required`, …
     pub state: &'static str,
     pub cdp: bool,
+    /// `chrome` or `ego-lite` while the session has a run; with its `protection`.
+    pub browser: Option<&'static str>,
+    pub protection: Option<&'static str>,
+    /// Why the last run did not start.
+    pub failure: Option<String>,
     pub description: Option<String>,
     pub sites: Vec<SiteDto>,
 }
@@ -43,6 +48,9 @@ pub fn sessions(ctx: &Ctx) -> Result<Vec<SessionDto>> {
                 name: view.row.name.as_str().to_owned(),
                 state: view.state.as_str(),
                 cdp: view.row.cdp,
+                browser: view.row.browser.map(|b| b.as_str()),
+                protection: view.row.browser.map(|b| b.protection().as_str()),
+                failure: view.row.failure.clone(),
                 description: view.row.description.map(|d| d.as_str().to_owned()),
                 sites,
             })
@@ -55,12 +63,18 @@ fn session_id(id: &str) -> Result<keyharbor_domain::SessionId> {
     keyharbor_domain::SessionId::parse(id).context("invalid session id")
 }
 
-/// Opens the session's browser (09 §9.4.3 [열기]).
-pub fn open_session(ctx: &Ctx, id: &str) -> Result<()> {
+/// Opens the session's browser (09 §9.4.3 [열기]) in `browser`, or the `browser` setting.
+pub fn open_session(ctx: &Ctx, id: &str, browser: Option<&str>) -> Result<()> {
+    let choice = browser
+        .map(keyharbor_domain::browser_choice::BrowserChoice::parse)
+        .transpose()
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let resolved = session::resolve_browser(&*ctx.store()?, &*ctx.runtime(), choice.as_ref())?;
     let options = session::OpenOptions {
         url: None,
         cdp: false,
-        browser: std::path::Path::new(keyharbor_supervisor::DEFAULT_BROWSER),
+        browser: &resolved,
+        headless: false,
         agent: keyharbor_domain::policy::LOCAL_AGENT,
     };
     session::open(
