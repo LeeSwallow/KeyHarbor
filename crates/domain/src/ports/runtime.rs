@@ -1,18 +1,35 @@
 //! The session runtime: supervisor processes, their OS locks and control sockets.
 //! `keyharbor-supervisor` implements it; the session use cases in `keyharbor-core` drive it.
 
-use crate::{Generation, SessionId};
+use crate::{
+    Generation, SessionId,
+    browser_choice::{BrowserChoice, BrowserKind},
+};
 use anyhow::Result;
-use std::{any::Any, path::Path};
+use std::{
+    any::Any,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 /// Held while it lives (an OS file lock).
 pub type RuntimeLock = Box<dyn Any + Send>;
 
 pub struct LaunchOptions<'a> {
-    pub browser: &'a Path,
+    pub browser: &'a ResolvedBrowser,
     /// Already validated by `validate_start_url`.
     pub url: Option<&'a str>,
     pub cdp: bool,
+    /// Run the browser without a window (Chrome only).
+    pub headless: bool,
+}
+
+/// What a browser choice came to on this machine (#120).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolvedBrowser {
+    pub kind: BrowserKind,
+    /// Chrome's executable, or the `ego-browser` command for ego lite.
+    pub executable: PathBuf,
 }
 
 /// A supervisor process that was started for one run.
@@ -26,6 +43,9 @@ pub trait StartedSupervisor: Send {
 pub trait SessionRuntime: Send + Sync {
     /// True if `browser` names a file a supervisor could start.
     fn has_browser(&self, browser: &Path) -> bool;
+    /// What `choice` means here. `Auto` is ego lite if its command answers within `probe`,
+    /// otherwise Chrome; `EgoLite` fails when ego lite does not answer.
+    fn resolve_browser(&self, choice: &BrowserChoice, probe: Duration) -> Result<ResolvedBrowser>;
     /// Fails, before anything is reserved, when this session cannot run here (for example the
     /// data directory is too long for its control socket).
     fn preflight(&self, id: SessionId) -> Result<()>;

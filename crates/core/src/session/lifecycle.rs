@@ -5,9 +5,14 @@ use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
     SessionId, State,
     audit::AuditKind,
-    ports::{Clock, SessionRuntime, Store, runtime::LaunchOptions},
+    browser_choice::BrowserChoice,
+    ports::{
+        Clock, SessionRuntime, SettingsStore, Store,
+        runtime::{LaunchOptions, ResolvedBrowser},
+    },
+    settings::{BROWSER, EGO_PROBE_SECONDS},
 };
-use std::{path::Path, time::Duration};
+use std::time::Duration;
 
 const START_TIMEOUT: Duration = Duration::from_secs(15);
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
@@ -19,9 +24,29 @@ const RECOVER_HINT: &str = "run recover --confirm-browser-closed before retrying
 pub struct OpenOptions<'a> {
     pub url: Option<&'a str>,
     pub cdp: bool,
-    pub browser: &'a Path,
+    /// From [`resolve_browser`].
+    pub browser: &'a ResolvedBrowser,
+    /// No window (Chrome only).
+    pub headless: bool,
     /// Who asked, for the usage record (`cli` for the local user).
     pub agent: &'a str,
+}
+
+/// The browser to open in: `choice`, or the `browser` setting when none is given (#120).
+pub fn resolve_browser(
+    settings: &dyn SettingsStore,
+    runtime: &dyn SessionRuntime,
+    choice: Option<&BrowserChoice>,
+) -> Result<ResolvedBrowser> {
+    let choice = match choice {
+        Some(choice) => choice.clone(),
+        None => BrowserChoice::parse(&crate::settings::get(settings, BROWSER)?)
+            .map_err(|e| anyhow::anyhow!("{BROWSER} {e}"))?,
+    };
+    let probe = crate::settings::get(settings, EGO_PROBE_SECONDS)?
+        .parse()
+        .context("invalid ego_probe_seconds")?;
+    runtime.resolve_browser(&choice, Duration::from_secs(probe))
 }
 
 /// Reserves the session and starts its supervisor, returning once the session is `running`.
@@ -37,16 +62,16 @@ pub fn open(
         .map(keyharbor_domain::validate_start_url)
         .transpose()
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    if !runtime.has_browser(options.browser) {
+    if !runtime.has_browser(&options.browser.executable) {
         bail!(
             "browser executable not found: {}",
-            options.browser.display()
+            options.browser.executable.display()
         );
     }
     runtime.preflight(id)?;
     let row = session(store, id)?;
     let lock = runtime.lock(id).context("session is already open")?;
-    let Some(generation) = store.reserve(id, options.cdp)? else {
+    let Some(generation) = store.reserve(id, options.cdp, options.browser.kind)? else {
         if active(row.state) || row.state == State::Failed {
             bail!(
                 "session is {} without a supervisor; close its browser, then run recover --confirm-browser-closed",
@@ -60,6 +85,7 @@ pub fn open(
         browser: options.browser,
         url: url.as_deref(),
         cdp: options.cdp,
+        headless: options.headless,
     };
     let mut child = match runtime.start(id, generation, &launch) {
         Ok(child) => child,
@@ -112,7 +138,7 @@ pub fn open(
             options.agent,
             AuditKind::SessionOpened,
             id,
-            "running",
+            &format!("running {}", options.browser.kind),
         );
     }
     result

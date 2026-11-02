@@ -11,6 +11,7 @@ pub mod checks;
 
 use keyharbor_domain::{
     SessionId,
+    browser_choice::BrowserKind,
     policy::{ANY, Effect, Resource, Rule},
     vault::{Domain, ItemName},
 };
@@ -19,8 +20,13 @@ use keyharbor_domain::{
 pub enum Action {
     OpenSession(SessionId),
     CreateSession,
-    UseItem { item: ItemName, domain: Domain },
+    UseItem {
+        item: ItemName,
+        domain: Domain,
+    },
     RawCdp,
+    /// Running a session in this kind of browser (#120).
+    UseBrowser(BrowserKind),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -50,6 +56,13 @@ fn target_level(rule: &Rule, action: &Action) -> Option<u8> {
         }
         (Action::CreateSession, Resource::CreateSession) | (Action::RawCdp, Resource::RawCdp) => {
             Some(0)
+        }
+        (Action::UseBrowser(kind), Resource::Browser) => {
+            if any {
+                Some(0)
+            } else {
+                (rule.target == kind.as_str()).then_some(1)
+            }
         }
         (Action::UseItem { item, .. }, Resource::Item) => {
             if any {

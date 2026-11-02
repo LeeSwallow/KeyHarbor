@@ -74,6 +74,8 @@ pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
         browser,
         url,
         cdp,
+        kind,
+        headless,
     } = args;
     let _lock = acquire_lock_within(&paths::lock_path(data, &id), LOCK_HANDOFF)
         .context("another supervisor is running this session")?;
@@ -83,6 +85,13 @@ pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
         supervision::mark_failed(store, id, generation, &error);
         error
     };
+    if kind == keyharbor_domain::browser_choice::BrowserKind::EgoLite {
+        // The relay that drives ego lite comes with #121.
+        return Err(fail(
+            &*store,
+            anyhow::anyhow!("ego lite support is not built yet"),
+        ));
+    }
     let url = match url
         .as_deref()
         .map(keyharbor_domain::validate_start_url)
@@ -112,7 +121,7 @@ pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
         profile: prepared.profile,
         url,
         debug_port: cdp,
-        headless: adapters.headless,
+        headless: adapters.headless || headless,
     };
     let run = Run {
         id,

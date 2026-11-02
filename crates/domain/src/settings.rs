@@ -31,6 +31,14 @@ pub const UPLOAD_DIRS: &str = "upload_dirs";
 pub const UPLOAD_MAX_FILES: &str = "upload_max_files";
 const UPLOAD_MAX_FILES_RANGE: std::ops::RangeInclusive<u64> = 1..=50;
 
+/// Which browser a session opens in when nobody says: `auto` (ego lite if it answers, else
+/// Chrome), `chrome`, `ego-lite` or an absolute path (#120, R-47(1)). Not a weakening: the
+/// person chose `auto` as the default; a policy can deny ego lite.
+pub const BROWSER: &str = "browser";
+/// How long `auto` waits for ego lite to answer before it uses Chrome.
+pub const EGO_PROBE_SECONDS: &str = "ego_probe_seconds";
+const EGO_PROBE_RANGE: std::ops::RangeInclusive<u64> = 1..=30;
+
 /// The `default_item_ttl` value meaning "never expire".
 pub const NO_TTL: &str = "none";
 
@@ -47,6 +55,10 @@ pub enum SettingFormat {
     Folders,
     /// A count within [`UPLOAD_MAX_FILES_RANGE`].
     FileCount,
+    /// `auto`, `chrome`, `ego-lite` or an absolute path.
+    Browser,
+    /// Whole seconds within [`EGO_PROBE_RANGE`].
+    ProbeSeconds,
 }
 
 /// Which change to a setting weakens a protection and needs a person.
@@ -124,6 +136,18 @@ pub const SETTINGS: &[SettingSpec] = &[
         format: SettingFormat::FileCount,
         weakening: SettingWeakening::AboveDefault,
     },
+    SettingSpec {
+        key: BROWSER,
+        default: "auto",
+        format: SettingFormat::Browser,
+        weakening: SettingWeakening::Never,
+    },
+    SettingSpec {
+        key: EGO_PROBE_SECONDS,
+        default: "5",
+        format: SettingFormat::ProbeSeconds,
+        weakening: SettingWeakening::Never,
+    },
     notice(NOTIFY_REQUESTS),
     notice(NOTIFY_HANDOFFS),
     notice(NOTIFY_DRAFTS),
@@ -163,6 +187,17 @@ impl SettingSpec {
                     "must be a whole number from {} to {}",
                     UPLOAD_MAX_FILES_RANGE.start(),
                     UPLOAD_MAX_FILES_RANGE.end()
+                ))),
+            },
+            SettingFormat::Browser => crate::browser_choice::BrowserChoice::parse(value)
+                .map(|_| ())
+                .map_err(|e| InvalidSetting(e.to_string())),
+            SettingFormat::ProbeSeconds => match value.parse::<u64>() {
+                Ok(n) if EGO_PROBE_RANGE.contains(&n) => Ok(()),
+                _ => Err(InvalidSetting(format!(
+                    "must be whole seconds from {} to {}",
+                    EGO_PROBE_RANGE.start(),
+                    EGO_PROBE_RANGE.end()
                 ))),
             },
             SettingFormat::ClearSeconds => match clear_seconds(value) {

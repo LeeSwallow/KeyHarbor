@@ -15,6 +15,7 @@ diesel::table! {
         session_id -> Text,
         generation -> Text,
         cdp -> Bool,
+        browser -> Text,
     }
 }
 

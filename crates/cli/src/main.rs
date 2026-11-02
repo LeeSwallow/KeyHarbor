@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use keyharbor_domain::browser_choice::BrowserChoice;
 use std::path::{Path, PathBuf};
 
 mod audit_cmd;
@@ -47,8 +48,10 @@ enum Command {
         /// Name of the agent using this server, for policies and the usage record
         #[arg(long)]
         agent: Option<String>,
-        #[arg(long)]
-        browser: Option<PathBuf>,
+        /// auto, chrome, ego-lite or an absolute path to a Chrome-like executable (default:
+        /// the `browser` setting)
+        #[arg(long, value_parser = parse_browser)]
+        browser: Option<BrowserChoice>,
         /// Nobody is watching (a scheduled run): tools that wait for a person look once and
         /// return `needs_user` instead of waiting
         #[arg(long)]
@@ -82,6 +85,11 @@ enum Command {
 }
 
 /// The macOS per-user application data folder; `--data-dir` and `KEYHARBOR_HOME` override it.
+/// `--browser` for `mcp` and `open`.
+pub(crate) fn parse_browser(value: &str) -> Result<BrowserChoice, String> {
+    BrowserChoice::parse(value).map_err(|e| e.to_string())
+}
+
 fn default_data_dir(home: &Path) -> PathBuf {
     home.join("Library/Application Support/KeyHarbor")
 }

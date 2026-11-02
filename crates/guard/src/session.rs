@@ -3,7 +3,7 @@
 
 use crate::pdp::{Action, Decision, decide};
 use anyhow::{Result, bail};
-use keyharbor_domain::{SessionId, ports::PolicyStore};
+use keyharbor_domain::{SessionId, browser_choice::BrowserKind, ports::PolicyStore};
 
 /// An agent's operation on sessions. Listing is not one: it shows names, states and
 /// descriptions only, and a scoped server already limits it to its session.
@@ -13,6 +13,7 @@ pub enum SessionOp {
     Open {
         id: SessionId,
         cdp: bool,
+        browser: BrowserKind,
     },
     /// Every browser tool.
     Browser(SessionId),
@@ -37,10 +38,14 @@ impl SessionOp {
     pub fn actions(self) -> Vec<Action> {
         match self {
             Self::Create => vec![Action::CreateSession],
-            Self::Open { id, cdp: false } => vec![Action::OpenSession(id)],
-            Self::Open { id, cdp: true } | Self::Endpoint(id) => {
-                vec![Action::OpenSession(id), Action::RawCdp]
+            Self::Open { id, cdp, browser } => {
+                let mut actions = vec![Action::OpenSession(id), Action::UseBrowser(browser)];
+                if cdp {
+                    actions.push(Action::RawCdp);
+                }
+                actions
             }
+            Self::Endpoint(id) => vec![Action::OpenSession(id), Action::RawCdp],
             Self::Browser(id)
             | Self::Stop(id)
             | Self::WaitAuth(id)
@@ -67,12 +72,35 @@ pub fn authorize(store: &dyn PolicyStore, agent: &str, op: SessionOp) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use keyharbor_domain::policy::{Effect, Resource, Rule};
 
     #[test]
     fn every_operation_on_one_session_needs_that_session() {
         let id = keyharbor_crypto::random::id::<SessionId>();
+        let chrome = BrowserKind::Chrome;
+        assert_eq!(
+            SessionOp::Open {
+                id,
+                cdp: false,
+                browser: chrome
+            }
+            .actions(),
+            vec![Action::OpenSession(id), Action::UseBrowser(chrome)]
+        );
+        assert_eq!(
+            SessionOp::Open {
+                id,
+                cdp: true,
+                browser: chrome
+            }
+            .actions(),
+            vec![
+                Action::OpenSession(id),
+                Action::UseBrowser(chrome),
+                Action::RawCdp
+            ]
+        );
         for op in [
-            SessionOp::Open { id, cdp: false },
             SessionOp::Browser(id),
             SessionOp::Stop(id),
             SessionOp::WaitAuth(id),
@@ -82,13 +110,22 @@ mod tests {
         ] {
             assert_eq!(op.actions(), vec![Action::OpenSession(id)], "{op:?}");
         }
-        for op in [SessionOp::Open { id, cdp: true }, SessionOp::Endpoint(id)] {
-            assert_eq!(
-                op.actions(),
-                vec![Action::OpenSession(id), Action::RawCdp],
-                "{op:?}"
-            );
-        }
+        assert_eq!(
+            SessionOp::Endpoint(id).actions(),
+            vec![Action::OpenSession(id), Action::RawCdp]
+        );
         assert_eq!(SessionOp::Create.actions(), vec![Action::CreateSession]);
+    }
+
+    #[test]
+    fn policy_can_deny_ego_lite() {
+        let rules = [Rule::new("*", Resource::Browser, "ego-lite", Effect::Deny).unwrap()];
+        let ego = Action::UseBrowser(BrowserKind::EgoLite);
+        assert!(!crate::pdp::decide(&rules, "claude", &ego).allowed());
+        let chrome = Action::UseBrowser(BrowserKind::Chrome);
+        assert!(crate::pdp::decide(&rules, "claude", &chrome).allowed());
+        let all = [Rule::new("codex", Resource::Browser, "*", Effect::Deny).unwrap()];
+        assert!(!crate::pdp::decide(&all, "codex", &chrome).allowed());
+        assert!(Rule::new("*", Resource::Browser, "firefox", Effect::Deny).is_err());
     }
 }

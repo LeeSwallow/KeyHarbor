@@ -3,6 +3,7 @@
 use anyhow::{Context, Result, anyhow};
 use keyharbor_domain::{
     SessionId,
+    browser_choice::BrowserChoice,
     policy::AgentName,
     ports::{Clock, SessionRuntime, Store},
 };
@@ -35,7 +36,8 @@ pub(crate) struct Inner {
     pub scope: Option<SessionId>,
     pub allow_cdp: bool,
     pub agent: AgentName,
-    pub browser: PathBuf,
+    /// The server's `--browser`; `None` means the person's `browser` setting.
+    pub browser: Option<BrowserChoice>,
     pub interaction: Interaction,
 }
 

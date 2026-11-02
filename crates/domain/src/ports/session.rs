@@ -5,7 +5,7 @@
 
 use crate::{
     Generation, HandoffStatus, RequestId, Session, SessionId, SessionName, State,
-    vault::Description,
+    browser_choice::BrowserKind, vault::Description,
 };
 use anyhow::Result;
 
@@ -18,6 +18,8 @@ pub struct SessionRow {
     pub generation: Option<Generation>,
     /// Raw CDP was requested for the current run.
     pub cdp: bool,
+    /// The browser of the current (or last) run, while it has one (#120).
+    pub browser: Option<BrowserKind>,
     /// What the session is for (R-38).
     pub description: Option<Description>,
     /// Why the last run did not start (`failed`), if it said. Never a value.
@@ -42,7 +44,8 @@ pub trait SessionStore {
     /// Deletes a stopped session and its records. Returns false if it is not stopped or absent.
     fn delete(&self, id: SessionId) -> Result<bool>;
     /// stopped → starting with a fresh generation. `None` if the session is not stopped.
-    fn reserve(&self, id: SessionId, cdp: bool) -> Result<Option<Generation>>;
+    fn reserve(&self, id: SessionId, cdp: bool, browser: BrowserKind)
+    -> Result<Option<Generation>>;
     /// Moves `from → to` only if the session is still in `from` under `generation`.
     /// Leaving `awaiting_user` for anything but `running` cancels the pending request.
     fn transition(

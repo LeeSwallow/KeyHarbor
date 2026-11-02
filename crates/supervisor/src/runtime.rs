@@ -16,11 +16,13 @@ use keyharbor_broker::chrome::{DEVTOOLS_ACTIVE_PORT, parse_devtools_active_port}
 /// start may take (core `START_TIMEOUT`): on a busy machine Chrome writes the file seconds
 /// after the session is running, and 5 s was too short on CI (#25).
 const ENDPOINT_WAIT: Duration = Duration::from_secs(15);
+use keyharbor_broker::{DEFAULT_BROWSER, ego::probe};
 use keyharbor_domain::{
     Generation, SessionId,
+    browser_choice::{BrowserChoice, BrowserKind},
     ports::{
         SessionRuntime,
-        runtime::{LaunchOptions, RuntimeLock, StartedSupervisor},
+        runtime::{LaunchOptions, ResolvedBrowser, RuntimeLock, StartedSupervisor},
     },
 };
 use std::{
@@ -64,6 +66,32 @@ impl SessionRuntime for ProcessRuntime {
         browser.is_file()
     }
 
+    fn resolve_browser(&self, choice: &BrowserChoice, wait: Duration) -> Result<ResolvedBrowser> {
+        let chrome = |path: &Path| ResolvedBrowser {
+            kind: BrowserKind::Chrome,
+            executable: path.to_path_buf(),
+        };
+        let ego = |command: PathBuf| ResolvedBrowser {
+            kind: BrowserKind::EgoLite,
+            executable: command,
+        };
+        Ok(match choice {
+            BrowserChoice::Chrome => chrome(Path::new(DEFAULT_BROWSER)),
+            BrowserChoice::Path(path) => chrome(path),
+            BrowserChoice::EgoLite => match probe::find(wait) {
+                Some(command) => ego(command),
+                None => bail!(
+                    "ego lite is not available: `{}` was not found or did not answer within {}s",
+                    probe::EGO_COMMAND,
+                    wait.as_secs()
+                ),
+            },
+            BrowserChoice::Auto => {
+                probe::find(wait).map_or_else(|| chrome(Path::new(DEFAULT_BROWSER)), ego)
+            }
+        })
+    }
+
     fn preflight(&self, id: SessionId) -> Result<()> {
         paths::check_socket_path(&self.data, &id)
     }
@@ -87,7 +115,9 @@ impl SessionRuntime for ProcessRuntime {
         let args = SuperviseArgs {
             id,
             generation,
-            browser: options.browser.to_path_buf(),
+            browser: options.browser.executable.clone(),
+            kind: options.browser.kind,
+            headless: options.headless,
             url: options.url.map(str::to_owned),
             cdp: options.cdp,
         };
