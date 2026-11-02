@@ -64,6 +64,10 @@ impl SessionRuntime for ProcessRuntime {
         browser.is_file()
     }
 
+    fn preflight(&self, id: SessionId) -> Result<()> {
+        paths::check_socket_path(&self.data, &id)
+    }
+
     fn is_alive(&self, id: SessionId) -> bool {
         lock::is_alive(&self.data, &id)
     }
@@ -112,6 +116,16 @@ impl SessionRuntime for ProcessRuntime {
 
     fn remove_socket(&self, id: SessionId) {
         let _ = std::fs::remove_file(paths::socket_path(&self.data, &id));
+    }
+
+    fn remove_profile(&self, id: SessionId) -> Result<()> {
+        let profile = paths::profile_dir(&self.data, &id);
+        match std::fs::symlink_metadata(&profile) {
+            Ok(meta) if meta.is_dir() => Ok(std::fs::remove_dir_all(&profile)?),
+            Ok(_) => bail!("{} is not a directory", profile.display()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     fn debug_endpoint(&self, id: SessionId) -> Result<String> {

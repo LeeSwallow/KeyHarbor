@@ -7,6 +7,7 @@
 mod handoff;
 mod lifecycle;
 mod manage;
+pub mod remove;
 pub mod supervision;
 
 pub use handoff::{

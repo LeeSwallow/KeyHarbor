@@ -460,3 +460,89 @@ fn rand_bytes(a: &str, b: &str) -> [u8; 16] {
     out[8] = (out[8] & 0x3f) | 0x80;
     out
 }
+
+#[test]
+fn rm_deletes_a_stopped_session_and_its_profile() {
+    let env = Env::new();
+    let id = env.create("old");
+    assert!(env.open(&id).status.success());
+    env.ok(&["stop", &id]);
+    let profile = env.data.join("profiles").join(&id);
+    assert!(profile.is_dir());
+    assert_eq!(env.ok(&["rm", "old"]), format!("{id}\tremoved\n"));
+    assert!(!profile.exists());
+    assert!(!env.ok(&["list"]).contains(&id));
+    assert!(env.ok(&["audit"]).contains("session_removed"));
+}
+
+#[test]
+fn rm_refuses_a_running_session() {
+    let env = Env::new();
+    let id = env.create("busy");
+    assert!(env.open(&id).status.success());
+    let err = env.fails(&["rm", &id]);
+    assert!(
+        err.contains("session busy is running; stop it first or pass --force"),
+        "{err}"
+    );
+    assert_eq!(env.state(&id), "running");
+    assert!(env.data.join("profiles").join(&id).is_dir());
+    env.ok(&["stop", &id]);
+}
+
+#[test]
+fn rm_force_stops_then_deletes() {
+    let env = Env::new();
+    let id = env.create("force");
+    assert!(env.open(&id).status.success());
+    env.ok(&["rm", "--force", &id]);
+    assert!(!env.ok(&["list"]).contains(&id));
+    assert!(!env.data.join("profiles").join(&id).exists());
+}
+
+#[test]
+fn rm_names_an_unknown_session() {
+    let env = Env::new();
+    let err = env.fails(&["rm", "nope"]);
+    assert!(err.contains("no session is called nope"), "{err}");
+}
+
+#[test]
+fn ls_is_list() {
+    let env = Env::new();
+    env.create("one");
+    assert_eq!(env.ok(&["ls"]), env.ok(&["list"]));
+}
+
+#[test]
+fn long_data_dir_is_refused_before_spawn() {
+    let env = Env::new();
+    let deep = env.path(&"d".repeat(90));
+    let deep_cmd = || {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_keyharbor"));
+        command.arg("--data-dir").arg(&deep).stdin(Stdio::null());
+        command
+    };
+    let run = |args: &[&str]| deep_cmd().args(args).output().unwrap();
+    let created = run(&["create", "deep"]);
+    assert!(created.status.success());
+    let id = String::from_utf8(created.stdout).unwrap();
+    let id = id.split('\t').next().unwrap();
+    let out = deep_cmd()
+        .args(["open", id, "--browser"])
+        .arg(&env.browser)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success());
+    assert!(
+        err.contains("data directory path is too long for a socket (")
+            && err.contains(" > 103 bytes); use a shorter --data-dir"),
+        "{err}"
+    );
+    let listed = String::from_utf8(run(&["list"]).stdout).unwrap();
+    assert!(
+        listed.contains("\tstopped"),
+        "nothing was reserved: {listed}"
+    );
+}

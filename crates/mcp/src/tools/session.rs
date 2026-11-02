@@ -72,6 +72,7 @@ fn view_json(view: &SessionView) -> Value {
         "state": view.state.as_str(),
         "cdp": row.cdp,
         "description": row.description.as_ref().map(|d| d.as_str()),
+        "failure": row.failure,
     })
 }
 

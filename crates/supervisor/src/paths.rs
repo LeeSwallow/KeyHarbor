@@ -55,6 +55,17 @@ pub fn private_dir(path: &Path) -> Result<()> {
 /// Unix socket addresses are limited to 104 bytes on macOS (108 on Linux), terminator included.
 pub const MAX_SOCKET_PATH: usize = 103;
 
+/// Fails when this session's control socket path would not fit in a socket address.
+pub fn check_socket_path(data: &Path, id: &SessionId) -> Result<()> {
+    let length = socket_path(data, id).as_os_str().len();
+    if length > MAX_SOCKET_PATH {
+        bail!(
+            "data directory path is too long for a socket ({length} > {MAX_SOCKET_PATH} bytes); use a shorter --data-dir"
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

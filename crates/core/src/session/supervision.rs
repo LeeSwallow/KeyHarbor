@@ -32,9 +32,18 @@ pub fn check_reservation(
     Ok(())
 }
 
-/// Records that the run failed to start. Best effort: the caller is already failing.
-pub fn mark_failed(store: &dyn SessionStore, id: SessionId, generation: Generation) {
-    let _ = store.transition(id, generation, State::Starting, State::Failed);
+/// The longest failure reason kept (J-110): enough for one error chain line.
+const MAX_REASON: usize = 300;
+
+/// Records that the run failed to start and why. Best effort: the caller is already failing.
+pub fn mark_failed(
+    store: &dyn SessionStore,
+    id: SessionId,
+    generation: Generation,
+    error: &anyhow::Error,
+) {
+    let reason: String = format!("{error:#}").chars().take(MAX_REASON).collect();
+    let _ = store.fail(id, generation, &reason);
 }
 
 /// Records that the browser is up; `false` if the reservation changed meanwhile.

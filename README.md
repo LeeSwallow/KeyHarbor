@@ -152,6 +152,7 @@ keyharbor run --env myapp -- npm test                    # 자식에만 변수 �
 keyharbor policy deny --agent codex --resource domain --target payment
 keyharbor grant add <세션 id> https://github.com --ttl 8h # 이 세션이 열 수 있는 사이트
 keyharbor receive <세션 id> --origin https://github.com  # 사람이 사이트를 넘길 때까지 기다림
+keyharbor rm old-session                                 # 멈춘 세션과 프로필 지우기 (--force면 먼저 닫음)
 keyharbor audit --limit 20                               # 사용 기록 (값 없음)
 keyharbor browser install-host                           # 확장과 연결 (평소 Chrome의 로그인 넘기기)
 ```

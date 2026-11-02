@@ -1,6 +1,6 @@
 //! Opening, stopping and recovering a session's supervisor, and reading its raw CDP endpoint.
 
-use super::{active, note, require_supervisor, session};
+use super::{active, note, require_supervisor, session, supervision};
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
     SessionId, State,
@@ -13,6 +13,8 @@ const START_TIMEOUT: Duration = Duration::from_secs(15);
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 /// How often `open` and `stop` look at the session while they wait.
 const POLL: Duration = Duration::from_millis(50);
+/// What to do after a run failed.
+const RECOVER_HINT: &str = "run recover --confirm-browser-closed before retrying";
 
 pub struct OpenOptions<'a> {
     pub url: Option<&'a str>,
@@ -41,6 +43,7 @@ pub fn open(
             options.browser.display()
         );
     }
+    runtime.preflight(id)?;
     let row = session(store, id)?;
     let lock = runtime.lock(id).context("session is already open")?;
     let Some(generation) = store.reserve(id, options.cdp)? else {
@@ -61,8 +64,9 @@ pub fn open(
     let mut child = match runtime.start(id, generation, &launch) {
         Ok(child) => child,
         Err(error) => {
-            store.transition(id, generation, State::Starting, State::Failed)?;
-            return Err(error).context("start session supervisor");
+            let error = error.context("start session supervisor");
+            supervision::mark_failed(store, id, generation, &error);
+            return Err(error);
         }
     };
     let deadline = clock.now() + START_TIMEOUT;
@@ -77,17 +81,21 @@ pub fn open(
             State::Running | State::AwaitingUser => break Ok(()),
             State::Starting => (),
             other => {
+                let why = row
+                    .failure
+                    .as_deref()
+                    .map(|r| format!(": {r}"))
+                    .unwrap_or_default();
                 break Err(anyhow::anyhow!(
-                    "session did not start ({}); run recover --confirm-browser-closed before retrying",
+                    "session did not start ({}{why}); {RECOVER_HINT}",
                     other.as_str()
                 ));
             }
         }
         if let Some(status) = child.exited()? {
-            let _ = store.transition(id, generation, State::Starting, State::Failed);
-            break Err(anyhow::anyhow!(
-                "session supervisor exited during startup ({status}); run recover --confirm-browser-closed before retrying"
-            ));
+            let error = anyhow::anyhow!("session supervisor exited during startup ({status})");
+            supervision::mark_failed(store, id, generation, &error);
+            break Err(anyhow::anyhow!("{error}; {RECOVER_HINT}"));
         }
         if clock.now() >= deadline {
             break Err(anyhow::anyhow!(

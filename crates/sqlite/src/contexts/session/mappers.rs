@@ -24,6 +24,7 @@ pub fn session_row(model: SessionModel) -> Result<SessionRow> {
             .transpose()
             .ok()
             .context("invalid stored session description")?,
+        failure: model.failure,
     })
 }
 

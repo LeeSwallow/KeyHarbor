@@ -26,6 +26,9 @@ pub trait StartedSupervisor: Send {
 pub trait SessionRuntime: Send + Sync {
     /// True if `browser` names a file a supervisor could start.
     fn has_browser(&self, browser: &Path) -> bool;
+    /// Fails, before anything is reserved, when this session cannot run here (for example the
+    /// data directory is too long for its control socket).
+    fn preflight(&self, id: SessionId) -> Result<()>;
     /// True while a supervisor holds the session's lock.
     fn is_alive(&self, id: SessionId) -> bool;
     /// Takes the session's supervisor lock; fails at once if it is held.
@@ -41,6 +44,8 @@ pub trait SessionRuntime: Send + Sync {
     fn close(&self, id: SessionId) -> Result<()>;
     /// Removes a dead supervisor's control socket (best effort).
     fn remove_socket(&self, id: SessionId);
+    /// Deletes the session's browser profile, if it has one. Only for a stopped session.
+    fn remove_profile(&self, id: SessionId) -> Result<()>;
     /// The raw CDP WebSocket address the browser published, checked for shape.
     fn debug_endpoint(&self, id: SessionId) -> Result<String>;
 }

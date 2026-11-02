@@ -7,6 +7,7 @@ pub enum AuditKind {
     OriginChangedAfterFill,
     SessionOpened,
     SessionStopped,
+    SessionRemoved,
     HandoffRequested,
     HandoffResumed,
     PolicyChanged,
@@ -45,12 +46,13 @@ pub enum AuditKind {
     ValueAutofilled,
 }
 impl AuditKind {
-    pub const ALL: [AuditKind; 23] = [
+    pub const ALL: [AuditKind; 24] = [
         Self::SecretUsed,
         Self::SecretDenied,
         Self::OriginChangedAfterFill,
         Self::SessionOpened,
         Self::SessionStopped,
+        Self::SessionRemoved,
         Self::HandoffRequested,
         Self::HandoffResumed,
         Self::PolicyChanged,
@@ -77,6 +79,7 @@ impl AuditKind {
             Self::OriginChangedAfterFill => "origin_changed_after_fill",
             Self::SessionOpened => "session_opened",
             Self::SessionStopped => "session_stopped",
+            Self::SessionRemoved => "session_removed",
             Self::HandoffRequested => "handoff_requested",
             Self::HandoffResumed => "handoff_resumed",
             Self::PolicyChanged => "policy_changed",

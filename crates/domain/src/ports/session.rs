@@ -20,6 +20,8 @@ pub struct SessionRow {
     pub cdp: bool,
     /// What the session is for (R-38).
     pub description: Option<Description>,
+    /// Why the last run did not start (`failed`), if it said. Never a value.
+    pub failure: Option<String>,
 }
 
 pub trait SessionStore {
@@ -58,6 +60,9 @@ pub trait SessionStore {
     }
     /// Recovery: any non-stopped state → stopped, dropping the generation so the old run is
     /// fenced off. The caller must hold the session's supervisor lock. False if already stopped.
+    /// `starting` → `failed` under `generation`, remembering why (shown by `open` and `list`).
+    /// `false` if the run changed meanwhile. The reason must not contain a value.
+    fn fail(&self, id: SessionId, generation: Generation, reason: &str) -> Result<bool>;
     fn force_stopped(&self, id: SessionId) -> Result<bool>;
     /// running|awaiting_user → awaiting_user with a new request; an older pending one is superseded.
     fn request_handoff(
