@@ -104,13 +104,14 @@ impl ItemKind {
         self.spec().default_run_allowed
     }
     /// How `field` is treated in an item of this kind: its declared spec, the free-field spec
-    /// for kinds with free-form names, or `None` if the kind has no such field.
+    /// for kinds with free-form names, the custom-field spec for kinds that take named fields, or `None` if the kind has no such field.
     pub fn field(self, field: &str) -> Option<&'static FieldSpec> {
         let spec = self.spec();
         spec.fields
             .iter()
             .find(|f| f.name == field)
             .or(spec.free_fields.then_some(&FREE_FIELD))
+            .or(spec.custom_fields.then_some(&CUSTOM_FIELD))
     }
     /// A field name for this kind: free-form kinds take environment variable names.
     pub fn field_name(self, field: &str) -> Result<FieldName, InvalidValue> {
@@ -167,11 +168,24 @@ pub struct KindSpec {
     pub fields: &'static [FieldSpec],
     /// Field names are free-form (environment variable names), each treated as [`FREE_FIELD`].
     pub free_fields: bool,
+    /// Besides its declared fields the kind takes fields the person names (`school`, `gpa`),
+    /// each treated as [`CUSTOM_FIELD`] (J-111).
+    pub custom_fields: bool,
     pub default_origin_binding: bool,
     /// `keyharbor run` may inject the values unless the user turns it off: true for API keys
     /// and environment items, false for anything a site signs in or pays with (R-36).
     pub default_run_allowed: bool,
 }
+
+/// How a field the person named on an identity or address is treated: secret and masked,
+/// like any value whose meaning KeyHarbor cannot know.
+pub const CUSTOM_FIELD: FieldSpec = FieldSpec {
+    name: "*",
+    secret: true,
+    maskable: true,
+    input: InputKind::Text,
+    description: "Custom field",
+};
 
 /// How a free-form field (an `env` variable) is treated: secret and masked.
 pub const FREE_FIELD: FieldSpec = FieldSpec {
@@ -218,6 +232,7 @@ pub static KINDS: &[KindSpec] = &[
             secret("note", "Free-form note"),
         ],
         free_fields: false,
+        custom_fields: false,
         default_origin_binding: true,
         default_run_allowed: false,
     },
@@ -230,6 +245,7 @@ pub static KINDS: &[KindSpec] = &[
             secret("note", "Free-form note"),
         ],
         free_fields: false,
+        custom_fields: false,
         default_origin_binding: false,
         default_run_allowed: true,
     },
@@ -239,6 +255,7 @@ pub static KINDS: &[KindSpec] = &[
         domain: Domain::Developer,
         fields: &[],
         free_fields: true,
+        custom_fields: false,
         default_origin_binding: false,
         default_run_allowed: true,
     },
@@ -256,6 +273,7 @@ pub static KINDS: &[KindSpec] = &[
             secret("note", "Free-form note"),
         ],
         free_fields: false,
+        custom_fields: false,
         default_origin_binding: true,
         default_run_allowed: false,
     },
@@ -270,9 +288,18 @@ pub static KINDS: &[KindSpec] = &[
             plain("email", "Email address"),
             plain("phone", "Phone number"),
             plain("birth_date", "Date of birth"),
+            plain("english_name", "Name in English letters, as on a passport"),
+            plain("hanja_name", "Name in Chinese characters (hanja)"),
+            plain("gender", "Gender as the application form asks it"),
+            plain("nationality", "Nationality"),
+            plain("emergency_phone", "Emergency contact phone number"),
+            secret("military_service", "Military service status (sensitive)"),
+            secret("disability", "Disability status (sensitive)"),
+            secret("veterans", "Veterans or national merit status (sensitive)"),
             secret("note", "Free-form note"),
         ],
         free_fields: false,
+        custom_fields: true,
         default_origin_binding: false,
         default_run_allowed: false,
     },
@@ -292,6 +319,7 @@ pub static KINDS: &[KindSpec] = &[
             secret("note", "Free-form note"),
         ],
         free_fields: false,
+        custom_fields: true,
         default_origin_binding: false,
         default_run_allowed: false,
     },
@@ -716,6 +744,53 @@ mod tests {
             ItemKind::Env.field("API_KEY").unwrap().input,
             InputKind::Text
         );
+    }
+    #[test]
+    fn identity_has_korean_application_fields() {
+        for plain in [
+            "english_name",
+            "hanja_name",
+            "gender",
+            "nationality",
+            "emergency_phone",
+        ] {
+            let spec = ItemKind::Identity.field(plain).unwrap();
+            assert!(
+                spec.name == plain && !spec.secret && spec.maskable,
+                "{plain}"
+            );
+        }
+        for secret in ["military_service", "disability", "veterans"] {
+            let spec = ItemKind::Identity.field(secret).unwrap();
+            assert!(
+                spec.name == secret && spec.secret && spec.maskable,
+                "{secret}"
+            );
+        }
+    }
+    #[test]
+    fn custom_field_is_secret_and_masked() {
+        for kind in [ItemKind::Identity, ItemKind::Address] {
+            let spec = kind.field("school").unwrap();
+            assert_eq!(spec, &CUSTOM_FIELD);
+            assert!(spec.secret && spec.maskable);
+            assert_eq!(spec.input, InputKind::Text);
+            assert!(kind.is_secret_field("school"));
+        }
+        for kind in [ItemKind::Login, ItemKind::Card, ItemKind::Secret] {
+            assert!(
+                kind.field("school").is_none(),
+                "{kind:?} takes no custom fields"
+            );
+        }
+    }
+    #[test]
+    fn custom_field_cannot_shadow_a_declared_secret() {
+        // A custom field spelled like a declared field is that field; one spelled like another
+        // kind's secret is still secret.
+        assert!(!ItemKind::Identity.field("email").unwrap().secret);
+        assert!(ItemKind::Identity.is_secret_field("password"));
+        assert!(ItemKind::Identity.is_secret_field("cvc"));
     }
     #[test]
     fn schemas_cover_every_kind() {

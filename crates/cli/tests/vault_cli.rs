@@ -224,7 +224,9 @@ fn no_command_prints_plaintext() {
     );
     run(
         &["vault", "add", "me", "--kind", "identity", "--stdin"],
-        Some(&format!(r#"{{"full_name":"{s}-name"}}"#)),
+        Some(&format!(
+            r#"{{"full_name":"{s}-name","military_service":"{s}-mil","school":"{s}-school"}}"#
+        )),
     );
     run(
         &["vault", "add", "home", "--kind", "address", "--stdin"],
@@ -291,6 +293,10 @@ fn no_command_prints_plaintext() {
     )));
     transcript.push_str(&text(&other.run(&["vault", "list"], None)));
     assert!(transcript.contains("imported\t7"), "{transcript}");
+    assert!(
+        transcript.contains("military_service") && transcript.contains("school"),
+        "the identity kept its new and custom fields: {transcript}"
+    );
     for v in variants(s) {
         assert!(!transcript.contains(&v), "leaked {v:?} in:\n{transcript}");
     }

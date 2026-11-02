@@ -218,18 +218,15 @@ pub(super) fn check_fields(
 ) -> Result<()> {
     let mut seen = std::collections::BTreeSet::new();
     for (name, value) in fields {
-        match kind.schema() {
-            Some(schema) if !schema.contains(&name.as_str()) => {
-                bail!(
-                    "field {} is not part of a {} item",
-                    name.as_str(),
-                    kind.as_str()
-                )
-            }
-            None => {
-                FieldName::parse_env(name.as_str()).map_err(|e| anyhow!(e.to_string()))?;
-            }
-            _ => {}
+        if kind.field(name.as_str()).is_none() {
+            bail!(
+                "field {} is not part of a {} item",
+                name.as_str(),
+                kind.as_str()
+            )
+        }
+        if kind.spec().free_fields {
+            FieldName::parse_env(name.as_str()).map_err(|e| anyhow!(e.to_string()))?;
         }
         if value.len() > MAX_FIELD_BYTES {
             bail!("field {} exceeds {} bytes", name.as_str(), MAX_FIELD_BYTES);
@@ -390,5 +387,76 @@ impl Vault {
         )
         .map_err(vault_err)?;
         Ok((kind, name, origins))
+    }
+}
+
+#[cfg(test)]
+mod custom_field_tests {
+    use crate::{
+        ItemDetails, ItemSource, ItemStatus, NewItem,
+        tests::{env, field, init},
+    };
+    use keyharbor_domain::vault::{ItemKind, ItemName};
+
+    fn item(kind: ItemKind, fields: &[(&str, &str)]) -> NewItem {
+        NewItem {
+            name: ItemName::parse("me").unwrap(),
+            kind,
+            fields: fields.iter().map(|(n, v)| field(n, v)).collect(),
+            origins: vec![],
+            origin_binding: None,
+            status: ItemStatus::Active,
+            source: ItemSource::User,
+            details: ItemDetails::default(),
+        }
+    }
+
+    #[test]
+    fn identity_accepts_a_custom_field() {
+        let e = env();
+        let vault = init(&e);
+        vault
+            .add(item(
+                ItemKind::Identity,
+                &[
+                    ("full_name", "Hong Gildong"),
+                    ("school", "Seoul National University"),
+                ],
+            ))
+            .unwrap();
+        let listed = vault.list().unwrap().remove(0);
+        assert!(
+            listed.fields.iter().any(|f| f == "school"),
+            "{:?}",
+            listed.fields
+        );
+        assert!(
+            listed.plain_values.is_empty(),
+            "custom fields are not shown"
+        );
+        let masked = vault.mask_values().unwrap().values;
+        assert!(
+            masked
+                .iter()
+                .any(|(_, v)| v.as_str() == "Seoul National University"),
+            "custom values are masked"
+        );
+    }
+
+    #[test]
+    fn login_still_rejects_an_unknown_field() {
+        let e = env();
+        let vault = init(&e);
+        let err = vault
+            .add(item(
+                ItemKind::Login,
+                &[("password", "pw-1234"), ("school", "x")],
+            ))
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("field school is not part of a login item"),
+            "{err}"
+        );
     }
 }

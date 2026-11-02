@@ -24,6 +24,7 @@ pub struct KindForm {
     /// `(name, secret)`; empty for env items, whose variables the person names.
     pub fields: Vec<(&'static str, bool)>,
     pub free_fields: bool,
+    pub custom_fields: bool,
 }
 
 /// What the "새 항목" form offers, from the kind registry.
@@ -35,6 +36,7 @@ pub fn kinds() -> Vec<KindForm> {
             domain: spec.domain.as_str(),
             fields: spec.fields.iter().map(|f| (f.name, f.secret)).collect(),
             free_fields: spec.free_fields,
+            custom_fields: spec.custom_fields,
         })
         .collect()
 }

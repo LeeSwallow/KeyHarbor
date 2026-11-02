@@ -62,7 +62,7 @@ describe("rendering", () => {
 describe("the secure input form", () => {
   const form = {
     id: "r1", agent: "codex", kind: "card", name: "visa", origin: "https://shop.example", reason: "checkout",
-    fields: [{ name: "number", secret: true }, { name: "holder", secret: false }], free_fields: false,
+    fields: [{ name: "number", secret: true }, { name: "holder", secret: false }], free_fields: false, custom_fields: false,
   };
 
   it("in its own window shows only the form, and says so when the request is gone", () => {
@@ -129,8 +129,8 @@ describe("copying and sessions", () => {
 
 describe("the item forms", () => {
   const kinds = [
-    { kind: "login", domain: "credentials", fields: [["username", false], ["password", true]] as [string, boolean][], free_fields: false },
-    { kind: "env", domain: "developer", fields: [] as [string, boolean][], free_fields: true },
+    { kind: "login", domain: "credentials", fields: [["username", false], ["password", true]] as [string, boolean][], free_fields: false, custom_fields: false },
+    { kind: "env", domain: "developer", fields: [] as [string, boolean][], free_fields: true, custom_fields: false },
   ];
 
   it("offer the kind's fields, password inputs for secrets, and generation for logins", () => {
