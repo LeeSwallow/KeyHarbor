@@ -150,6 +150,8 @@ fn weakening_operations_are_refused_without_a_terminal() {
         &["settings", "set", "audit_enabled", "false"],
         &["settings", "set", "capture_enabled", "true"],
         &["settings", "set", "capture_enabled", "false"],
+        &["settings", "set", "upload_dirs", "~/Documents/Recruiting"],
+        &["settings", "set", "upload_max_files", "20"],
     ] {
         let error = c.refused(args);
         assert!(error.contains(NEEDS_PERSON), "{args:?}: {error}");
@@ -158,6 +160,7 @@ fn weakening_operations_are_refused_without_a_terminal() {
     assert_eq!(c.ok(&["vault", "list", "--json"], None), before);
     assert_eq!(c.ok(&["policy", "list"], None), policies);
     assert_eq!(c.ok(&["settings", "get", "audit_enabled"], None), "true\n");
+    assert_eq!(c.ok(&["settings", "get", "upload_dirs"], None), "\n");
     assert_eq!(
         c.ok(&["settings", "get", "capture_enabled"], None),
         "false\n"

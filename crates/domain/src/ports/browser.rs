@@ -155,6 +155,10 @@ impl Element {
     pub fn is_select(&self) -> bool {
         self.local_name == "select"
     }
+    /// `<input type=file>`.
+    pub fn is_file_input(&self) -> bool {
+        self.local_name == "input" && self.input_type.as_deref() == Some("file")
+    }
     /// An element that takes typed text: a text-like `input`, a `textarea` or an editing host.
     pub fn takes_text(&self) -> bool {
         match self.local_name.as_str() {
@@ -218,6 +222,13 @@ pub trait PageInput: Send {
         node: u64,
         choice: &Choice,
     ) -> impl Future<Output = Result<Option<u32>>> + Send;
+    /// Puts the files at `paths` into the file input `node` (`DOM.setFileInputFiles`).
+    fn set_files(
+        &mut self,
+        page: &Page,
+        node: u64,
+        paths: &[std::path::PathBuf],
+    ) -> impl Future<Output = Result<()>> + Send;
     /// The URL of the page's top document.
     fn location(&mut self, page: &Page) -> impl Future<Output = Result<String>> + Send;
 }

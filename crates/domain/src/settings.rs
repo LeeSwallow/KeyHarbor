@@ -24,6 +24,13 @@ pub const NOTIFY_REQUESTS: &str = "notify_requests";
 pub const NOTIFY_HANDOFFS: &str = "notify_handoffs";
 pub const NOTIFY_DRAFTS: &str = "notify_drafts";
 pub const NOTIFY_DENIALS: &str = "notify_denials";
+/// Folders `browser_upload` may take files from, separated by `:` (03 §3.14). Empty (the
+/// default): uploads are refused. Any change needs a person: it decides what may leave.
+pub const UPLOAD_DIRS: &str = "upload_dirs";
+/// The most files one `browser_upload` may put into a page. More weakens.
+pub const UPLOAD_MAX_FILES: &str = "upload_max_files";
+const UPLOAD_MAX_FILES_RANGE: std::ops::RangeInclusive<u64> = 1..=50;
+
 /// The `default_item_ttl` value meaning "never expire".
 pub const NO_TTL: &str = "none";
 
@@ -36,6 +43,10 @@ pub enum SettingFormat {
     Ttl,
     /// Whole seconds within [`CLEAR_SECONDS_RANGE`].
     ClearSeconds,
+    /// Folders separated by `:`, each absolute or starting with `~/`; empty for none.
+    Folders,
+    /// A count within [`UPLOAD_MAX_FILES_RANGE`].
+    FileCount,
 }
 
 /// Which change to a setting weakens a protection and needs a person.
@@ -101,6 +112,18 @@ pub const SETTINGS: &[SettingSpec] = &[
         format: SettingFormat::ClearSeconds,
         weakening: SettingWeakening::AboveDefault,
     },
+    SettingSpec {
+        key: UPLOAD_DIRS,
+        default: "",
+        format: SettingFormat::Folders,
+        weakening: SettingWeakening::AnyChange,
+    },
+    SettingSpec {
+        key: UPLOAD_MAX_FILES,
+        default: "10",
+        format: SettingFormat::FileCount,
+        weakening: SettingWeakening::AboveDefault,
+    },
     notice(NOTIFY_REQUESTS),
     notice(NOTIFY_HANDOFFS),
     notice(NOTIFY_DRAFTS),
@@ -131,6 +154,17 @@ impl SettingSpec {
             SettingFormat::Ttl => Ttl::parse(value)
                 .map(|_| ())
                 .map_err(|e| InvalidSetting(format!("{e}, or none"))),
+            SettingFormat::Folders => crate::upload::parse_dirs(value, std::path::Path::new("/"))
+                .map(|_| ())
+                .map_err(InvalidSetting),
+            SettingFormat::FileCount => match value.parse::<u64>() {
+                Ok(n) if UPLOAD_MAX_FILES_RANGE.contains(&n) => Ok(()),
+                _ => Err(InvalidSetting(format!(
+                    "must be a whole number from {} to {}",
+                    UPLOAD_MAX_FILES_RANGE.start(),
+                    UPLOAD_MAX_FILES_RANGE.end()
+                ))),
+            },
             SettingFormat::ClearSeconds => match clear_seconds(value) {
                 Some(_) => Ok(()),
                 None => Err(InvalidSetting(format!(

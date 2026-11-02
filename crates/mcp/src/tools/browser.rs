@@ -52,6 +52,17 @@ struct Select {
     index: Option<u32>,
 }
 #[derive(Deserialize, schemars::JsonSchema)]
+struct Upload {
+    session: String,
+    /// Element ref of the <input type=file> from browser_snapshot.
+    #[serde(rename = "ref")]
+    reference: Option<u64>,
+    /// CSS selector of the file input, used when ref is not given.
+    selector: Option<String>,
+    /// Absolute paths of local files inside the folders the person allowed (upload_dirs).
+    files: Vec<String>,
+}
+#[derive(Deserialize, schemars::JsonSchema)]
 struct Text {
     session: String,
     /// Text typed into the focused element. May contain {{secret:item.field}} placeholders.
@@ -193,6 +204,27 @@ impl Server {
                     index,
                 };
                 self.browser(&session, request).await
+            }
+            Err(error) => fail(error.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Put local files into a file input (<input type=file>) given by ref or CSS selector, as if a person chose them. Only regular files inside the folders the person allowed (upload_dirs) are taken, a few at a time, and only on sites the session may load. Returns the file names; the usage record keeps names and the site, not contents."
+    )]
+    async fn browser_upload(
+        &self,
+        Parameters(Upload {
+            session,
+            reference,
+            selector,
+            files,
+        }): Parameters<Upload>,
+    ) -> CallToolResult {
+        match target(reference, selector) {
+            Ok(target) => {
+                self.browser(&session, ControlRequest::Upload { target, files })
+                    .await
             }
             Err(error) => fail(error.to_string()),
         }

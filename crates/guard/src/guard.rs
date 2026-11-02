@@ -204,6 +204,11 @@ impl Guard {
         &self.store
     }
 
+    /// Now, by the guard's clock.
+    pub(crate) fn unix_seconds(&self) -> u64 {
+        self.clock.unix_seconds()
+    }
+
     /// What the vault says about `item` for `agent`'s request, refusing (and recording) a
     /// missing or tampered one.
     pub(crate) fn item_use(&self, agent: &str, item: &ItemName) -> Result<ItemUse> {

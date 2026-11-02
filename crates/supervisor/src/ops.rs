@@ -8,6 +8,7 @@ use crate::{
         ControlEnvelope, ControlRequest, FillResultWire, LoginResultWire, login_submits,
     },
     process::Shared,
+    upload_files,
 };
 use anyhow::{Context, Result, anyhow};
 use keyharbor_broker::CdpBrowser;
@@ -35,6 +36,7 @@ enum Command {
     Click(Target),
     Fill(Target, String),
     Select(Target, Choice),
+    Upload(Target, Vec<String>),
     Type(String),
     Press(String),
     Tabs,
@@ -76,6 +78,7 @@ impl Command {
                 | Self::Click(_)
                 | Self::Fill(..)
                 | Self::Select(..)
+                | Self::Upload(..)
                 | Self::Type(_)
                 | Self::Press(_)
                 | Self::NewTab(_)
@@ -93,6 +96,15 @@ fn in_grants(shared: &Shared, url: &str) -> Result<bool> {
         .lock()
         .map_err(|_| anyhow!("store lock poisoned"))?;
     keyharbor_core::grant::allows(&**store, &*shared.clock, shared.id, url)
+}
+
+/// The person's upload rule, read now so a change applies to the next request.
+fn upload_policy(shared: &Shared) -> Result<keyharbor_domain::upload::UploadPolicy> {
+    let store = shared
+        .store
+        .lock()
+        .map_err(|_| anyhow!("store lock poisoned"))?;
+    upload_files::policy(&**store, &upload_files::home())
 }
 
 /// Whether the session is waiting for the user (a handoff is open).
@@ -135,6 +147,7 @@ fn parse(request: &Value) -> Result<(String, Command)> {
                 _ => anyhow::bail!("select needs exactly one of value, label or index"),
             },
         ),
+        ControlRequest::Upload { target, files } => Command::Upload(target.into(), files),
         ControlRequest::Type { text } => Command::Type(text),
         ControlRequest::Press { key } => Command::Press(key),
         ControlRequest::Tabs => Command::Tabs,
@@ -230,6 +243,13 @@ impl Ops {
                 wire(browser.fill(&target, &text).await, FillResultWire::from)
             }
             Command::Select(target, choice) => browser.select(&target, &choice).await,
+            Command::Upload(target, files) => match upload_policy(shared) {
+                Ok(policy) => {
+                    let files = upload_files::resolve(&files);
+                    browser.upload(&target, &policy, &files).await
+                }
+                Err(error) => guard.redact_outcome(Err(error)),
+            },
             Command::Type(text) => wire(browser.type_text(&text).await, FillResultWire::from),
             Command::Press(key) => browser.press(&key).await,
             Command::Tabs => browser.tabs().await,

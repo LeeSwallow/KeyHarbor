@@ -66,6 +66,7 @@ fn session_tools_with_fake_browser() {
         "browser_click",
         "browser_fill",
         "browser_select",
+        "browser_upload",
         "browser_type",
         "browser_press",
         "browser_tabs",

@@ -34,6 +34,7 @@ mod select;
 pub mod session;
 #[cfg(test)]
 mod test_support;
+mod upload;
 
 pub use browser::GuardedBrowser;
 pub use guard::{Guard, SharedStore, VaultOpener};

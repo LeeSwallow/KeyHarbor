@@ -8,6 +8,7 @@ pub enum AuditKind {
     SessionOpened,
     SessionStopped,
     SessionRemoved,
+    FileUploaded,
     HandoffRequested,
     HandoffResumed,
     PolicyChanged,
@@ -46,13 +47,14 @@ pub enum AuditKind {
     ValueAutofilled,
 }
 impl AuditKind {
-    pub const ALL: [AuditKind; 24] = [
+    pub const ALL: [AuditKind; 25] = [
         Self::SecretUsed,
         Self::SecretDenied,
         Self::OriginChangedAfterFill,
         Self::SessionOpened,
         Self::SessionStopped,
         Self::SessionRemoved,
+        Self::FileUploaded,
         Self::HandoffRequested,
         Self::HandoffResumed,
         Self::PolicyChanged,
@@ -80,6 +82,7 @@ impl AuditKind {
             Self::SessionOpened => "session_opened",
             Self::SessionStopped => "session_stopped",
             Self::SessionRemoved => "session_removed",
+            Self::FileUploaded => "file_uploaded",
             Self::HandoffRequested => "handoff_requested",
             Self::HandoffResumed => "handoff_resumed",
             Self::PolicyChanged => "policy_changed",

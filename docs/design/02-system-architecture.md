@@ -574,7 +574,7 @@ flowchart TD
 |---|---|---|
 | 세션 | `session_list`, `session_create`, `session_open`, `session_stop`, `session_wait_auth`, `session_wait_for_resume` | 기존 유지 |
 | 세션 (선택) | `session_endpoint` | raw CDP가 켜진 경우에만. 마스킹 우회 경고 |
-| 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_select`, `browser_type`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` | 신규. `fill`·`type`은 placeholder 지원 |
+| 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_select`, `browser_upload`, `browser_type`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` | 신규. `fill`·`type`은 placeholder 지원 |
 | 금고 | `vault_list` | 이름·종류·필드 이름·origin·draft 여부·출처만. 메타 MAC이 맞지 않는 항목은 `{"name", "tampered": true}`만 보인다. **값 조회 도구 없음** |
 | 금고 등록 | `vault_generate`, `vault_put`, `vault_request`, `vault_wait` ✅ | [08](08-registration-flows.md). 반환값에 값 없음. 에이전트가 더한 항목은 draft이고 기존 항목을 바꾸지 않는다 [J-77] |
 | CLI 전용 | `keyharbor run --env …` | MCP 도구가 아니라 에이전트가 셸로 실행 ([§2.5.5](#255-env-변수-주입-실행-keyharbor-run)) |

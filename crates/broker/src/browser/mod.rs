@@ -3,6 +3,7 @@
 //! It types exactly the text it is given and returns results unmasked; the supervisor only
 //! ever reaches it through `keyharbor_guard::GuardedBrowser`.
 
+mod form;
 mod frames;
 mod input;
 mod login;
@@ -10,7 +11,6 @@ mod navigate;
 mod navigation;
 mod receive;
 mod screenshot;
-mod select;
 mod snapshot;
 mod tabs;
 mod wait;
@@ -218,6 +218,9 @@ impl PageInput for CdpBrowser {
         choice: &Choice,
     ) -> Result<Option<u32>> {
         self.choose_option(&page.0, node, choice).await
+    }
+    async fn set_files(&mut self, page: &Page, node: u64, paths: &[PathBuf]) -> Result<()> {
+        self.put_files(&page.0, node, paths).await
     }
     async fn login_fields(&mut self, page: &Page) -> Result<LoginFields> {
         self.find_login_fields(&page.0).await
