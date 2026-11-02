@@ -74,25 +74,16 @@ mod tests {
 
     #[test]
     fn a_command_that_runs_answers() {
-        let tmp = tempfile::tempdir().unwrap();
-        assert!(answers(
-            &script(tmp.path(), "exit 0"),
-            Duration::from_secs(5)
-        ));
-        assert!(!answers(
-            &script(tmp.path(), "exit 3"),
-            Duration::from_secs(5)
-        ));
-        assert!(!answers(
-            &tmp.path().join("missing"),
-            Duration::from_secs(5)
-        ));
+        let tmp = super::super::test_dir("probe");
+        assert!(answers(&script(&tmp, "exit 0"), Duration::from_secs(5)));
+        assert!(!answers(&script(&tmp, "exit 3"), Duration::from_secs(5)));
+        assert!(!answers(&tmp.join("missing"), Duration::from_secs(5)));
     }
 
     #[test]
     fn auto_falls_back_when_probe_times_out() {
-        let tmp = tempfile::tempdir().unwrap();
-        let slow = script(tmp.path(), "sleep 10");
+        let tmp = super::super::test_dir("probe");
+        let slow = script(&tmp, "sleep 10");
         let started = Instant::now();
         assert!(!answers(&slow, Duration::from_millis(300)));
         assert!(
