@@ -49,6 +49,10 @@ enum Command {
         agent: Option<String>,
         #[arg(long)]
         browser: Option<PathBuf>,
+        /// Nobody is watching (a scheduled run): tools that wait for a person look once and
+        /// return `needs_user` instead of waiting
+        #[arg(long)]
+        non_interactive: bool,
         /// Print the tool names and exit (used to check the plugin's skills)
         #[arg(long, hide = true)]
         list_tools: bool,
@@ -135,6 +139,7 @@ fn main() -> Result<()> {
             allow_cdp,
             agent,
             browser,
+            non_interactive,
             list_tools: false,
         } => keyharbor_mcp::run(
             keyharbor_mcp::Options {
@@ -143,6 +148,11 @@ fn main() -> Result<()> {
                 allow_cdp,
                 agent,
                 browser,
+                interaction: if non_interactive {
+                    keyharbor_mcp::Interaction::NonInteractive
+                } else {
+                    keyharbor_mcp::Interaction::Interactive
+                },
             },
             app.mcp_deps()?,
         ),

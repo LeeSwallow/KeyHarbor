@@ -36,6 +36,16 @@ pub(crate) struct Inner {
     pub allow_cdp: bool,
     pub agent: AgentName,
     pub browser: PathBuf,
+    pub interaction: Interaction,
+}
+
+/// Whether a person may be watching this server (`--non-interactive` says no, #119).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Interaction {
+    /// Tools that wait for a person wait, up to their timeout.
+    Interactive,
+    /// Nobody will answer soon: wait tools look once and say what is pending.
+    NonInteractive,
 }
 
 /// The agent name used when the server was started without `--agent`.
@@ -50,6 +60,18 @@ impl Inner {
     /// The store, held until the guard is dropped (keep it to one use case).
     pub fn store(&self) -> Result<MutexGuard<'_, Box<dyn Store>>> {
         lock(&self.store)
+    }
+
+    /// How long a wait tool waits: what the agent asked for, or one look when nobody watches.
+    pub fn wait(&self, requested: Option<u64>) -> Result<keyharbor_core::session::ResumeWait> {
+        match self.interaction {
+            Interaction::Interactive => keyharbor_core::session::ResumeWait::seconds(requested),
+            Interaction::NonInteractive => Ok(keyharbor_core::session::ResumeWait::ONCE),
+        }
+    }
+
+    pub fn is_watched(&self) -> bool {
+        self.interaction == Interaction::Interactive
     }
 
     /// Fails unless the policy allows this server's agent `op`.

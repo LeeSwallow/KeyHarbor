@@ -20,6 +20,7 @@ use keyharbor_domain::{
 use keyharbor_guard::{SharedStore, VaultOpener};
 use keyharbor_supervisor::DEFAULT_BROWSER;
 use rmcp::{ServiceExt, transport::stdio};
+pub use server::Interaction;
 use server::{Inner, Server};
 use std::{path::PathBuf, sync::Arc};
 
@@ -32,6 +33,8 @@ pub struct Options {
     /// The agent's name for policies and the usage record; `mcp` when absent.
     pub agent: Option<String>,
     pub browser: Option<PathBuf>,
+    /// `--non-interactive`: wait tools do not wait (#119).
+    pub interaction: Interaction,
 }
 
 /// What the server runs on. Built once, by the binary's composition root.
@@ -72,6 +75,7 @@ pub fn run(options: Options, deps: Deps) -> Result<()> {
         browser: options
             .browser
             .unwrap_or_else(|| PathBuf::from(DEFAULT_BROWSER)),
+        interaction: options.interaction,
     });
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

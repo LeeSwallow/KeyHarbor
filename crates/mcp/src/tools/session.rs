@@ -3,7 +3,7 @@
 use crate::server::{Server, fail, outcome};
 use keyharbor_core::grant;
 use keyharbor_core::session::{
-    self as lifecycle, OpenOptions, ResumeWait, SessionView, poll, resume_check, wait_for_resume,
+    self as lifecycle, OpenOptions, SessionView, poll, resume_check, wait_for_resume,
 };
 use keyharbor_domain::{
     RequestId, SessionName, State,
@@ -198,6 +198,9 @@ impl Server {
             self.blocking(move |inner| {
                 inner.allow(SessionOp::WaitAuth(id))?;
                 let request = lifecycle::wait_auth(&**inner.store()?, &*inner.runtime, id, origin.as_deref(), inner.agent())?;
+                if !inner.is_watched() {
+                    return Ok(json!({"id": id.to_string(), "state": State::AwaitingUser.as_str(), "status": "needs_user", "request_id": request.to_string(), "note": "nobody is watching this run: record that a person must sign in, then stop; they will see it in KeyHarbor"}));
+                }
                 Ok(json!({"id": id.to_string(), "state": State::AwaitingUser.as_str(), "request_id": request.to_string()}))
             })
             .await,
@@ -222,7 +225,7 @@ impl Server {
         let Ok(request) = RequestId::parse(&request_id) else {
             return fail("invalid request_id");
         };
-        let wait = match ResumeWait::seconds(timeout_seconds) {
+        let wait = match self.inner.wait(timeout_seconds) {
             Ok(wait) => wait,
             Err(error) => return fail(error.to_string()),
         };
@@ -231,7 +234,13 @@ impl Server {
                 inner.allow(SessionOp::WaitForResume(id))?;
                 // The store is held for one look at a time, not for the whole wait.
                 let check = || resume_check(&**inner.store()?, &*inner.runtime, id, request);
-                wait_for_resume(wait, check, std::thread::sleep)?;
+                if !inner.is_watched() {
+                    if !check()? {
+                        return Ok(json!({"id": id.to_string(), "state": State::AwaitingUser.as_str(), "status": "needs_user", "request_id": request.to_string()}));
+                    }
+                } else {
+                    wait_for_resume(wait, check, std::thread::sleep)?;
+                }
                 Ok(json!({"id": id.to_string(), "state": State::Running.as_str(), "note": "the user resumed; sign-in success is not verified"}))
             })
             .await,
@@ -257,7 +266,7 @@ impl Server {
             Ok(origin) => origin,
             Err(error) => return fail(error.to_string()),
         };
-        let wait = match ResumeWait::seconds(timeout_seconds) {
+        let wait = match self.inner.wait(timeout_seconds) {
             Ok(wait) => wait,
             Err(error) => return fail(error.to_string()),
         };

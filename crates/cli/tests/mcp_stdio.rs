@@ -584,3 +584,66 @@ fn placeholders_through_mcp_with_chrome() {
     transcript.push_str(&audit);
     assert!(!transcript.contains(&secret), "{transcript}");
 }
+
+/// A non-interactive server with an open session, for the waits that must not wait.
+fn unwatched(tmp: &tempfile::TempDir) -> (Mcp, String) {
+    let data = tmp.path().join("data");
+    let browser = fake_browser(tmp.path());
+    let mut mcp = Mcp::start(
+        &data,
+        tmp.path(),
+        &[
+            "--browser",
+            browser.to_str().unwrap(),
+            "--agent",
+            "cron",
+            "--non-interactive",
+        ],
+    );
+    let created = mcp.ok("session_create", json!({"name": "jobs"}));
+    let id = created["id"].as_str().unwrap().to_owned();
+    mcp.ok("session_open", json!({"id": id}));
+    (mcp, id)
+}
+
+#[test]
+fn non_interactive_wait_auth_returns_needs_user() {
+    let tmp = short_tempdir();
+    let (mut mcp, id) = unwatched(&tmp);
+    let handoff = mcp.ok("session_wait_auth", json!({"id": id}));
+    assert_eq!(handoff["status"], "needs_user", "{handoff}");
+    assert_eq!(handoff["state"], "awaiting_user");
+    assert!(
+        handoff["request_id"]
+            .as_str()
+            .is_some_and(|r| !r.is_empty())
+    );
+    mcp.ok("session_stop", json!({"id": id}));
+}
+
+#[test]
+fn non_interactive_wait_for_resume_does_not_block() {
+    let tmp = short_tempdir();
+    let (mut mcp, id) = unwatched(&tmp);
+    let request = mcp.ok("session_wait_auth", json!({"id": id}))["request_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let started = std::time::Instant::now();
+    let waited = mcp.ok(
+        "session_wait_for_resume",
+        json!({"id": id, "request_id": request, "timeout_seconds": 300}),
+    );
+    assert_eq!(waited["status"], "needs_user", "{waited}");
+    let site = mcp.ok(
+        "session_wait_site",
+        json!({"id": id, "timeout_seconds": 300}),
+    );
+    assert_eq!(site["status"], "waiting", "{site}");
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "the waits looked once: {:?}",
+        started.elapsed()
+    );
+    mcp.ok("session_stop", json!({"id": id}));
+}
