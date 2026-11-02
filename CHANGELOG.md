@@ -4,11 +4,25 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-02
+
 ### Added
 
+- ego lite 브라우저: `keyharbor open --browser auto|chrome|ego-lite|<경로>`(MCP `keyharbor mcp --browser`도)와 설정 `browser`. 자동이면 ego lite가 답할 때 ego lite, 아니면 Chrome으로 연다. ego lite 세션은 다른 프로그램도 같은 창을 조작할 수 있어 "보호 낮음"으로 표시한다(ADR-0018). `--headless`, 설정 `ego_probe_seconds`·`ego_poll_ms`.
+- `keyharbor browser install-host --browser ego-lite`: ego lite에서도 확장이 KeyHarbor에 연결된다.
+- `keyharbor rm <세션>… [--force]`(`ls` 별칭)와 세션이 시작하지 못한 이유 표시.
+- MCP `browser_select`(드롭다운 고르기)와 `browser_upload`(설정 `upload_dirs` 안의 파일만, `upload_max_files`개까지). 업로드는 사용 기록에 남는다.
+- `keyharbor mcp --non-interactive`: 사람을 기다리는 대신 `needs_user`를 돌려준다.
+- identity 항목에 지원서용 필드(영문·한자 이름, 성별, 국적, 비상 연락처, 병역·장애·보훈)와 직접 이름 붙인 필드.
+- 관리 앱: 세션의 브라우저와 보호 표시, 세션 지우기(10초 실행 취소), [Chrome으로]·[ego lite로] 열기, 신원 입력 묶음, 설정의 "브라우저"·"파일 올리기".
+- 브라우저 확장 스토어 패키지(`npm run package`)와 Chrome 웹 스토어·Firefox AMO 게시 workflow.
 - 사람용 자동 완성과 저장(확장 팝업): 저장된 로그인을 그 사이트의 페이지에 채울 때마다 Touch ID로 확인하고, 페이지에서 친 로그인을 draft로 저장한다. 셸에서 native host를 직접 띄우면 값을 주지 않는다.
 - `keyharbor receive`와 MCP `session_wait_site`: 사람이 사이트를 넘길 때까지 기다린다.
 - 관리 앱의 세션 카드에 평소 Chrome의 탭을 끌어다 놓아 그 사이트의 로그인을 넘긴다. 넘기기 전에 브라우저 알림으로 한 번 더 묻는다(확장에 `notifications` 권한).
+
+### Fixed
+
+- Chrome을 `/Applications`에서만 찾던 것: `~/Applications`, Chromium, PATH의 `google-chrome`도 찾는다.
 
 ## [0.1.1] - 2026-10-30
 
@@ -54,7 +68,8 @@
 - 보호를 약하게 하는 변경(정책 allow, 기록 끄기, 포착, origin 추가, 클립보드 시간 늘리기 등)은 사람이 확인한다.
 - 관리 앱은 네트워크 listener를 열지 않고, 창의 capability는 `core:default`뿐이다.
 
-[Unreleased]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/LeeSwallow/KeyHarbor/releases/tag/v0.1.0
 
