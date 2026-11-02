@@ -16,7 +16,7 @@ use keyharbor_broker::chrome::{DEVTOOLS_ACTIVE_PORT, parse_devtools_active_port}
 /// start may take (core `START_TIMEOUT`): on a busy machine Chrome writes the file seconds
 /// after the session is running, and 5 s was too short on CI (#25).
 const ENDPOINT_WAIT: Duration = Duration::from_secs(15);
-use keyharbor_broker::{DEFAULT_BROWSER, ego::probe};
+use keyharbor_broker::{chrome::locate as locate_chrome, ego::probe};
 use keyharbor_domain::{
     Generation, SessionId,
     browser_choice::{BrowserChoice, BrowserKind},
@@ -75,8 +75,15 @@ impl SessionRuntime for ProcessRuntime {
             kind: BrowserKind::EgoLite,
             executable: command,
         };
+        let installed_chrome = || {
+            locate_chrome().map(|path| chrome(&path)).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Chrome was not found in /Applications, ~/Applications or PATH; set its path with `keyharbor settings set browser <path>`"
+                )
+            })
+        };
         Ok(match choice {
-            BrowserChoice::Chrome => chrome(Path::new(DEFAULT_BROWSER)),
+            BrowserChoice::Chrome => installed_chrome()?,
             BrowserChoice::Path(path) => chrome(path),
             BrowserChoice::EgoLite => match probe::find(wait) {
                 Some(command) => ego(command),
@@ -86,9 +93,10 @@ impl SessionRuntime for ProcessRuntime {
                     wait.as_secs()
                 ),
             },
-            BrowserChoice::Auto => {
-                probe::find(wait).map_or_else(|| chrome(Path::new(DEFAULT_BROWSER)), ego)
-            }
+            BrowserChoice::Auto => match probe::find(wait) {
+                Some(command) => ego(command),
+                None => installed_chrome()?,
+            },
         })
     }
 

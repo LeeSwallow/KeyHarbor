@@ -4,11 +4,58 @@
 use crate::{browser::CdpBrowser, cdp::Cdp};
 use anyhow::{Context, Result, bail};
 use serde_json::json;
-use std::{path::PathBuf, process::Stdio, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+    sync::Arc,
+};
 use tokio::process::Child;
 
-/// The browser `open` uses when none is given.
+/// Where Chrome usually is on a Mac (the first place [`locate`] looks).
 pub const DEFAULT_BROWSER: &str = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+
+/// Chrome-like browsers inside an app folder, as `<App>.app/Contents/MacOS/<file>`.
+const MAC_BUNDLES: &[(&str, &str)] = &[
+    ("Google Chrome.app", "Google Chrome"),
+    ("Chromium.app", "Chromium"),
+];
+/// Their command names elsewhere (Linux packages).
+const COMMANDS: &[&str] = &[
+    "google-chrome",
+    "google-chrome-stable",
+    "chromium",
+    "chromium-browser",
+];
+
+/// The places [`locate`] tries, in order: `/Applications` and the person's own
+/// `~/Applications` (Chrome installed without an administrator), then `PATH`.
+pub fn candidates(home: Option<&Path>, path: Option<&std::ffi::OsStr>) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let roots = [
+        Some(PathBuf::from("/Applications")),
+        home.map(|h| h.join("Applications")),
+    ];
+    for (bundle, file) in MAC_BUNDLES {
+        for root in roots.iter().flatten() {
+            found.push(root.join(bundle).join("Contents/MacOS").join(file));
+        }
+    }
+    for dir in path.into_iter().flat_map(std::env::split_paths) {
+        for command in COMMANDS {
+            found.push(dir.join(command));
+        }
+    }
+    found
+}
+
+/// The first Chrome-like browser this machine has, if any.
+pub fn locate() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let path = std::env::var_os("PATH");
+    candidates(home.as_deref(), path.as_deref())
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+}
 
 /// The file in the profile where Chrome writes its debugging port and browser path.
 pub const DEVTOOLS_ACTIVE_PORT: &str = "DevToolsActivePort";
@@ -173,4 +220,33 @@ fn uuid_like(value: &str) -> Result<()> {
         bail!("invalid browser endpoint");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod locate_tests {
+    use super::*;
+
+    #[test]
+    fn chrome_is_looked_for_in_both_app_folders_then_path() {
+        let found = candidates(
+            Some(Path::new("/Users/someone")),
+            Some(std::ffi::OsStr::new("/usr/bin:/snap/bin")),
+        );
+        assert_eq!(found[0], Path::new(DEFAULT_BROWSER));
+        assert_eq!(
+            found[1],
+            Path::new("/Users/someone/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+        );
+        assert!(found.contains(&PathBuf::from(
+            "/Applications/Chromium.app/Contents/MacOS/Chromium"
+        )));
+        assert!(found.contains(&PathBuf::from("/usr/bin/google-chrome")));
+        assert!(found.contains(&PathBuf::from("/snap/bin/chromium")));
+    }
+
+    #[test]
+    fn nothing_found_without_home_or_path_still_tries_applications() {
+        let found = candidates(None, None);
+        assert_eq!(found.len(), MAC_BUNDLES.len());
+    }
 }
