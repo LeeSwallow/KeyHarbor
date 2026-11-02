@@ -156,3 +156,22 @@ npm run check     # lint + test (CI가 이것을 돈다)
 - native host는 `keyharbor browser host`다. stdin/stdout의 길이 접두 JSON 하나를 받고, `receive_site` v1과 쿠키가 그 사이트 것인지 검사한 뒤 실행 중인 세션의 감독자에게 넘긴다. 응답의 오류 코드는 `bad_request`·`no_session`·`not_running`·`refused`(다른 사이트 쿠키, TTL 범위 밖)·`failed`이고, 값은 응답·오류·사용 기록·DB에 없다(`crates/cli/tests/browser_host.rs`).
 - 감독자가 grant(`created_by = handoff`, `ttl_seconds` 동안)를 먼저 기록하고 쿠키를 넣은 뒤(`Storage.setCookies`), `localStorage`가 있으면 그 origin에 넣고 origin을 연다. 사용 기록은 `site_handed_off`. 이 세션은 그때부터 grant 안의 사이트만 연다([J-81](../../docs/design/06-requirements-log.md)).
 - 남은 것: `keyharbor session receive` 대기 명령과 관리 앱의 끌어다 놓기 대상(5단계).
+
+## 스토어에 올리기 (#124)
+
+`npm run package`가 `web-ext-artifacts/`에 세 파일을 만든다: Chrome용 zip(manifest의 `key`를 뺀 것, 스토어는 `key` 필드를 받지 않는다), Firefox용 zip, AMO 심사에 붙일 소스 zip. 리스팅 문구·권한 설명·AMO 메타데이터는 `store/`, 개인정보 처리방침은 `site/privacy.html`(https://leeswallow.github.io/KeyHarbor/privacy.html)에 있다.
+
+태그 `ext-v<package.json의 version>`을 올리면 `.github/workflows/extension-release.yml`이 검사·패키징을 하고, secret이 있는 스토어에 올린다. secret이 없으면 패키지만 실행 결과에 붙는다.
+
+사람이 할 일(한 번):
+
+| 순서 | 할 일 |
+|---|---|
+| 1 | Chrome Web Store 개발자 등록(한 번 $5). [대시보드](https://chrome.google.com/webstore/devconsole) → 새 항목 → `keyharbor-chrome-<v>.zip` 업로드. `store/listing.*.md`·`store/permissions.md`로 리스팅·개인정보 탭을 채우고 심사 제출 |
+| 2 | 패키지 탭 → "공개 키 보기"의 키를 `manifest/chrome.json`의 `key`로 바꾸고, 스토어가 준 ID를 `crates/cli/src/browser_cmd/install.rs`의 `CHROME_STORE_EXTENSION`에 넣는다. 그러면 개발용 빌드도 스토어 ID가 되고 native host가 둘 다 받는다 |
+| 3 | Google Cloud에서 Chrome Web Store API를 켜고 OAuth 클라이언트를 만든 뒤 refresh token을 받는다 |
+| 4 | [addons.mozilla.org](https://addons.mozilla.org/developers/addon/api/key/)에서 API 키(JWT issuer·secret)를 만든다 |
+| 5 | GitHub 저장소 secret: `CWS_EXTENSION_ID`, `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`, `AMO_JWT_ISSUER`, `AMO_JWT_SECRET` |
+| 6 | `package.json`의 version을 올리고 태그 `ext-v<version>`을 push |
+
+Firefox는 처음부터 `web-ext sign --channel listed`로 올라간다(ID `browser-extension@keyharbor.dev`는 manifest에 고정). 심사가 끝날 때까지 기다리지 않는다(`--approval-timeout 0`).

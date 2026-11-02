@@ -35,7 +35,9 @@ async function buildTarget(target, outRoot) {
   for (const name of iconNames(join(root, "src/ui"))) cpSync(join(designDir, "icons", `${name}.svg`), join(out, "design/icons", `${name}.svg`));
   cpSync(join(designDir, "icons/LICENSE"), join(out, "design/icons/LICENSE"));
   // The notification asking before a dragged site goes over needs a raster icon (spec 2026-10-31).
+  // The store listing and the toolbar need raster icons too (#124).
   cpSync(join(root, "../../app/icons/128x128.png"), join(out, "icon-128.png"));
+  cpSync(join(root, "../../app/icons/32x32.png"), join(out, "icon-32.png"));
   return out;
 }
 

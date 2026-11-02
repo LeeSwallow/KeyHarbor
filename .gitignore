@@ -11,3 +11,4 @@ integrations/browser-extension/dist/
 /app/gen/
 /app/ui/node_modules/
 /app/ui/dist/
+integrations/browser-extension/web-ext-artifacts/
