@@ -10,6 +10,7 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "package": "node scripts/package.mjs",
     "lint": "npm run typecheck && npm run build && web-ext lint --source-dir dist/firefox --self-hosted --warnings-as-errors",
     "check": "npm run lint && npm run test"
   },

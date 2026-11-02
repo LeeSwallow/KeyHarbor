@@ -17,6 +17,16 @@ use std::{
 pub const HOST_NAME: &str = "dev.keyharbor.host";
 /// The unpacked Chrome extension's fixed ID (its manifest `key`).
 pub const CHROME_EXTENSION: &str = "chrome-extension://fimjcgdlhnkdmjnhcccnkpcnmcecgjoc/";
+/// The Chrome Web Store build's ID, once the store has given one (#124): the store makes its
+/// own key, so its ID differs from the unpacked one until the store's public key is put in the
+/// manifest. Set it here after the first upload.
+pub const CHROME_STORE_EXTENSION: Option<&str> = None;
+/// Every Chrome extension ID the host answers.
+fn chrome_origins() -> Vec<&'static str> {
+    std::iter::once(CHROME_EXTENSION)
+        .chain(CHROME_STORE_EXTENSION)
+        .collect()
+}
 /// The Firefox add-on ID.
 pub const FIREFOX_EXTENSION: &str = "browser-extension@keyharbor.dev";
 const WRAPPER: &str = "native-host";
@@ -54,7 +64,7 @@ fn manifest(browser: HostBrowser, wrapper: &Path) -> Value {
     if browser == HostBrowser::Firefox {
         manifest["allowed_extensions"] = json!([FIREFOX_EXTENSION]);
     } else {
-        manifest["allowed_origins"] = json!([CHROME_EXTENSION]);
+        manifest["allowed_origins"] = json!(chrome_origins());
     }
     manifest
 }
@@ -134,6 +144,28 @@ mod tests {
         );
         let ego = manifest(HostBrowser::EgoLite, Path::new("/x"));
         assert_eq!(ego["allowed_origins"], json!([CHROME_EXTENSION]));
+    }
+
+    #[test]
+    fn manifest_allows_both_extension_ids() {
+        let origins = manifest(HostBrowser::Chrome, Path::new("/x"))["allowed_origins"].clone();
+        let listed: Vec<&str> = origins
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|o| o.as_str())
+            .collect();
+        assert_eq!(listed, chrome_origins());
+        assert_eq!(listed[0], CHROME_EXTENSION);
+        if let Some(store) = CHROME_STORE_EXTENSION {
+            assert!(listed.contains(&store));
+        }
+        for origin in listed {
+            assert!(
+                origin.starts_with("chrome-extension://") && origin.ends_with('/'),
+                "{origin}"
+            );
+        }
     }
 
     #[test]

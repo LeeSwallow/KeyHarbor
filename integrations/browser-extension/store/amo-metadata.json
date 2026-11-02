@@ -1,0 +1,10 @@
+{
+  "version": {
+    "license": "MIT",
+    "approval_notes": "Requires the KeyHarbor desktop program (macOS) with its native messaging host (keyharbor browser install-host). Build from the attached source: cd integrations/browser-extension && npm ci && npm run package (Node 22). The add-on talks only to the local native host."
+  },
+  "summary": { "en-US": "Hand a site's login to a KeyHarbor agent session, and fill or save logins from the KeyHarbor vault on this Mac." },
+  "categories": ["privacy-security"],
+  "homepage": { "en-US": "https://github.com/LeeSwallow/KeyHarbor" },
+  "support_url": { "en-US": "https://github.com/LeeSwallow/KeyHarbor/issues" }
+}

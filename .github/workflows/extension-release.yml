@@ -1,0 +1,59 @@
+name: extension-release
+
+# Store packages of the browser extension (#124). A tag `ext-v<version>` (matching the
+# extension's package.json version) builds them and publishes to each store whose secrets are
+# set; without secrets the packages are only attached to the run. The first Chrome Web Store
+# upload is made by hand (integrations/browser-extension/README.md "스토어에 올리기").
+on:
+  push:
+    tags: ["ext-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/browser-extension
+    env:
+      CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+      CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: integrations/browser-extension/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - name: The tag names this version
+        if: startsWith(github.ref, 'refs/tags/ext-v')
+        run: test "ext-v$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME}"
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-packages
+          path: integrations/browser-extension/web-ext-artifacts/*.zip
+      - name: Chrome Web Store
+        if: env.CWS_EXTENSION_ID != '' && env.CWS_REFRESH_TOKEN != ''
+        run: >-
+          npx --yes chrome-webstore-upload-cli@3 upload --auto-publish
+          --source web-ext-artifacts/keyharbor-chrome-*.zip
+          --extension-id "$CWS_EXTENSION_ID" --client-id "$CWS_CLIENT_ID"
+          --client-secret "$CWS_CLIENT_SECRET" --refresh-token "$CWS_REFRESH_TOKEN"
+      - name: Firefox Add-ons
+        if: env.AMO_JWT_ISSUER != '' && env.AMO_JWT_SECRET != ''
+        run: >-
+          npx web-ext sign --channel listed --source-dir dist/firefox
+          --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"
+          --amo-metadata store/amo-metadata.json
+          --upload-source-code web-ext-artifacts/keyharbor-extension-source-*.zip
+          --approval-timeout 0
