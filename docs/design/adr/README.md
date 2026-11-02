@@ -21,3 +21,4 @@
 | [0015](0015-design-system-layers.md) | 디자인 시스템을 토큰·컴포넌트·패턴 계층으로 나누고 Rust 테스트로 지킨다 | Accepted |
 | [0016](0016-crypto-crate.md) | 모든 암호 원시 연산은 `keyharbor-crypto` 한 곳에 둔다 | Accepted |
 | [0017](0017-human-autofill-channel.md) | 사람용 자동 완성은 잠금 해제 뒤에만 여는 별도 통로로 둔다 | Accepted |
+| [0018](0018-ego-lite-browser.md) | ego lite는 CDP 통로만 바꿔 붙이고, 보호가 낮은 세션으로 표시한다 | Accepted |
