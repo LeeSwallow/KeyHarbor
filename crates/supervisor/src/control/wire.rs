@@ -59,6 +59,17 @@ pub enum ControlRequest {
         /// May hold placeholders; the guard resolves them.
         text: String,
     },
+    /// Choose an option of a `<select>`: exactly one of `value`, `label`, `index`. `value` and
+    /// `label` may hold a placeholder.
+    Select {
+        target: TargetWire,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<u32>,
+    },
     Type {
         text: String,
     },

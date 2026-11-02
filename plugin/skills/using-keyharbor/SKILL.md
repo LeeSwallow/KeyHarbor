@@ -18,11 +18,14 @@ You never see a value: you see names and `{{secret:item.field}}` placeholders.
 | a card, address or password the vault lacks | asking-for-a-secret |
 
 Sessions: `session_list`, `session_create`, `session_open`, `session_stop`. Pages:
-`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_fill`, `browser_type`,
-`browser_press`, `browser_wait`, `browser_login`, `browser_tabs`, `browser_new_tab`,
+`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_fill`, `browser_select`,
+`browser_type`, `browser_press`, `browser_wait`, `browser_login`, `browser_tabs`, `browser_new_tab`,
 `browser_switch_tab`, `browser_screenshot`.
 
 Rules for every value: `${CLAUDE_PLUGIN_ROOT}/rules/secrets.md`.
+
+A `<select>` (school, service status) takes `browser_select` with `value`, `label` or `index`;
+a placeholder works for `value` and `label`, and the result then names only the index.
 
 A session may be held to some sites only (a grant). If a page refuses with
 `denied: navigation (out-of-grant)`, stay on the granted sites; only the user can add one.

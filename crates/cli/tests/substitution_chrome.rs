@@ -284,3 +284,35 @@ fn values_shown_back_by_the_page_are_masked() {
     );
     h.assert_absent(&[&number, &spaced, &encoded, &token, &late]);
 }
+
+#[test]
+fn select_chooses_an_option_from_a_placeholder_without_showing_it() {
+    let Some(browser) = chrome() else { return };
+    let base = common::serve_fn(|_| {
+        "<!doctype html><title>Apply</title>\
+         <label>Service <select id=mil><option value=''>Choose</option>\
+         <option value=done>Served</option><option value=exempt>Exempt</option></select></label>\
+         <p id=picked></p>\
+         <script>document.getElementById('mil').addEventListener('change', e => \
+         document.getElementById('picked').textContent = 'picked ' + e.target.selectedIndex)</script>"
+            .to_owned()
+    });
+    let mut h = Harness::new();
+    h.add("me", "identity", &[], json!({"military_service": "Exempt"}));
+    h.open(&browser);
+    h.ok_call(json!({"op": "navigate", "url": format!("{base}/")}));
+    let chosen = h.ok_call(json!({
+        "op": "select", "target": {"selector": "#mil"}, "label": "{{secret:me.military_service}}"
+    }));
+    assert_eq!(chosen, json!({"selected": {"index": 2}}));
+    h.ok_call(json!({"op": "wait", "selector": "#picked"}));
+    let snapshot = h.snapshot();
+    assert!(snapshot.contains("picked 2"), "change fired: {snapshot}");
+    let plain = h.ok_call(json!({"op": "select", "target": {"selector": "#mil"}, "value": "done"}));
+    assert_eq!(plain, json!({"selected": {"index": 1}}));
+    let missing = h
+        .call(json!({"op": "select", "target": {"selector": "#mil"}, "label": "Nope"}))
+        .unwrap_err()
+        .to_string();
+    assert_eq!(missing, "no option matches");
+}

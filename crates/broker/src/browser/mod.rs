@@ -10,6 +10,7 @@ mod navigate;
 mod navigation;
 mod receive;
 mod screenshot;
+mod select;
 mod snapshot;
 mod tabs;
 mod wait;
@@ -19,7 +20,7 @@ use anyhow::{Context, Result};
 use keyharbor_domain::{
     ports::{
         BrowserPort, FrameInspector, PageInput,
-        browser::{Element, FillOutcome, Focus, LoginFields, Page, Target, WaitFor},
+        browser::{Choice, Element, FillOutcome, Focus, LoginFields, Page, Target, WaitFor},
     },
     vault::Origin,
 };
@@ -209,6 +210,14 @@ impl PageInput for CdpBrowser {
     }
     async fn redacted_snapshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
         self.take_snapshot(hidden).await
+    }
+    async fn select_option(
+        &mut self,
+        page: &Page,
+        node: u64,
+        choice: &Choice,
+    ) -> Result<Option<u32>> {
+        self.choose_option(&page.0, node, choice).await
     }
     async fn login_fields(&mut self, page: &Page) -> Result<LoginFields> {
         self.find_login_fields(&page.0).await

@@ -17,7 +17,7 @@ use keyharbor_domain::{
         BrowserPort, FrameInspector, PageInput,
         browser::{Element, FillOutcome, Focus, Page, Target, WaitFor},
     },
-    vault::{Origin, has_placeholder, parse_placeholders},
+    vault::{Domain, ItemName, Origin, has_placeholder, parse_placeholders},
 };
 use serde_json::Value;
 
@@ -40,7 +40,7 @@ impl<'a, B> GuardedBrowser<'a, B> {
 impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
     /// The focused element, what it is and its frame's origin, refusing (and recording) when
     /// the focus cannot be located or, for `fill`, is not on the target element.
-    async fn checked_focus(
+    pub(crate) async fn checked_focus(
         &mut self,
         page: &Page,
         template: &str,
@@ -98,28 +98,12 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         let moved_focus = self.inner.focus(page).await.ok().as_ref() != Some(focus);
         let after = self.inner.frame_origin(page, &focus.frame).await;
         let changed = after != origin;
-        let session = self.guard.session();
-        for (item, domain) in prepared.items.iter().zip(&prepared.domains) {
-            let used = AuditEvent::new(self.agent, AuditKind::SecretUsed, "ok")
-                .session(session)
-                .item(item.as_str())
-                .origin(origin.as_ref().map(Origin::as_str));
-            self.guard.record(&used);
-            if let Some(origin) = &origin {
-                self.guard.note_use(self.agent, item, *domain, origin);
-            }
-            if changed {
-                let moved = AuditEvent::new(
-                    self.agent,
-                    AuditKind::OriginChangedAfterFill,
-                    after.as_ref().map_or("unknown", Origin::as_str),
-                )
-                .session(session)
-                .item(item.as_str())
-                .origin(origin.as_ref().map(Origin::as_str));
-                self.guard.record(&moved);
-            }
-        }
+        self.note_used(
+            &prepared.items,
+            &prepared.domains,
+            origin.as_ref(),
+            after.as_ref(),
+        );
         if moved_focus {
             self.guard.lock(self.agent, "focus_moved");
             bail!("substitution locked for this session: the focus moved while typing");
@@ -129,9 +113,42 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         })
     }
 
+    /// Records that `prepared`'s values went into a frame of `origin` (and, if the frame is
+    /// now at `after`, that it moved).
+    pub(crate) fn note_used(
+        &self,
+        items: &[ItemName],
+        domains: &[Domain],
+        origin: Option<&Origin>,
+        after: Option<&Origin>,
+    ) {
+        let session = self.guard.session();
+        for (item, domain) in items.iter().zip(domains) {
+            let used = AuditEvent::new(self.agent, AuditKind::SecretUsed, "ok")
+                .session(session)
+                .item(item.as_str())
+                .origin(origin.map(Origin::as_str));
+            self.guard.record(&used);
+            if let Some(origin) = origin {
+                self.guard.note_use(self.agent, item, *domain, origin);
+            }
+            if after != origin {
+                let moved = AuditEvent::new(
+                    self.agent,
+                    AuditKind::OriginChangedAfterFill,
+                    after.map_or("unknown", Origin::as_str),
+                )
+                .session(session)
+                .item(item.as_str())
+                .origin(origin.map(Origin::as_str));
+                self.guard.record(&moved);
+            }
+        }
+    }
+
     /// Waits for navigations to finish before checking anything, so the checks see the
     /// document the text will go into (I4). Returns the page's navigation count then.
-    async fn settled(&mut self, page: &Page, template: &str) -> Result<u64> {
+    pub(crate) async fn settled(&mut self, page: &Page, template: &str) -> Result<u64> {
         if self.inner.settle(page, None).await.unwrap_or(false) {
             return Ok(self.inner.navigation_epoch(page).await);
         }
@@ -144,7 +161,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
 
     /// Refuses when a navigation started (or finished) in the page since `epoch`, or is still
     /// under way in the frame: the checked document may be gone (I4).
-    async fn still_there(
+    pub(crate) async fn still_there(
         &mut self,
         page: &Page,
         frame: &str,
@@ -228,12 +245,12 @@ fn selector(target: &Target) -> &str {
 
 impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
     /// Refuses (and masks the refusal of) requests whose text holds a vault value (I1).
-    fn literals(&self, literals: &[&str]) -> Result<()> {
+    pub(crate) fn literals(&self, literals: &[&str]) -> Result<()> {
         self.guard.check_literals(self.agent, literals)
     }
 
     /// Refuses selectors outside the structural grammar of `pep::selector` (I3).
-    fn target(&self, target: &Target) -> Result<()> {
+    pub(crate) fn target(&self, target: &Target) -> Result<()> {
         match target.selector() {
             Some(css) => crate::pep::selector::check(css),
             None => Ok(()),
@@ -313,6 +330,7 @@ mod tests {
         Guard,
         test_support::{env, init, login, open_vault},
     };
+    use keyharbor_domain::ports::browser::Choice;
     use keyharbor_domain::{
         SessionId,
         audit::AuditKind,
@@ -346,6 +364,9 @@ mod tests {
         /// The sign-in inputs `login_fields` reports.
         login: LoginFields,
         pressed: Vec<String>,
+        /// The `<select>` options `(value, label)` and what `select_option` was asked for.
+        options: Vec<(String, String)>,
+        asked: Vec<Choice>,
     }
     impl Default for Fake {
         fn default() -> Self {
@@ -368,6 +389,8 @@ mod tests {
                     password: Some(7),
                 },
                 pressed: Vec::new(),
+                options: Vec::new(),
+                asked: Vec::new(),
             }
         }
     }
@@ -439,6 +462,27 @@ mod tests {
         }
         async fn location(&mut self, _: &Page) -> Result<String> {
             Ok(format!("https://github.com/{}", self.echo))
+        }
+        async fn select_option(
+            &mut self,
+            _: &Page,
+            _: u64,
+            choice: &Choice,
+        ) -> Result<Option<u32>> {
+            self.asked.push(choice.clone());
+            let found = self.options.iter().position(|(value, label)| match choice {
+                Choice::Value(want) => value == want,
+                Choice::Label(want) => label == want,
+                Choice::Index(_) => false,
+            });
+            Ok(match choice {
+                Choice::Index(index) => (*index as usize) < self.options.len(),
+                _ => found.is_some(),
+            }
+            .then(|| match choice {
+                Choice::Index(index) => *index,
+                _ => found.unwrap() as u32,
+            }))
         }
     }
     impl FrameInspector for Fake {
@@ -515,6 +559,127 @@ mod tests {
             .build()
             .unwrap()
             .block_on(future)
+    }
+
+    fn select_fake(options: &[(&str, &str)]) -> Fake {
+        Fake {
+            element: Element {
+                local_name: "select".into(),
+                ..Element::default()
+            },
+            options: options
+                .iter()
+                .map(|(v, l)| ((*v).to_owned(), (*l).to_owned()))
+                .collect(),
+            ..Fake::default()
+        }
+    }
+    fn identity(military: &str) -> keyharbor_core::NewItem {
+        keyharbor_core::NewItem {
+            name: keyharbor_domain::vault::ItemName::parse("me").unwrap(),
+            kind: keyharbor_domain::vault::ItemKind::Identity,
+            fields: vec![crate::test_support::field("military_service", military)],
+            origins: vec![],
+            origin_binding: None,
+            status: keyharbor_core::ItemStatus::Active,
+            source: keyharbor_core::ItemSource::User,
+            details: Default::default(),
+        }
+    }
+
+    #[test]
+    fn select_by_label() {
+        let e = env();
+        init(&e);
+        let (guard, _) = guard(&e);
+        let mut fake = select_fake(&[("1", "Served"), ("2", "Exempt")]);
+        let out = block(
+            guard
+                .browser(&mut fake, "claude")
+                .select(&Target::Ref(7), &Choice::Label("Exempt".into())),
+        )
+        .unwrap();
+        assert_eq!(out, json!({"selected": {"index": 1}}));
+    }
+
+    #[test]
+    fn select_needs_a_select_element() {
+        let e = env();
+        init(&e);
+        let (guard, _) = guard(&e);
+        let mut fake = Fake::default();
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .select(&Target::Ref(7), &Choice::Index(0)),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "browser_select needs a <select> element");
+        assert!(fake.asked.is_empty());
+    }
+
+    #[test]
+    fn select_placeholder_is_resolved_and_masked() {
+        let e = env();
+        init(&e).add(identity("KH-SYNTH-served")).unwrap();
+        let (guard, probe) = guard(&e);
+        let mut fake = select_fake(&[("a", "KH-SYNTH-exempt"), ("b", "KH-SYNTH-served")]);
+        let out = block(async {
+            let mut browser = guard.browser(&mut fake, "claude");
+            let out = browser
+                .select(
+                    &Target::Ref(7),
+                    &Choice::Label("{{secret:me.military_service}}".into()),
+                )
+                .await
+                .unwrap();
+            browser.snapshot().await.unwrap();
+            out
+        });
+        assert_eq!(out, json!({"selected": {"index": 1}}));
+        assert_eq!(fake.asked, vec![Choice::Label("KH-SYNTH-served".into())]);
+        assert!(
+            fake.hidden.contains(&7),
+            "the chosen select is redacted after"
+        );
+        assert_eq!(
+            probe.kinds(),
+            vec![
+                (AuditKind::SecretUsed, "ok".into()),
+                (AuditKind::FirstUseOrigin, "ok".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn select_refuses_a_password_field_value() {
+        let e = env();
+        init(&e).add(login("github", "KH-SYNTH-pw-90")).unwrap();
+        let (guard, _) = guard(&e);
+        let mut fake = select_fake(&[("x", "KH-SYNTH-pw-90")]);
+        let err = block(guard.browser(&mut fake, "claude").select(
+            &Target::Ref(7),
+            &Choice::Value("{{secret:github.password}}".into()),
+        ))
+        .unwrap_err();
+        assert_eq!(err.to_string(), "denied: github (field-kind)");
+        assert!(fake.asked.is_empty());
+    }
+
+    #[test]
+    fn unmatched_placeholder_does_not_echo_value() {
+        let e = env();
+        init(&e).add(identity("KH-SYNTH-other")).unwrap();
+        let (guard, _) = guard(&e);
+        let mut fake = select_fake(&[("1", "Served")]);
+        let err = block(guard.browser(&mut fake, "claude").select(
+            &Target::Ref(7),
+            &Choice::Label("{{secret:me.military_service}}".into()),
+        ))
+        .unwrap_err()
+        .to_string();
+        assert_eq!(err, "no option matches");
+        assert!(!fake.hidden.contains(&7));
     }
 
     #[test]

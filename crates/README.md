@@ -66,7 +66,7 @@ cargo run -p keyharbor -- list
 |---|---|
 | 세션 | `session_list`(설명 포함), `session_create {name, description?}`, `session_open {id, url?, cdp?}`, `session_stop`, `session_wait_auth {id, origin?}`, `session_wait_for_resume {id, request_id, timeout_seconds 1–300}`, `session_wait_site {id, origin?, timeout_seconds}`(사람이 사이트를 넘길 때까지, `received`·`waiting`) |
 | 세션 (선택) | `session_endpoint` — `--allow-cdp`일 때만 등록 |
-| 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_type`, `browser_login {item, submit?}`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` — 모두 `session` 인자 |
+| 브라우저 | `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_select`, `browser_type`, `browser_login {item, submit?}`, `browser_press`, `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait` — 모두 `session` 인자 |
 | 금고 | `vault_list` {prefix?, tag?} — 이름·종류·도메인·필드 이름·필드별 placeholder·설명(항목·필드)·태그·비밀 아닌 필드의 값(`plain_values`)·origin·바인딩·`run_allowed`·`expires_at`·`expired`·상태·출처만. 메타 MAC이 맞지 않는 항목은 이름과 `tampered: true`만 |
 | 금고 등록 | `vault_generate {name, origin, username?, password_rule? {length 8–128, symbols, forbid}}`, `vault_put {name, kind, fields, origins?}` — draft로만 저장한다. 이름이 이미 있으면 `<이름>~draft-N`이 되고 기존 항목은 바뀌지 않는다. 응답은 이름·`draft: true`·placeholder뿐이다 |
 | 정보 요청 | `vault_request {kind, name, reason, origin?}` → `request_id`, `vault_wait {request_id, timeout_seconds 1–300}` → `fulfilled`(이름·placeholder)·`declined`·`expired`·`pending`(대기만 끝남, 요청은 남음). 사용자는 `keyharbor vault requests`·`fulfill <id> [--stdin \| --use ITEM]`·`decline <id>`로 답한다 |
@@ -74,7 +74,7 @@ cargo run -p keyharbor -- list
 
 `browser_login`은 페이지(최상위 또는 같은 origin frame)의 username·password 칸을 포커스와 상관없이 찾아 login 항목의 값을 `browser_fill`과 같은 검사로 넣고, `submit`(기본 참)이면 Enter를 누른다. 칸을 못 찾으면 아무것도 넣지 않고 `not found: password field`처럼 실패한다. browser-use와 함께 쓰는 방법은 [docs/guides/browser-use.md](../docs/guides/browser-use.md).
 
-`browser_snapshot`은 접근성 트리를 `[ref] role "name"` 줄로 돌려준다. `browser_click`·`browser_fill`은 `ref` 또는 CSS `selector`를 받는다. `--session ID`로 띄운 서버는 그 세션만 보고 쓸 수 있으며 새 세션을 만들 수 없고, 같은 세션의 범위 지정 서버는 하나만 뜬다(`run/mcp-<id>.lock`). 재개(`resume`)와 복구(`recover`)는 사람이 CLI로 한다. MCP 도구에는 없다.
+`browser_snapshot`은 접근성 트리를 `[ref] role "name"` 줄로 돌려준다. `browser_click`·`browser_fill`은 `ref` 또는 CSS `selector`를 받는다. `browser_select {ref|selector, value|label|index}`는 `<select>`의 옵션 하나를 고르고 `input`·`change`를 낸다(셋 중 정확히 하나). `value`·`label`에 placeholder를 주면 `browser_fill`과 같은 검사(포커스, frame origin, 정책, 만료, 필드 종류, 탐색 중) 뒤에 값을 풀어 고르고, 결과는 `{"selected": {"index": N}}`뿐이다. 맞는 옵션이 없으면 `no option matches`(값을 되풀이하지 않는다). 인계 중에는 거절된다. `--session ID`로 띄운 서버는 그 세션만 보고 쓸 수 있으며 새 세션을 만들 수 없고, 같은 세션의 범위 지정 서버는 하나만 뜬다(`run/mcp-<id>.lock`). 재개(`resume`)와 복구(`recover`)는 사람이 CLI로 한다. MCP 도구에는 없다.
 
 ### 1단계의 한계
 
