@@ -6,11 +6,11 @@
 import { type Api, type Outcome, tauriApi } from "./api.js";
 import {
   type State, type View, alone, asking, closeForm, closePalette, edit, fail, go, hide, initial, openForm, openPalette,
-  query, removing, search, select, show, undoRemove,
+  query, removing, removingSession, search, select, show, undoRemove, undoRemoveSession,
 } from "./state.js";
 import { render } from "./view.js";
 import { droppedUrl } from "./drop.js";
-import { editorValues } from "./views/editor.js";
+import { customRow, editorValues } from "./views/editor.js";
 import { formValues } from "./views/form.js";
 import { type Run, paletteCommands } from "./views/palette.js";
 
@@ -24,6 +24,7 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
   let state = initial;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let removeTimer: ReturnType<typeof setTimeout> | undefined;
+  let sessionTimer: ReturnType<typeof setTimeout> | undefined;
   /// Whether the person is typing in the item search, so a re-render gives it focus back.
   let typing = false;
   const set = (next: State) => {
@@ -66,6 +67,14 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
     set(undoRemove(state));
     void guard(() => api.removeItem(name).then(load));
   };
+  /// Removes the session waiting in `state.removingSession`, if any (same rule as items).
+  const commitSessionRemoval = () => {
+    clearTimeout(sessionTimer);
+    const waiting = state.removingSession;
+    if (!waiting) return;
+    set(undoRemoveSession(state));
+    void guard(() => api.removeSession(waiting.id).then(load));
+  };
   /// After a request is answered: the secure input window closes, the main window reloads.
   const answered = () => (state.alone ? api.closeRequestWindow() : (set(closeForm(state)), load()));
   /// Sends a change; if it needs a person, asks first and resends it confirmed on "확인".
@@ -98,7 +107,16 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
     const { text } = button.dataset;
     if (action === "copy" && name && field) void guard(() => api.copyValue(name, field));
     if (action === "copy-placeholder" && text) void guard(() => api.copyPlaceholder(text));
-    if (action === "open-session" && id) void guard(() => api.openSession(id).then(load));
+    if (action === "open-session" && id) void guard(() => api.openSession(id, button.dataset.browser).then(load));
+    if (action === "remove-session" && id) {
+      commitSessionRemoval();
+      set(removingSession(state, id, name ?? id));
+      sessionTimer = setTimeout(commitSessionRemoval, UNDO_MS);
+    }
+    if (action === "undo-remove-session") {
+      clearTimeout(sessionTimer);
+      set(undoRemoveSession(state));
+    }
     if (action === "stop-session" && id) void guard(() => api.stopSession(id).then(load));
     if (action === "recover" && id) {
       const box = root.querySelector<HTMLInputElement>(`[data-closed="${CSS.escape(id)}"]`);
@@ -117,6 +135,11 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
     if (action === "edit-item" && name) set(edit(state, { mode: "edit", name }));
     if (action === "rename-item" && name) set(edit(state, { mode: "rename", name }));
     if (action === "close-editor") set(edit(state, null));
+    if (action === "add-custom-field") {
+      // Added in place, not by re-rendering: what is typed in the form stays.
+      const rows = button.closest("fieldset")?.querySelector(".custom-rows");
+      rows?.insertAdjacentHTML("beforeend", customRow(rows.children.length));
+    }
     if (action === "remove-item" && name) {
       // Another removal still waiting is carried out now; this one waits its own time.
       commitRemoval();
@@ -227,7 +250,11 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
       void guard(() => api.renameItem(from, to).then((name) => load().then(() => set(select(state, name)))));
     } else if (el.dataset.setting) {
       const key = el.dataset.setting;
-      const value = String(data.get("value") ?? "");
+      const typed = String(data.get("value") ?? "").trim();
+      // A list setting (upload_dirs) adds the typed entry to what it has.
+      const value = el.dataset.append !== undefined
+        ? [...el.dataset.append.split(":").filter(Boolean), typed].filter(Boolean).join(":")
+        : typed;
       void change((confirmed) => api.setSetting(key, value, confirmed));
     } else if (el.dataset.rule !== undefined) {
       const rule = {
@@ -244,6 +271,8 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
     void api.requestForm(request).then((f) => set(alone(state, f)), () => set(alone(state, null)));
   } else {
     void load();
+    // Asking ego lite takes a few seconds and starts a process: once per window, not per reload.
+    void api.browsers().then((browsers) => set({ ...state, browsers }), () => undefined);
   }
   return { state: () => state };
 }

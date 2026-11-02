@@ -1,7 +1,7 @@
 // State → HTML. Every text goes through `esc`; a value appears only for the field in
 // `state.revealed`. Buttons carry `data-action` for the one click handler in main.ts.
 
-import type { AuditEvent, Item } from "./api.js";
+import type { AuditEvent, Browsers, Item, Session } from "./api.js";
 import { SCREENS, type State, type View, filterItems } from "./state.js";
 import { dialog, policies } from "./views/admin.js";
 import { settings } from "./views/settings.js";
@@ -93,14 +93,31 @@ function inbox(s: State): string {
   return `${heading("inbox", "에이전트가 사람을 기다리는 것들입니다. 에이전트는 값을 보지 못합니다.")}${all || empty("확인할 것이 없습니다")}`;
 }
 
-/// [열기]/[중지], or [복구…] for a session whose supervisor is gone (after a checkbox).
-function sessionActions(id: string, state: string): string {
-  if (state === "recovery_required") {
-    return `<label class="kh-help"><input type="checkbox" data-closed="${esc(id)}"> 브라우저 창을 모두 닫았습니다</label>${btn("복구…", `data-action="recover" data-id="${esc(id)}"`, "danger")}`;
+/// [열기]/[중지], or [복구…] for a session whose supervisor is gone (after a checkbox). A
+/// stopped session can also be opened in a named browser (when ego lite is here) and removed.
+function sessionActions(x: Session, browsers: Browsers): string {
+  const id = esc(x.id);
+  if (x.state === "recovery_required" || x.state === "failed") {
+    return `<label class="kh-help"><input type="checkbox" data-closed="${id}"> 브라우저 창을 모두 닫았습니다</label>${btn("복구…", `data-action="recover" data-id="${id}"`, "danger")}`;
   }
-  return state === "stopped"
-    ? btn("열기", `data-action="open-session" data-id="${esc(id)}"`, "primary")
-    : btn("중지", `data-action="stop-session" data-id="${esc(id)}"`);
+  if (x.state !== "stopped") return btn("중지", `data-action="stop-session" data-id="${id}"`);
+  const pick = browsers.ego_lite
+    ? btn("Chrome으로", `data-action="open-session" data-id="${id}" data-browser="chrome"`, "ghost") +
+      btn("ego lite로", `data-action="open-session" data-id="${id}" data-browser="ego-lite"`, "ghost")
+    : "";
+  return btn("열기", `data-action="open-session" data-id="${id}"`, "primary") + pick +
+    btn("지우기", `data-action="remove-session" data-id="${id}" data-name="${esc(x.name)}"`, "danger");
+}
+
+/// Which browser a running session uses; ego lite also says that others can drive it (03 §3.13).
+function browserBadges(x: Session): string {
+  // Only while a run is live: a stopped or failed session's last browser says nothing about the next.
+  const live = ["starting", "running", "awaiting_user", "stopping"].includes(x.state);
+  if (!x.browser || !live) return "";
+  const name = badge(x.browser === "ego-lite" ? "ego lite" : "Chrome", "neutral");
+  return x.protection === "shared"
+    ? `${name} <span title="같은 ego lite를 다른 프로그램도 조작할 수 있어, 셸이 있는 에이전트는 넣은 값을 읽을 수 있습니다">${badge("보호 낮음", "expiring")}</span>`
+    : name;
 }
 
 function sessionBadge(state: string): string {
@@ -110,20 +127,24 @@ function sessionBadge(state: string): string {
 
 function sessions(s: State): string {
   const rows = s.sessions
+    .filter((x) => x.id !== s.removingSession?.id)
     .map((x) => {
       const sites = x.sites
         .map((t) => `<li>${esc(t.origin)} ${badge(siteWord(t.state), t.state === "logged_in" ? "active" : t.state === "expired" ? "expiring" : "neutral")}</li>`)
         .join("");
+      const failed = x.failure && x.state !== "running" && x.state !== "stopped"
+        ? `<p class="kh-help error">${icon("triangle-alert")} 시작하지 못했습니다: ${esc(x.failure)}</p>`
+        : "";
       return `<div data-session-drop="${esc(x.name)}">` + card({
         glyph: `<span class="glyph session">${icon("app-window")}</span>`,
-        title: `${esc(x.name)} ${sessionBadge(x.state)}${x.cdp ? ` ${badge("raw CDP", "expiring")}` : ""}`,
+        title: `${esc(x.name)} ${sessionBadge(x.state)} ${browserBadges(x)}${x.cdp ? ` ${badge("raw CDP", "expiring")}` : ""}`,
         sub: x.description ? esc(x.description) : "",
-        extra: sites ? `<ul class="sites">${sites}</ul>` : "",
-        actions: sessionActions(x.id, x.state),
+        extra: failed + (sites ? `<ul class="sites">${sites}</ul>` : ""),
+        actions: sessionActions(x, s.browsers),
       }) + "</div>";
     })
     .join("");
-  return `${heading("sessions", "에이전트가 쓰는 전용 브라우저입니다. 평소 Chrome의 탭을 세션 카드에 끌어다 놓으면 그 사이트의 로그인을 넘깁니다(브라우저에서 한 번 더 누릅니다).")}${rows || empty("세션이 없습니다")}`;
+  return `${heading("sessions", "에이전트가 쓰는 브라우저입니다: 전용 프로필의 Chrome, 또는 켜져 있으면 ego lite. 평소 Chrome의 탭을 세션 카드에 끌어다 놓으면 그 사이트의 로그인을 넘깁니다(브라우저에서 한 번 더 누릅니다).")}${rows || empty("세션이 없습니다")}`;
 }
 
 /// The search box, a chip per kind the vault has, and "draft만" (09 §9.4 검색 · 필터).
@@ -196,9 +217,13 @@ function audit(s: State): string {
 export function render(s: State): string {
   const error = s.error ? `<div class="kh-toast" role="alert">${esc(s.error)}</div>` : "";
   const notice = s.notice ? `<div class="kh-toast ok" role="status">${esc(s.notice)}</div>` : "";
+  const undoBar = (what: string, action: string) =>
+    `<div class="kh-toast undo" role="status"><span class="msg">${esc(what)}을(를) 지웠습니다</span><button type="button" class="act" data-action="${action}">실행 취소</button></div>`;
   const undo = s.removing
-    ? `<div class="kh-toast undo" role="status"><span class="msg">${esc(s.removing)}을(를) 지웠습니다</span><button type="button" class="act" data-action="undo-remove">실행 취소</button></div>`
-    : "";
+    ? undoBar(s.removing, "undo-remove")
+    : s.removingSession
+      ? undoBar(`${s.removingSession.name} 세션`, "undo-remove-session")
+      : "";
   if (s.alone) {
     const body = s.form ? form(s.form) : `<div class="kh-empty">이 요청은 이미 끝났습니다</div>`;
     return `<section class="detail alone">${error}${body}</section>`;
@@ -209,7 +234,7 @@ export function render(s: State): string {
       : ["", {
           home, inbox, sessions, audit,
           policies: (x: State) => policies(x.policies),
-          settings: (x: State) => settings(x.settings),
+          settings: (x: State) => settings(x.settings, x.browsers),
         }[s.view](s)];
   return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${notice}${main}</section>${undo}${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
 }

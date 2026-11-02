@@ -24,6 +24,11 @@ mod upload_files;
 
 pub use argv::{SUPERVISE_COMMAND, SuperviseArgs};
 pub use keyharbor_broker::DEFAULT_BROWSER;
+
+/// Whether ego lite is here and answers within `wait` (the admin app's browser setting).
+pub fn ego_lite_answers(wait: std::time::Duration) -> bool {
+    keyharbor_broker::ego::probe::find(wait).is_some()
+}
 pub use lock::lock_mcp_scope;
 pub use process::{Adapters, run};
 pub use runtime::ProcessRuntime;

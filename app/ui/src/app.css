@@ -76,3 +76,16 @@ html, body { margin: 0; height: 100%; }
 .kh-shell .kh-chip.is-on { --chip-bg: var(--c-accent-wash); --chip-fg: var(--c-accent-strong); --chip-border: var(--c-accent); }
 /* The undo notice sits at the bottom of the window while a removal can be taken back. */
 .kh-shell > .kh-toast.undo { position: fixed; left: 50%; bottom: var(--space-5); transform: translateX(-50%); z-index: 5; }
+/* The identity form in groups (#123): basic, contact, service status, then the person's own. */
+.kh-shell .field-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--space-2); margin: 0; padding: var(--space-3); border: 1px solid var(--c-line); border-radius: var(--radius-md); }
+.kh-shell .field-group.custom { grid-template-columns: minmax(0, 1fr); }
+.kh-shell .field-group legend { padding: 0 var(--space-1); font: var(--text-label); letter-spacing: var(--tracking-label); color: var(--c-ink-3); }
+.kh-shell .custom-rows { display: grid; gap: var(--space-2); }
+.kh-shell .custom-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-2); }
+.kh-shell .field-group.custom > .kh-btn { justify-self: start; }
+/* Upload folders (#123): the allowed list and a field to add one. */
+.kh-shell .folders { display: grid; gap: var(--space-2); flex: 1; max-width: 60%; }
+.kh-shell .folder-list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); }
+.kh-shell .folder-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.kh-shell .folder-add { display: flex; gap: var(--space-2); }
+.kh-shell .kh-row .actions { flex-wrap: wrap; justify-content: flex-end; }

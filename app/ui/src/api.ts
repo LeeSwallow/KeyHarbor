@@ -9,7 +9,14 @@ export interface Item {
   expired: boolean; tampered: boolean;
 }
 export interface Site { origin: string; state: string; item: string | null; checked_at: string }
-export interface Session { id: string; name: string; state: string; cdp: boolean; description: string | null; sites: Site[] }
+export interface Session {
+  id: string; name: string; state: string; cdp: boolean; description: string | null; sites: Site[];
+  /// `chrome` or `ego-lite` while the session has a run, and whether others can drive it.
+  browser: string | null; protection: "owned" | "shared" | null;
+  /// Why the last run did not start.
+  failure: string | null;
+}
+export interface Browsers { ego_lite: boolean }
 export interface Request { id: string; agent: string; kind: string; name: string; origin: string | null; reason: string }
 export interface Draft { name: string; kind: string; source: string; origins: string[] }
 export interface Inbox { requests: Request[]; drafts: Draft[] }
@@ -49,7 +56,10 @@ export interface Api {
   removePolicy(rule: Rule, confirmed: boolean): Promise<Outcome>;
   copyValue(item: string, field: string): Promise<void>;
   copyPlaceholder(text: string): Promise<void>;
-  openSession(id: string): Promise<void>;
+  /// `browser` is `chrome` or `ego-lite`; none follows the `browser` setting.
+  openSession(id: string, browser?: string): Promise<void>;
+  removeSession(id: string): Promise<void>;
+  browsers(): Promise<Browsers>;
   stopSession(id: string): Promise<void>;
   recoverSession(id: string, browserClosed: boolean): Promise<void>;
   kinds(): Promise<KindForm[]>;
@@ -87,7 +97,9 @@ export function tauriApi(invoke: Invoke): Api {
     removePolicy: (r, confirmed) => call("remove_policy", { agent: r.agent, resource: r.resource, target: r.target, confirmed }),
     copyValue: (item, field) => call("copy_value", { item, field }),
     copyPlaceholder: (text) => call("copy_placeholder", { text }),
-    openSession: (id) => call("open_session", { id }),
+    openSession: (id, browser) => call("open_session", { id, browser: browser ?? null }),
+    removeSession: (id) => call("remove_session", { id }),
+    browsers: () => call("browsers"),
     stopSession: (id) => call("stop_session", { id }),
     recoverSession: (id, browserClosed) => call("recover_session", { id, browserClosed }),
     kinds: () => call("kinds"),

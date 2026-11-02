@@ -25,7 +25,8 @@ pub use overview::{
     notice_kinds, notices, overview, snapshot,
 };
 pub use sessions::{
-    SessionDto, open_session, recover_session, request_site, sessions, stop_session,
+    BrowsersDto, SessionDto, browsers, open_session, recover_session, remove_session, request_site,
+    sessions, stop_session,
 };
 
 /// Errors cross to the window as text: a short reason, never a value.

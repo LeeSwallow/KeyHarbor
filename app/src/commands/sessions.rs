@@ -132,3 +132,30 @@ pub fn request_site(ctx: &Ctx, name: &str, url: &str) -> Result<String> {
         SiteAnswer::Failed => "넘기지 못했습니다".to_owned(),
     })
 }
+
+/// Removes a stopped session and its profile ([지우기], after the undo time).
+pub fn remove_session(ctx: &Ctx, id: &str) -> Result<()> {
+    session::remove::remove(
+        &*ctx.store()?,
+        &*ctx.runtime(),
+        ctx.clock(),
+        session_id(id)?,
+        session::remove::Force::No,
+        keyharbor_domain::policy::LOCAL_AGENT,
+    )
+}
+
+/// Which browsers the settings screen can offer (#123).
+#[derive(Serialize)]
+pub struct BrowsersDto {
+    pub ego_lite: bool,
+}
+
+/// How long the settings screen waits for ego lite to answer.
+const EGO_CHECK: std::time::Duration = std::time::Duration::from_secs(3);
+
+pub fn browsers() -> BrowsersDto {
+    BrowsersDto {
+        ego_lite: keyharbor_supervisor::ego_lite_answers(EGO_CHECK),
+    }
+}
