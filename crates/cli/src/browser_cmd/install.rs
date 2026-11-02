@@ -27,12 +27,16 @@ fn manifest_dir(home: &Path, browser: HostBrowser) -> PathBuf {
         match browser {
             HostBrowser::Chrome => "Library/Application Support/Google/Chrome/NativeMessagingHosts",
             HostBrowser::Chromium => "Library/Application Support/Chromium/NativeMessagingHosts",
+            // ego lite is an unbranded Chromium build: it reads Chromium's user folder, not its own
+            // data folder or the profile's (tried 2026-11-02, ego lite 0.6.2.5, J-117).
+            HostBrowser::EgoLite => "Library/Application Support/Chromium/NativeMessagingHosts",
             _ => "Library/Application Support/Mozilla/NativeMessagingHosts",
         }
     } else {
         match browser {
             HostBrowser::Chrome => ".config/google-chrome/NativeMessagingHosts",
             HostBrowser::Chromium => ".config/chromium/NativeMessagingHosts",
+            HostBrowser::EgoLite => ".config/chromium/NativeMessagingHosts",
             _ => ".mozilla/native-messaging-hosts",
         }
     };
@@ -78,6 +82,7 @@ pub fn install(app: &App, browser: HostBrowser) -> Result<()> {
     fs::write(&script, wrapper(&exe, app.root())?)?;
     fs::set_permissions(&script, fs::Permissions::from_mode(0o700))?;
     let browsers = match browser {
+        // ego lite shares Chromium's folder, so `all` writes it once.
         HostBrowser::All => vec![
             HostBrowser::Chrome,
             HostBrowser::Chromium,
@@ -113,6 +118,22 @@ mod tests {
             script,
             "#!/bin/sh\nexec '/opt/kh/keyharbor' --data-dir '/Users/o'\\''neil/data' browser host \"$@\"\n"
         );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn ego_lite_manifest_path() {
+        // The same folder as Chromium's: ego lite reads it (J-117).
+        assert_eq!(
+            manifest_dir(Path::new("/Users/me"), HostBrowser::EgoLite),
+            manifest_dir(Path::new("/Users/me"), HostBrowser::Chromium)
+        );
+        assert_eq!(
+            manifest_dir(Path::new("/Users/me"), HostBrowser::EgoLite),
+            Path::new("/Users/me/Library/Application Support/Chromium/NativeMessagingHosts")
+        );
+        let ego = manifest(HostBrowser::EgoLite, Path::new("/x"));
+        assert_eq!(ego["allowed_origins"], json!([CHROME_EXTENSION]));
     }
 
     #[test]

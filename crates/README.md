@@ -196,7 +196,7 @@ keyharbor grant revoke <grant-id>
 **사이트 넘기기**(R-42): 평소 Chrome에서 로그인한 사이트를 확장(`integrations/browser-extension`)으로 에이전트 세션에 넘긴다. `keyharbor browser install-host`로 native host를 등록하면, 확장이 그 사이트의 쿠키(고르면 `localStorage`)를 `keyharbor browser host`에 보낸다. host는 쿠키가 그 사이트 것인지 확인하고 실행 중인 세션의 감독자에게 넘긴다. 감독자는 그 사이트의 grant(TTL 동안)를 기록하고 쿠키를 넣은 뒤 사이트를 연다. 쿠키 값은 KeyHarbor DB·사용 기록·응답에 남지 않는다.
 
 ```sh
-keyharbor browser install-host                         # Chrome·Chromium·Firefox에 host 등록 (우리 확장만 허용)
+keyharbor browser install-host                         # Chrome·Chromium(ego lite 포함)·Firefox에 host 등록 (우리 확장만 허용)
 ```
 
 **로그인 포착**(기본 꺼짐, `keyharbor settings set capture_enabled true`로 켠다): 인계(`session_wait_auth`) 중에 사람이 브라우저에서 로그인 폼을 제출하면, 감독자가 그 아이디·비밀번호를 draft로 저장한다. 금고에 같은 값이 있으면 아무것도 하지 않는다. 비밀번호가 다르면 `<이름>~draft-N`, 처음 보는 계정이면 호스트 이름으로 저장한다. 인계 중에는 에이전트의 입력 도구가 거절되므로 포착된 값은 사람이 친 것이다. 페이지 스크립트가 직접 제출한 폼은 세지 않는다. 다른 사이트 iframe과 submit 이벤트 없이 보내는 폼은 놓친다.

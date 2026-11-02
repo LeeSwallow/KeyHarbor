@@ -13,6 +13,7 @@ const BROWSERS: &[&str] = &[
     "Chromium.app",
     "Microsoft Edge.app",
     "Brave Browser.app",
+    "ego lite.app",
     "Firefox.app",
     "Firefox Developer Edition.app",
     "Firefox Nightly.app",
@@ -77,5 +78,16 @@ mod tests {
         ] {
             assert!(!is_browser(path), "{path}");
         }
+    }
+
+    #[test]
+    fn ego_lite_is_a_browser_caller() {
+        assert!(is_browser(
+            "/Applications/ego lite.app/Contents/MacOS/ego lite"
+        ));
+        assert!(
+            !is_browser("/Users/me/.local/bin/ego-browser"),
+            "the agent CLI is not the browser"
+        );
     }
 }
