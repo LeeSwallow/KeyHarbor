@@ -80,7 +80,7 @@ pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
     let store = adapters.stores.open()?;
     supervision::check_reservation(&*store, id, generation)?;
     let fail = |store: &dyn Store, error: anyhow::Error| {
-        supervision::mark_failed(store, id, generation);
+        supervision::mark_failed(store, id, generation, &error);
         error
     };
     let url = match url
@@ -145,7 +145,7 @@ async fn supervise(
         shots,
     } = run;
     let fail = |store: &dyn Store, error: anyhow::Error| {
-        supervision::mark_failed(store, id, generation);
+        supervision::mark_failed(store, id, generation, &error);
         error
     };
     let listener = match bind(&socket) {

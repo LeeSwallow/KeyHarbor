@@ -31,13 +31,8 @@ pub(super) fn prepare(data: &Path, id: &SessionId, cdp: bool) -> Result<Prepared
             Err(error) => return Err(error.into()),
         }
     }
+    paths::check_socket_path(data, id)?;
     let socket = paths::socket_path(data, id);
-    if socket.as_os_str().len() > paths::MAX_SOCKET_PATH {
-        bail!(
-            "control socket path is longer than {} bytes; use a shorter --data-dir",
-            paths::MAX_SOCKET_PATH
-        );
-    }
     // We hold the lock, so a socket file left here belongs to a dead supervisor.
     match fs::symlink_metadata(&socket) {
         Ok(meta) => {

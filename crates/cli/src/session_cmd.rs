@@ -1,4 +1,4 @@
-//! Session commands: `create`, `list`, `open`, `stop`, `wait-auth`, `handoff`, `resume`,
+//! Session commands: `create`, `list` (`ls`), `rm`, `open`, `stop`, `wait-auth`, `handoff`, `resume`,
 //! `recover`, `endpoint`, and the hidden `__supervise` used by `open`.
 
 use crate::compose::App;
@@ -6,7 +6,10 @@ use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use keyharbor_core::{
     LOCAL_AGENT, grant,
-    session::{self as lifecycle, DisplayState, OpenOptions, ResumeWait, SessionView, poll},
+    session::{
+        self as lifecycle, DisplayState, OpenOptions, ResumeWait, SessionView, poll,
+        remove::{self, Force},
+    },
 };
 use keyharbor_domain::{
     SessionId, SessionName, State,
@@ -39,7 +42,17 @@ pub enum SessionCmd {
         no_description: bool,
     },
     /// List sessions with their state
+    #[command(visible_alias = "ls")]
     List,
+    /// Remove stopped sessions and their browser profiles
+    Rm {
+        /// Session ids or names
+        #[arg(required = true)]
+        sessions: Vec<String>,
+        /// Close a session that is still open (or return an abandoned one to stopped) first
+        #[arg(long, short)]
+        force: bool,
+    },
     /// Open the session's browser under a supervisor
     Open {
         id: String,
@@ -151,6 +164,7 @@ impl Ports<'_> {
                     println!("{}", view_line(&view));
                 }
             }
+            SessionCmd::Rm { sessions, force } => self.remove(&sessions, force)?,
             SessionCmd::Edit {
                 id,
                 description,
@@ -267,6 +281,23 @@ impl Ports<'_> {
             );
         }
         println!("{id}\t{}", State::Running.as_str());
+        Ok(())
+    }
+
+    fn remove(&self, keys: &[String], force: bool) -> Result<()> {
+        let force = if force { Force::CloseFirst } else { Force::No };
+        for key in keys {
+            let id = remove::resolve(&*self.store, key)?;
+            remove::remove(
+                &*self.store,
+                &*self.runtime,
+                self.clock,
+                id,
+                force,
+                LOCAL_AGENT,
+            )?;
+            println!("{id}\tremoved");
+        }
         Ok(())
     }
 

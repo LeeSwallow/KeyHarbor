@@ -21,6 +21,7 @@ pub struct SessionModel {
     pub generation: Option<String>,
     pub cdp: Option<bool>,
     pub description: Option<String>,
+    pub failure: Option<String>,
 }
 
 #[derive(Insertable)]

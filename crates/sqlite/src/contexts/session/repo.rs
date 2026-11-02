@@ -49,6 +49,7 @@ fn load_rows(conn: &mut SqliteConnection, id: Option<&str>) -> Result<Vec<Sessio
             generations::generation.nullable(),
             generations::cdp.nullable(),
             sessions::description,
+            sessions::failure,
         ))
         .order(sessions::name)
         .into_boxed();
@@ -129,7 +130,10 @@ impl SessionStore for SqliteStore {
                     .filter(sessions::id.eq(&id))
                     .filter(sessions::state.eq(State::Stopped.as_str())),
             )
-            .set(sessions::state.eq(State::Starting.as_str()))
+            .set((
+                sessions::state.eq(State::Starting.as_str()),
+                sessions::failure.eq(None::<String>),
+            ))
             .execute(conn)?;
             if changed == 0 {
                 return Ok(None);
@@ -174,6 +178,28 @@ impl SessionStore for SqliteStore {
             .execute(conn)?
                 == 1;
             if changed && matches!(to, State::Stopping | State::Stopped | State::Failed) {
+                cancel_pending(conn, &id)?;
+            }
+            Ok(changed)
+        })
+    }
+
+    fn fail(&self, id: SessionId, generation: Generation, reason: &str) -> Result<bool> {
+        let (id, generation) = (id.to_string(), generation.to_string());
+        self.write(|conn| {
+            let changed = diesel::update(
+                sessions::table
+                    .filter(sessions::id.eq(&id))
+                    .filter(sessions::state.eq(State::Starting.as_str()))
+                    .filter(current_run!(&id, &generation)),
+            )
+            .set((
+                sessions::state.eq(State::Failed.as_str()),
+                sessions::failure.eq(reason),
+            ))
+            .execute(conn)?
+                == 1;
+            if changed {
                 cancel_pending(conn, &id)?;
             }
             Ok(changed)
@@ -338,6 +364,31 @@ mod tests {
                 .unwrap()
         );
         (id, generation)
+    }
+
+    #[test]
+    fn a_failed_start_keeps_its_reason_until_the_next_run() {
+        let (_tmp, store) = store();
+        let id = store
+            .create(SessionName::parse("broken").unwrap())
+            .unwrap()
+            .id;
+        let generation = store.reserve(id, false).unwrap().unwrap();
+        assert!(
+            store
+                .fail(id, generation, "browser executable not found")
+                .unwrap()
+        );
+        let row = store.get(id).unwrap().unwrap();
+        assert_eq!(row.state, State::Failed);
+        assert_eq!(row.failure.as_deref(), Some("browser executable not found"));
+        assert!(
+            !store.fail(id, generation, "again").unwrap(),
+            "only from starting"
+        );
+        assert!(store.force_stopped(id).unwrap());
+        store.reserve(id, false).unwrap().unwrap();
+        assert_eq!(store.get(id).unwrap().unwrap().failure, None);
     }
 
     #[test]

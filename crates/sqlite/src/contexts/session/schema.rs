@@ -6,6 +6,7 @@ diesel::table! {
         name -> Text,
         state -> Text,
         description -> Nullable<Text>,
+        failure -> Nullable<Text>,
     }
 }
 
