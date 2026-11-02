@@ -73,6 +73,8 @@ impl ResumeWait {
     pub const MAX_SECONDS: u64 = 300;
     /// How often the request is looked at while waiting.
     pub const POLL: Duration = Duration::from_millis(250);
+    /// Look once and do not wait: for a server nobody is watching (`--non-interactive`).
+    pub const ONCE: Self = Self(Duration::ZERO);
 
     /// The wait an agent asked for, in seconds (`None` for the default).
     pub fn seconds(requested: Option<u64>) -> Result<Self> {

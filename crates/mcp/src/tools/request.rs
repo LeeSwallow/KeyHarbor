@@ -6,7 +6,7 @@ use crate::server::{Server, fail, outcome};
 use anyhow::Result;
 use keyharbor_core::{
     request::{self, Ask},
-    session::{ResumeWait, poll},
+    session::poll,
 };
 use keyharbor_domain::{
     RequestId,
@@ -83,7 +83,7 @@ impl Server {
         let Ok(id) = RequestId::parse(&args.request_id) else {
             return fail("invalid request_id");
         };
-        let wait = match ResumeWait::seconds(args.timeout_seconds) {
+        let wait = match self.inner.wait(args.timeout_seconds) {
             Ok(wait) => wait,
             Err(error) => return fail(error.to_string()),
         };

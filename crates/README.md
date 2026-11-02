@@ -50,7 +50,7 @@ cargo run -p keyharbor -- list
 | `receive <id> [--origin O] [--timeout-seconds N]` | 사람이 평소 Chrome(확장)에서 이 세션으로 사이트를 넘길 때까지 기다렸다가 `id received origin`을 출력한다(1–300초, 기본 120). 사람이 직접 만든 grant는 넘김으로 치지 않는다 |
 | `recover <id> --confirm-browser-closed` | 감독자가 죽은 세션(`recovery_required`·`failed`)을 `stopped`로. 감독자가 살아 있으면 거부 |
 | `endpoint <id>` | `--cdp`로 연 세션의 raw CDP 주소(`ws://127.0.0.1:…`). **켜면 KeyHarbor의 보호가 우회된다** |
-| `mcp [--session ID] [--allow-cdp] [--agent NAME] [--browser PATH]` | stdio MCP 서버. `--agent`가 없으면 에이전트 이름은 `mcp` |
+| `mcp [--session ID] [--allow-cdp] [--agent NAME] [--browser PATH] [--non-interactive]` | stdio MCP 서버. `--agent`가 없으면 에이전트 이름은 `mcp`. `--non-interactive`(사람이 없는 예약 실행)면 사람을 기다리는 도구가 기다리지 않는다: `session_wait_auth`는 인계 요청을 남기고 곧바로 `status: "needs_user"`와 `request_id`를, `session_wait_for_resume`는 아직이면 `needs_user`를, `session_wait_site`·`vault_wait`는 지금 상태를 돌려준다. 관리 앱이 대기 중인 인계를 알림으로 알린다 |
 
 `KEYHARBOR_BROWSER_HEADLESS=1`이면 감독자가 Chrome에 `--headless=new`를 붙인다(테스트·CI용). 이 변수는 composition root(`cli/src/compose.rs`)가 읽어 감독자에게 넘긴다.
 

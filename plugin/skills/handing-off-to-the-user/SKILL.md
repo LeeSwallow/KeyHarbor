@@ -25,3 +25,11 @@ the `<session name>` session". Then `session_wait_site {id, origin?, timeout_sec
 (1-300) waits until it arrives and returns `received` with the origin, or `waiting` if the
 time ran out. The session can then only load that site (and others granted); no cookie
 reaches you.
+
+## When nobody is watching
+
+A scheduled run starts the server with `keyharbor mcp --non-interactive`. Then
+`session_wait_auth` returns `status: "needs_user"` at once and the waits look once instead of
+waiting. Write down what needs a person (which site, why) where the run reports, leave the
+request open and stop. The person sees it in KeyHarbor and finishes it later; do not retry in
+a loop.
