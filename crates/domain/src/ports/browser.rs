@@ -56,6 +56,44 @@ pub enum WaitFor {
     Millis(u64),
 }
 
+/// Which option of a `<select>` to choose (`browser_select`). `Value` and `Label` may hold a
+/// placeholder; the guard resolves it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Choice {
+    /// The option whose `value` attribute is this.
+    Value(String),
+    /// The option whose visible text is this (whitespace trimmed).
+    Label(String),
+    /// The option at this zero-based position.
+    Index(u32),
+}
+
+impl zeroize::Zeroize for Choice {
+    fn zeroize(&mut self) {
+        if let Self::Value(text) | Self::Label(text) = self {
+            text.zeroize();
+        }
+    }
+}
+
+impl Choice {
+    /// The text the choice matches on; none for an index.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            Self::Value(text) | Self::Label(text) => Some(text),
+            Self::Index(_) => None,
+        }
+    }
+    /// The same kind of choice matching `text` instead.
+    pub fn with_text(&self, text: String) -> Self {
+        match self {
+            Self::Value(_) => Self::Value(text),
+            Self::Label(_) => Self::Label(text),
+            Self::Index(index) => Self::Index(*index),
+        }
+    }
+}
+
 /// The operations an agent asks for. Text given to `fill` and `type_text` is typed as is.
 pub trait BrowserPort: Send {
     fn navigate(&mut self, url: &str) -> impl Future<Output = Result<Value>> + Send;
@@ -113,6 +151,10 @@ impl Element {
                     .iter()
                     .any(|t| t == "current-password" || t == "new-password"))
     }
+    /// A `<select>` element (`browser_select` chooses its options).
+    pub fn is_select(&self) -> bool {
+        self.local_name == "select"
+    }
     /// An element that takes typed text: a text-like `input`, a `textarea` or an editing host.
     pub fn takes_text(&self) -> bool {
         match self.local_name.as_str() {
@@ -168,6 +210,14 @@ pub trait PageInput: Send {
     /// username by `autocomplete=username`, then `type=email`, then a name or id with
     /// user/email/login; password as [`Element::is_password`].
     fn login_fields(&mut self, page: &Page) -> impl Future<Output = Result<LoginFields>> + Send;
+    /// Chooses the option of the `<select>` element `node` that `choice` names and fires
+    /// `input` and `change`; `None` (and nothing changed) if no option matches.
+    fn select_option(
+        &mut self,
+        page: &Page,
+        node: u64,
+        choice: &Choice,
+    ) -> impl Future<Output = Result<Option<u32>>> + Send;
     /// The URL of the page's top document.
     fn location(&mut self, page: &Page) -> impl Future<Output = Result<String>> + Send;
 }

@@ -30,6 +30,7 @@ pub mod pdp;
 pub mod pep;
 pub mod reveal;
 pub mod run;
+mod select;
 pub mod session;
 #[cfg(test)]
 mod test_support;

@@ -18,7 +18,7 @@ use keyharbor_domain::{
     policy::AgentName,
     ports::{
         BrowserPort,
-        browser::{Target, WaitFor},
+        browser::{Choice, Target, WaitFor},
     },
     vault::{ItemName, Origin},
 };
@@ -34,6 +34,7 @@ enum Command {
     Screenshot,
     Click(Target),
     Fill(Target, String),
+    Select(Target, Choice),
     Type(String),
     Press(String),
     Tabs,
@@ -74,6 +75,7 @@ impl Command {
             Self::Navigate(_)
                 | Self::Click(_)
                 | Self::Fill(..)
+                | Self::Select(..)
                 | Self::Type(_)
                 | Self::Press(_)
                 | Self::NewTab(_)
@@ -119,6 +121,20 @@ fn parse(request: &Value) -> Result<(String, Command)> {
         ControlRequest::Screenshot => Command::Screenshot,
         ControlRequest::Click { target } => Command::Click(target.into()),
         ControlRequest::Fill { target, text } => Command::Fill(target.into(), text),
+        ControlRequest::Select {
+            target,
+            value,
+            label,
+            index,
+        } => Command::Select(
+            target.into(),
+            match (value, label, index) {
+                (Some(value), None, None) => Choice::Value(value),
+                (None, Some(label), None) => Choice::Label(label),
+                (None, None, Some(index)) => Choice::Index(index),
+                _ => anyhow::bail!("select needs exactly one of value, label or index"),
+            },
+        ),
         ControlRequest::Type { text } => Command::Type(text),
         ControlRequest::Press { key } => Command::Press(key),
         ControlRequest::Tabs => Command::Tabs,
@@ -213,6 +229,7 @@ impl Ops {
             Command::Fill(target, text) => {
                 wire(browser.fill(&target, &text).await, FillResultWire::from)
             }
+            Command::Select(target, choice) => browser.select(&target, &choice).await,
             Command::Type(text) => wire(browser.type_text(&text).await, FillResultWire::from),
             Command::Press(key) => browser.press(&key).await,
             Command::Tabs => browser.tabs().await,
@@ -304,6 +321,37 @@ mod tests {
             assert!(
                 parse(&json!({"op": "snapshot", "agent": bad})).is_err(),
                 "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn select_is_refused_while_awaiting_user() {
+        let (_, command) = parse(&json!({
+            "op": "select", "target": {"ref": 3}, "label": "Exempt"
+        }))
+        .unwrap();
+        assert!(
+            matches!(command, Command::Select(Target::Ref(3), Choice::Label(ref l)) if l == "Exempt")
+        );
+        assert!(
+            command.is_input(),
+            "a person at the browser is the only one choosing"
+        );
+    }
+
+    #[test]
+    fn select_needs_exactly_one_choice() {
+        for request in [
+            json!({"op": "select", "target": {"ref": 3}}),
+            json!({"op": "select", "target": {"ref": 3}, "value": "a", "index": 1}),
+        ] {
+            let Err(error) = parse(&request) else {
+                panic!("{request} should be refused");
+            };
+            assert_eq!(
+                error.to_string(),
+                "select needs exactly one of value, label or index"
             );
         }
     }

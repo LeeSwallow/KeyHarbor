@@ -37,6 +37,21 @@ struct Fill {
     text: String,
 }
 #[derive(Deserialize, schemars::JsonSchema)]
+struct Select {
+    session: String,
+    /// Element ref of the <select> from browser_snapshot.
+    #[serde(rename = "ref")]
+    reference: Option<u64>,
+    /// CSS selector of the <select>, used when ref is not given.
+    selector: Option<String>,
+    /// The option's value attribute. May be a {{secret:item.field}} placeholder.
+    value: Option<String>,
+    /// The option's visible text. May be a {{secret:item.field}} placeholder.
+    label: Option<String>,
+    /// The option's zero-based position.
+    index: Option<u32>,
+}
+#[derive(Deserialize, schemars::JsonSchema)]
 struct Text {
     session: String,
     /// Text typed into the focused element. May contain {{secret:item.field}} placeholders.
@@ -150,6 +165,34 @@ impl Server {
             Ok(target) => {
                 self.browser(&session, ControlRequest::Fill { target, text })
                     .await
+            }
+            Err(error) => fail(error.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Choose an option of a <select> given by ref or CSS selector: exactly one of value, label (visible text) or index. value and label may be a {{secret:item.field}} placeholder, checked like browser_fill; then the result names only the chosen index. Fires input and change like a person choosing."
+    )]
+    async fn browser_select(
+        &self,
+        Parameters(Select {
+            session,
+            reference,
+            selector,
+            value,
+            label,
+            index,
+        }): Parameters<Select>,
+    ) -> CallToolResult {
+        match target(reference, selector) {
+            Ok(target) => {
+                let request = ControlRequest::Select {
+                    target,
+                    value,
+                    label,
+                    index,
+                };
+                self.browser(&session, request).await
             }
             Err(error) => fail(error.to_string()),
         }
