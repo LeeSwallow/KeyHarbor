@@ -148,6 +148,14 @@ fn open_session(ctx: State<'_, Ctx>, id: String, browser: Option<String>) -> Rep
 fn stop_session(ctx: State<'_, Ctx>, id: String) -> Reply<()> {
     commands::stop_session(&ctx, &id).map_err(message)
 }
+#[tauri::command(async)]
+fn remove_session(ctx: State<'_, Ctx>, id: String) -> Reply<()> {
+    commands::remove_session(&ctx, &id).map_err(message)
+}
+#[tauri::command(async)]
+fn browsers() -> commands::BrowsersDto {
+    commands::browsers()
+}
 #[tauri::command]
 fn recover_session(ctx: State<'_, Ctx>, id: String, browser_closed: bool) -> Reply<()> {
     commands::recover_session(&ctx, &id, browser_closed).map_err(message)
@@ -256,6 +264,8 @@ fn main() {
             copy_placeholder,
             open_session,
             stop_session,
+            remove_session,
+            browsers,
             recover_session,
             kinds,
             add_item,

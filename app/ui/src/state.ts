@@ -2,7 +2,7 @@
 // `revealed` and every move away (another screen, another item, hiding) drops it (09 §9.12,
 // Review Focus 1).
 
-import type { AuditEvent, Handoff, Inbox, Item, KindForm, Overview, RequestForm, Rule, Session, Setting } from "./api.js";
+import type { AuditEvent, Browsers, Handoff, Inbox, Item, KindForm, Overview, RequestForm, Rule, Session, Setting } from "./api.js";
 
 export type View = "home" | "inbox" | "sessions" | "items" | "audit" | "policies" | "settings";
 
@@ -54,6 +54,10 @@ export interface State {
   notice: string | null;
   /// An item removed a moment ago and hidden; it is deleted only when the undo time runs out.
   removing: string | null;
+  /// A session removed a moment ago, the same way (#123).
+  removingSession: { id: string; name: string } | null;
+  /// Which browsers this Mac has, for the settings and the open buttons.
+  browsers: Browsers;
   /// The secure input window (09 §9.4.5): only the form for one request, nothing else.
   alone: boolean;
   selected: string | null;
@@ -78,6 +82,8 @@ export const initial: State = {
   palette: null,
   filter: NO_FILTER,
   removing: null,
+  removingSession: null,
+  browsers: { ego_lite: false },
   notice: null,
   alone: false,
   selected: null,
@@ -89,6 +95,8 @@ export const go = (s: State, view: View): State =>
   ({ ...s, view, selected: null, revealed: null, form: null, ask: null, editor: null, error: null, notice: null, filter: NO_FILTER });
 export const removing = (s: State, name: string): State => ({ ...s, removing: name, selected: null, editor: null, revealed: null });
 export const undoRemove = (s: State): State => ({ ...s, removing: null });
+export const removingSession = (s: State, id: string, name: string): State => ({ ...s, removingSession: { id, name } });
+export const undoRemoveSession = (s: State): State => ({ ...s, removingSession: null });
 export const search = (s: State, patch: Partial<Filter>): State => ({ ...s, filter: { ...s.filter, ...patch } });
 
 /// The items `f` lets through, in their order.

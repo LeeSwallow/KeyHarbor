@@ -3,11 +3,14 @@
 // which change weakens a protection stays in the domain registry; this table is only how the
 // window shows it. A click saves at once; a weakening change comes back as a question.
 
-import type { Setting } from "../api.js";
+import type { Browsers, Setting } from "../api.js";
 import { esc } from "../html.js";
 import { heading } from "./parts.js";
 
-type Control = { kind: "switch" } | { kind: "choices"; choices: [value: string, label: string][] };
+type Control =
+  | { kind: "switch" }
+  | { kind: "choices"; choices: [value: string, label: string][] }
+  | { kind: "folders" };
 interface Shown { group: string; label: string; help: string; control: Control }
 
 const DAYS: [string, string][] = [["7d", "7일"], ["30d", "30일"], ["90d", "90일"], ["365d", "1년"]];
@@ -34,17 +37,42 @@ const SHOWN: Record<string, Shown> = {
     group: "클립보드", label: "복사한 값 자동 지우기", control: { kind: "choices", choices: [["10", "10초"], ["30", "30초"], ["60", "1분"], ["120", "2분"]] },
     help: "30초보다 길게 하면 확인합니다. 다른 것을 복사했으면 지우지 않습니다.",
   },
+  browser: {
+    group: "브라우저", label: "세션을 여는 브라우저",
+    control: { kind: "choices", choices: [["auto", "자동"], ["chrome", "Chrome"], ["ego-lite", "ego lite"]] },
+    help: "자동: ego lite가 켜져 있으면 ego lite, 아니면 Chrome. ego lite 세션은 다른 프로그램도 같은 창을 조작할 수 있어 보호가 낮습니다.",
+  },
+  ego_probe_seconds: {
+    group: "브라우저", label: "ego lite를 기다리는 시간",
+    control: { kind: "choices", choices: [["3", "3초"], ["5", "5초"], ["10", "10초"]] },
+    help: "자동일 때 이 시간 안에 ego lite가 답하지 않으면 Chrome으로 엽니다.",
+  },
+  ego_poll_ms: {
+    group: "브라우저", label: "ego lite 페이지 확인 간격",
+    control: { kind: "choices", choices: [["10", "10ms"], ["20", "20ms"], ["50", "50ms"], ["100", "100ms"]] },
+    help: "짧을수록 빨리 반응하고 일을 더 합니다.",
+  },
+  upload_dirs: {
+    group: "파일 올리기", label: "올릴 수 있는 폴더", control: { kind: "folders" },
+    help: "에이전트가 사이트에 올릴 수 있는 파일은 이 폴더 안의 것뿐입니다. 비워 두면 올리지 못합니다. 바꿀 때는 확인합니다.",
+  },
+  upload_max_files: {
+    group: "파일 올리기", label: "한 번에 올리는 파일 수",
+    control: { kind: "choices", choices: [["5", "5개"], ["10", "10개"], ["20", "20개"]] },
+    help: "10개보다 많게 하면 확인합니다.",
+  },
   notify_requests: { group: "알림", label: "정보 요청", control: { kind: "switch" }, help: "에이전트가 값을 입력해 달라고 할 때" },
   notify_handoffs: { group: "알림", label: "브라우저 인계", control: { kind: "switch" }, help: "에이전트가 로그인을 넘길 때" },
   notify_drafts: { group: "알림", label: "새 draft", control: { kind: "switch" }, help: "확정을 기다리는 항목이 생길 때" },
   notify_denials: { group: "알림", label: "거부", control: { kind: "switch" }, help: "정책이 에이전트의 사용을 막았을 때" },
 };
 
-const GROUPS = ["보안", "새 항목과 draft", "클립보드", "알림"];
+const GROUPS = ["보안", "브라우저", "파일 올리기", "새 항목과 draft", "클립보드", "알림"];
 
 const set = (key: string, value: string) => `data-action="set-setting" data-key="${esc(key)}" data-value="${esc(value)}"`;
 
 function control(s: Setting, c: Control): string {
+  if (c.kind === "folders") return folders(s);
   if (c.kind === "switch") {
     const on = s.value === "true";
     return `<button type="button" class="kh-toggle${on ? " is-on" : ""}" role="switch" aria-checked="${on}" ${set(s.key, on ? "false" : "true")}><span class="track"></span></button>`;
@@ -70,9 +98,15 @@ function plain(s: Setting): string {
     <span><input class="kh-input" name="value" value="${esc(s.value)}" autocomplete="off" spellcheck="false"> <button class="kh-btn secondary" type="submit">저장</button></span></form>`;
 }
 
-export function settings(list: Setting[]): string {
+export function settings(list: Setting[], browsers: Browsers = { ego_lite: false }): string {
   const sections = GROUPS.map((group) => {
-    const rows = list.filter((s) => SHOWN[s.key]?.group === group).map((s) => row(s, SHOWN[s.key]!)).join("");
+    // Whether ego lite answers right now goes with the browser choice it changes.
+    const status = browsers.ego_lite
+      ? " 지금 ego lite가 켜져 있습니다."
+      : " 지금은 ego lite를 찾지 못했습니다(설치되지 않았거나 꺼져 있음).";
+    const shown = (s: Setting) =>
+      s.key === "browser" ? { ...SHOWN[s.key]!, help: SHOWN[s.key]!.help + status } : SHOWN[s.key]!;
+    const rows = list.filter((s) => SHOWN[s.key]?.group === group).map((s) => row(s, shown(s))).join("");
     return rows ? `<section class="settings-group"><h3>${group}</h3>${rows}</section>` : "";
   }).join("");
   const unknown = list.filter((s) => !SHOWN[s.key]).map(plain).join("");
@@ -81,4 +115,18 @@ export function settings(list: Setting[]): string {
     <div class="kh-help">인증 없음: 이 Mac 사용자 계정으로 접근할 수 있는 누구나 금고를 볼 수 있습니다.</div></div>
     <div class="kh-seg" role="group"><button type="button" class="is-on">없음</button><button type="button" disabled>macOS 인증 · 준비 중</button><button type="button" disabled>마스터 비밀번호 · 준비 중</button></div></div></section>`;
   return `${heading("settings")}${sections}${others}${auth}`;
+}
+
+/// `upload_dirs` as a list: each folder can be taken out, one can be added. The new value is
+/// the whole list (`:`-separated), so a weakening change still goes through the question.
+function folders(s: Setting): string {
+  const list = s.value.split(":").map((d) => d.trim()).filter(Boolean);
+  const rows = list
+    .map((dir) => {
+      const rest = list.filter((d) => d !== dir).join(":");
+      return `<li><code>${esc(dir)}</code> <button type="button" class="kh-btn ghost sm" ${set(s.key, rest)}>빼기</button></li>`;
+    })
+    .join("");
+  return `<div class="folders">${rows ? `<ul class="folder-list">${rows}</ul>` : `<p class="kh-help">허용한 폴더가 없습니다</p>`}
+    <form class="folder-add" data-setting="${esc(s.key)}" data-append="${esc(s.value)}"><input class="kh-input" name="value" placeholder="~/Documents/Recruiting" autocomplete="off" spellcheck="false"> <button class="kh-btn secondary sm" type="submit">추가</button></form></div>`;
 }

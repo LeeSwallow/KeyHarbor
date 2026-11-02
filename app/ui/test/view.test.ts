@@ -119,7 +119,7 @@ describe("copying and sessions", () => {
   });
 
   it("shows open, stop, or recovery behind a checkbox", () => {
-    const session = (state: string) => ({ id: "s1", name: "work", state, cdp: false, description: null, sites: [] });
+    const session = (state: string) => ({ id: "s1", name: "work", state, cdp: false, description: null, browser: null, protection: null, failure: null, sites: [] });
     const view = (state: string) => render({ ...initial, view: "sessions", sessions: [session(state)] });
     expect(view("stopped")).toContain('data-action="open-session"');
     expect(view("running")).toContain('data-action="stop-session"');

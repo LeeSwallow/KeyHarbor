@@ -21,7 +21,9 @@ export const kindLook: Record<string, { domain: string; icon: string }> = {
 export const fieldWord = word({
   username: "아이디", password: "비밀번호", totp_seed: "OTP 시드", note: "메모", value: "값",
   number: "카드 번호", exp_month: "만료 월", exp_year: "만료 연도", cvc: "CVC", holder: "명의자", billing_address: "청구 주소",
-  full_name: "이름", given_name: "이름", family_name: "성", email: "이메일", phone: "전화번호", birth_date: "생년월일",
+  full_name: "성명", given_name: "이름", family_name: "성", email: "이메일", phone: "전화번호", birth_date: "생년월일",
+  english_name: "영문 이름", hanja_name: "한자 이름", gender: "성별", nationality: "국적", emergency_phone: "비상 연락처",
+  military_service: "병역", disability: "장애", veterans: "보훈",
   recipient: "받는 사람", line1: "주소", line2: "상세 주소", city: "시·군·구", region: "시·도", postal_code: "우편번호", country: "국가",
 });
 
