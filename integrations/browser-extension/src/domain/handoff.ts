@@ -6,8 +6,10 @@ import type { SiteCookie } from "./cookie.js";
 import { type Result, err, ok } from "./result.js";
 import { type SessionName, parseSessionName } from "./session-name.js";
 
-/** Grant lengths the popup offers, and the bounds any request must respect (R-43). */
-export const TTL_CHOICES = [3600, 8 * 3600, 24 * 3600] as const;
+/** Grant lengths the popup offers (1, 8 and 24 hours), and the bounds any request must respect (R-43).
+ *  Written as literals so `TtlChoice` is their union and a table keyed by it must list every one. */
+export const TTL_CHOICES = [3600, 28_800, 86_400] as const;
+export type TtlChoice = (typeof TTL_CHOICES)[number];
 export const TTL_RANGE = { min: 60, max: 7 * 24 * 3600 } as const;
 
 export interface HandOffRequest {
