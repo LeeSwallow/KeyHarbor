@@ -56,9 +56,15 @@ planted "mcp-depends-on-sqlite" mcp/Cargo.toml 'keyharbor-sqlite = { path = "../
 	"mcp must not depend on keyharbor-sqlite"
 planted "a-cli-command-opening-the-store" cli/src/policy_cmd.rs 'fn x() { let _ = keyharbor_sqlite::SqliteStore::open; }' \
 	"interfaces build adapters outside the composition root"
+planted "a-nested-cli-module-opening-the-store" cli/src/browser_cmd/host/receive.rs 'fn x() { let _ = keyharbor_sqlite::SqliteStore::open; }' \
+	"interfaces build adapters outside the composition root"
+planted "a-nested-cli-module-calling-a-storage-port" cli/src/session_cmd/grant.rs 'fn x(s: &dyn S) { let _ = s.policy_rules(); }' \
+	"interfaces call storage ports directly"
 planted "an-mcp-tool-calling-a-storage-port" mcp/src/tools/vault.rs 'fn x(s: &dyn S) { let _ = s.policy_rules(); }' \
 	"interfaces call storage ports directly"
-planted "a-placeholder-literal-outside-domain" guard/src/login.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
+planted "a-placeholder-literal-outside-domain" guard/src/browser/login.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
+	"placeholder syntax outside keyharbor-domain"
+planted "a-placeholder-literal-outside-its-module" domain/src/vault/kind.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
 	"placeholder syntax outside keyharbor-domain"
 planted "a-requester-check-outside-domain" supervisor/src/ops.rs 'fn x(a: &str) -> bool { a == ANY }' \
 	"requester-name rule outside keyharbor-domain"
@@ -76,7 +82,7 @@ planted "the-clock-read-in-the-guard" guard/src/audit.rs 'fn x() { let _ = std::
 	"I/O in an inner crate"
 planted "a-driver-crate-in-the-domain" domain/Cargo.toml 'tokio.workspace = true' \
 	"domain depends on tokio; inner crates use no driver crate"
-planted "serde-json-in-a-domain-value" domain/src/policy.rs 'fn x() -> serde_json::Value { serde_json::Value::Null }' \
+planted "serde-json-in-a-domain-value" domain/src/access/policy.rs 'fn x() -> serde_json::Value { serde_json::Value::Null }' \
 	"keyharbor-domain uses serde_json outside ports/browser.rs"
 planted "randomness-outside-crypto" sqlite/src/lib.rs 'fn x() { let _ = uuid::Uuid::new_v4(); }' \
 	"randomness outside keyharbor-crypto"

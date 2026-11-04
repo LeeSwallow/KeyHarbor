@@ -13,6 +13,6 @@ pub mod chrome;
 pub mod ego;
 mod pages;
 
-pub use browser::CdpBrowser;
+pub use browser::{CdpBrowser, WAIT_TIMEOUT, key_names};
 pub use chrome::DEFAULT_BROWSER;
 pub use pages::{DocumentRule, Gate, PageHooks};

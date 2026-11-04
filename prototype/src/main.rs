@@ -292,6 +292,10 @@ fn show(store: &Store, session: keyharbor::Session) -> Result<()> {
     Ok(())
 }
 
+/// How long the supervisor waits for `open` to release the session lock (as the rebuilt
+/// supervisor's `LOCK_HANDOFF`).
+const SUPERVISOR_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
 fn supervise(
     store: &Store,
     id: &str,
@@ -300,7 +304,7 @@ fn supervise(
     url: Option<&str>,
     cdp: bool,
 ) -> Result<()> {
-    let _lock = store.lock_session(id)?;
+    let _lock = store.lock_session_within(id, SUPERVISOR_LOCK_WAIT)?;
     let session = store.get(id)?;
     if session.state != "starting" || session.generation.as_deref() != Some(generation) {
         bail!("session reservation is no longer valid");

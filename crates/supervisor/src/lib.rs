@@ -24,6 +24,8 @@ mod upload_files;
 
 pub use argv::{SUPERVISE_COMMAND, SuperviseArgs};
 pub use keyharbor_broker::DEFAULT_BROWSER;
+/// What the browser tools accept, for interfaces that describe them (the MCP schemas).
+pub use keyharbor_broker::{WAIT_TIMEOUT as BROWSER_WAIT_TIMEOUT, key_names as browser_keys};
 
 /// Whether ego lite is here and answers within `wait` (the admin app's browser setting).
 pub fn ego_lite_answers(wait: std::time::Duration) -> bool {

@@ -1,19 +1,25 @@
 // Results and error codes. An error is a code, never a value: nothing here can carry a cookie.
 
-export type ErrorCode =
-  | "unsupported_page" // not http(s): file:, about:, browser or extension pages
-  | "bad_session" // session name not 1-120 bytes, or with a control character (SessionName)
-  | "bad_ttl" // ttl outside TTL_RANGE
-  | "no_permission" // the person declined host access for the site
-  | "no_cookies" // nothing to hand over
-  | "host_unavailable" // native host not installed or crashed
-  | "host_refused" // the host answered with an error
-  | "bad_reply" // the host's answer is not protocol v1
-  | "storage_unavailable" // localStorage could not be read
-  | "bad_command" // a popup message the background does not understand
-  | "not_confirmed" // the person did not confirm the fill (Touch ID)
-  | "no_login_form" // the page has no password field to fill or read
-  | "page_changed"; // the tab left the site before the values arrived: nothing was filled
+/** Every error code. Read from a message, a code is checked against this list (`isErrorCode`). */
+export const ERROR_CODES = [
+  "unsupported_page", // not http(s): file:, about:, browser or extension pages
+  "bad_session", // session name not 1-120 bytes, or with a control character (SessionName)
+  "bad_ttl", // ttl outside TTL_RANGE
+  "no_permission", // the person declined host access for the site
+  "no_cookies", // nothing to hand over
+  "host_unavailable", // native host not installed or crashed
+  "host_refused", // the host answered with an error
+  "bad_reply", // the host's answer is not protocol v1, or the background's answer has the wrong shape
+  "storage_unavailable", // localStorage could not be read
+  "bad_command", // a popup message the background does not understand
+  "not_confirmed", // the person did not confirm the fill (Touch ID)
+  "no_login_form", // the page has no password field to fill or read
+  "page_changed", // the tab left the site before the values arrived: nothing was filled
+] as const;
+
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+export const isErrorCode = (value: unknown): value is ErrorCode => (ERROR_CODES as readonly unknown[]).includes(value);
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: ErrorCode };
 

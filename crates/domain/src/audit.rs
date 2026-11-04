@@ -106,6 +106,15 @@ impl AuditKind {
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|k| k.as_str() == value)
     }
+    /// Whether the record says an agent was refused: a value, a document outside its grants,
+    /// or refusals counted together under the per-second cap. The one place the admin app's
+    /// notices and its usage record screen read "거부" from (J-200).
+    pub fn is_denial(self) -> bool {
+        matches!(
+            self,
+            Self::SecretDenied | Self::DeniedSuppressed | Self::NavigationDenied
+        )
+    }
 }
 
 /// One usage event. `result` is a short outcome or reason code (`ok`, `policy`, `origin`, …).
@@ -143,6 +152,18 @@ impl AuditEvent {
     }
 }
 
+/// The `result` of a [`AuditKind::GrantChanged`] record. Stored, so the text never changes.
+pub mod grant_change {
+    pub const ADDED: &str = "added";
+    pub const REVOKED: &str = "revoked";
+    /// The cookies of an ended grant were removed.
+    pub const CLEARED: &str = "cleared";
+}
+
+/// The `result` of a [`AuditKind::NavigationDenied`] record: no grant covers the document's
+/// origin. Stored, so the text never changes.
+pub const OUT_OF_GRANT: &str = "out-of-grant";
+
 /// A stored event with its sequence number and UTC time (RFC 3339).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuditRecord {
@@ -164,5 +185,30 @@ mod tests {
             .origin(Some("https://github.com"));
         assert_eq!(event.item_name.as_deref(), Some("github"));
         assert_eq!(event.session_id, None);
+    }
+
+    #[test]
+    fn denials_are_refusals_of_a_value_or_a_document() {
+        let denials: Vec<&str> = AuditKind::ALL
+            .into_iter()
+            .filter(|k| k.is_denial())
+            .map(AuditKind::as_str)
+            .collect();
+        assert_eq!(
+            denials,
+            [
+                "secret_denied",
+                "secret_denied_suppressed",
+                "navigation_denied"
+            ]
+        );
+    }
+
+    #[test]
+    fn stored_results_keep_their_text() {
+        assert_eq!(grant_change::ADDED, "added");
+        assert_eq!(grant_change::REVOKED, "revoked");
+        assert_eq!(grant_change::CLEARED, "cleared");
+        assert_eq!(OUT_OF_GRANT, "out-of-grant");
     }
 }

@@ -1,10 +1,11 @@
 //! The item screens (09 §9.4, §9.4.2): metadata and placeholders, and "보기" for one value.
 
-use crate::Ctx;
+use super::ids::{field_name, item_name};
+use crate::{Ctx, auth::AuthScope};
 use anyhow::{Result, anyhow};
 use keyharbor_domain::{
     settings::{CLIPBOARD_CLEAR_SECONDS, clipboard_clear_after},
-    vault::{FieldName, ItemName, placeholder},
+    vault::placeholder,
 };
 use keyharbor_guard::reveal as guard_reveal;
 use serde::Serialize;
@@ -61,8 +62,9 @@ pub fn items(ctx: &Ctx) -> Result<Vec<ItemDto>> {
 
 /// One value, for the person at the app to see or copy (recorded by the guard).
 pub fn reveal(ctx: &Ctx, item: &str, field: &str) -> Result<String> {
-    let item = ItemName::parse(item).map_err(|e| anyhow!("{e}"))?;
-    let field = FieldName::parse(field).map_err(|e| anyhow!("{e}"))?;
+    ctx.challenge(AuthScope::Reveal)?;
+    let item = item_name(item)?;
+    let field = field_name(field)?;
     let value = guard_reveal::reveal(&*ctx.store()?, &ctx.vault()?, &item, &field)?;
     Ok(value.as_str().to_owned())
 }

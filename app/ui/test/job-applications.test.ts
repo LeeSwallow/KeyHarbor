@@ -11,7 +11,7 @@ import { settings } from "../src/views/settings.js";
 
 const session = (patch: Partial<Session>): Session => ({
   id: "s1", name: "jobs", state: "running", cdp: false, description: null, sites: [],
-  browser: "chrome", protection: "owned", failure: null, ...patch,
+  browser: "chrome", protection: "owned", failure: null, live: true, recoverable: false, ...patch,
 });
 const sessionsScreen = (list: Session[], egoLite = false) =>
   render({ ...initial, view: "sessions", sessions: list, browsers: { ego_lite: egoLite } });
@@ -28,18 +28,18 @@ describe("the sessions screen", () => {
     expect(shown(ego)).toContain("보호 낮음");
     expect(ego).toContain("넣은 값을 읽을 수 있습니다");
     // A stopped session's last browser is history, not a promise about the next run.
-    expect(sessionsScreen([session({ state: "stopped" })])).not.toContain(badge);
+    expect(sessionsScreen([session({ state: "stopped", live: false })])).not.toContain(badge);
   });
 
   it("says why a session did not start", () => {
-    const failed = session({ state: "failed", failure: "ego lite is not available" });
+    const failed = session({ state: "failed", live: false, recoverable: true, failure: "ego lite is not available" });
     const text = shown(sessionsScreen([failed]));
     expect(text).toContain("시작하지 못했습니다: ego lite is not available");
     expect(sessionsScreen([failed])).toContain('data-action="recover"');
   });
 
   it("offers a browser to open in only when ego lite is here", () => {
-    const stopped = [session({ state: "stopped" })];
+    const stopped = [session({ state: "stopped", live: false })];
     expect(sessionsScreen(stopped, false)).not.toContain('data-browser="ego-lite"');
     const both = sessionsScreen(stopped, true);
     expect(both).toContain('data-action="open-session" data-id="s1" data-browser="ego-lite"');
@@ -48,7 +48,7 @@ describe("the sessions screen", () => {
   });
 
   it("stopped_session_can_be_removed_with_undo", () => {
-    const list = [session({ state: "stopped" }), session({ id: "s2", name: "work", state: "stopped" })];
+    const list = [session({ state: "stopped", live: false }), session({ id: "s2", name: "work", state: "stopped", live: false })];
     const base = { ...initial, view: "sessions" as const, sessions: list };
     expect(render(base)).toContain('data-action="remove-session" data-id="s1" data-name="jobs"');
     expect(render({ ...base, sessions: [session({})] })).not.toContain('data-action="remove-session"');
@@ -63,14 +63,14 @@ describe("the sessions screen", () => {
 });
 
 const identity: KindForm = {
-  kind: "identity", domain: "personal", free_fields: false, custom_fields: true,
+  kind: "identity", domain: "personal", free_fields: false, custom_fields: true, generates: null,
   fields: [
     ["full_name", false], ["given_name", false], ["family_name", false], ["email", false], ["phone", false],
     ["birth_date", false], ["english_name", false], ["hanja_name", false], ["gender", false], ["nationality", false],
     ["emergency_phone", false], ["military_service", true], ["disability", true], ["veterans", true], ["note", true],
   ],
 };
-const login: KindForm = { kind: "login", domain: "credentials", free_fields: false, custom_fields: false, fields: [["username", false], ["password", true]] };
+const login: KindForm = { kind: "login", domain: "credentials", free_fields: false, custom_fields: false, generates: "password", fields: [["username", false], ["password", true]] };
 
 describe("the identity form", () => {
   it("identity_editor_groups_fields_and_adds_custom", () => {
@@ -110,7 +110,7 @@ describe("the identity form", () => {
   });
 });
 
-const setting = (key: string, value: string, def = ""): Setting => ({ key, value, default: def });
+const setting = (key: string, value: string, def = ""): Setting => ({ key, value, default: def, weakening: { when: "never" } });
 
 describe("the settings screen", () => {
   it("settings_lists_upload_dirs_and_default_browser", () => {
@@ -138,7 +138,7 @@ describe("the settings screen", () => {
 
 describe("a failed session", () => {
   it("shows no browser: the run never started", () => {
-    const failed = session({ state: "failed", failure: "x" });
+    const failed = session({ state: "failed", live: false, recoverable: true, failure: "x" });
     expect(sessionsScreen([failed])).not.toContain('<span class="kh-badge neutral">Chrome</span>');
   });
 });

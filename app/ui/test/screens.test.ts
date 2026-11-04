@@ -12,9 +12,9 @@ const state = {
     requests: [{ id: "r1", agent: "codex", kind: "card", name: "visa", origin: "https://shop.example", reason: "checkout" }],
     drafts: [{ name: "vercel", kind: "login", source: "generated", origins: [] }],
   },
-  sessions: [{ id: "s1", name: "work", state: "running", cdp: false, description: null, browser: null, protection: null, failure: null, sites: [{ origin: "https://github.com", state: "logged_in", item: null, checked_at: "" }] }],
+  sessions: [{ id: "s1", name: "work", state: "running", cdp: false, description: null, browser: null, protection: null, failure: null, live: true, recoverable: false, sites: [{ origin: "https://github.com", state: "logged_in", item: null, checked_at: "" }] }],
   policies: [{ agent: "codex", resource: "domain", target: "payment", effect: "deny" }],
-  audit: [{ at: "2026-10-29T05:02:00Z", agent: "codex", kind: "secret_denied", item: "bank", origin: null, result: "origin" }],
+  audit: [{ at: "2026-10-29T05:02:00Z", agent: "codex", kind: "secret_denied", denied: true, item: "bank", origin: null, result: "origin" }],
 };
 
 describe("every screen", () => {
@@ -50,12 +50,18 @@ describe("the home screen", () => {
   it("counts what waits the same way as the side bar", () => {
     const waiting = {
       ...state,
-      overview: { vault_ready: true, sessions_open: 1, requests_pending: 1, drafts: 1 },
+      overview: { vault_ready: true, sessions_open: 1, requests_pending: 1, drafts: 1, auth: "none" },
       handoffs: [{ session: "s1", session_name: "work", request_id: "h1", origin: null }],
     };
     const html = render(go(waiting, "home"));
     expect(html).toMatch(/확인 대기<\/span><strong>3<\/strong>/);
     expect(html).toMatch(/확인 대기<span class="kh-count">3<\/span>/);
+  });
+
+  it("shows the authentication method the app reports at the foot of the side bar", () => {
+    const shown = render(go({ ...state, overview: { vault_ready: true, sessions_open: 0, requests_pending: 0, drafts: 0, auth: "none" } }, "home"));
+    expect(shown).toContain('<div class="group">인증 없음</div></nav>');
+    expect(render(go({ ...state, overview: null }, "home"))).not.toContain("인증 없음");
   });
 });
 

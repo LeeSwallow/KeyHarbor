@@ -132,7 +132,7 @@ flowchart TB
 | 필드 암호화 | **XChaCha20-Poly1305** (AEAD) | `chacha20poly1305` (RustCrypto) | 192-bit nonce → 무작위 nonce 충돌 걱정이 없음. AES-NI 의존 없이 일정한 성능. OpenKeylet 선례 |
 | 난수 | OS CSPRNG | `rand_core::OsRng` / `getrandom` | |
 | 내보내기 키 유도 | **Argon2id** | `argon2` (RustCrypto) | 메모리 하드. RFC 9106 권고 |
-| 비밀 메모리 정리 | — | `zeroize`, `secrecy` | 평문·키의 drop 시 덮어쓰기 |
+| 비밀 메모리 정리 | — | `zeroize`, `secrecy` | 평문·키의 drop 시 덮어쓰기. age 가져오기는 필드 값을 역직렬화하자마자 `Zeroizing`에 담고, 내보내기 JSON은 지우는 버퍼에 쓴다. serde_json이 이스케이프된 문자열을 풀 때 쓰는 내부 작업 버퍼는 지우지 못한다(J-190) |
 | 비밀번호 생성 (관리 앱) | 균등 무작위 선택 | `rand` + `OsRng` | |
 
 알고리즘은 **직접 구현하지 않는다**(P7).
@@ -212,7 +212,7 @@ flowchart TD
 - raw CDP를 켠 세션은 모두 우회된다(N5).
 - **엔트로피가 낮은 값(4–6자리 PIN, 짧은 코드)은 S1 보장이 약하다.** I1 차단은 세션마다 세 번의 예/아니오 답을 남긴다(세 번째에 잠긴다). 새 세션마다 몇 비트씩 새어 나갈 수 있으므로 4자리 PIN은 수 개 세션이면 맞힐 수 있다. 짧은 값은 금고에 두되 에이전트 정책으로 막는 편이 안전하다.
 - 치환받은 요소를 가리는 것은 그 요소의 snapshot뿐이다. 페이지 스크립트가 편집된 값을 다른 요소·URL로 옮기면 변형이 맞지 않는 한 보인다. 스크린샷에서는 옮겨 그린 값을 가리지 못한다.
-- 3단계 구현: Aho-Corasick 오토마톤은 패턴 사본을 자기 메모리에 두며 해제할 때 지우지 않는다(`Zeroizing`은 패턴을 만드는 동안만). `keyharbor run`은 조각 단위로 가리며 값의 앞부분일 수 있는 끝 조각은 더 오거나 스트림이 끝날 때까지 붙잡는다(J-83). 그래서 마스커는 패턴 접두사의 키 있는 해시도 메모리에 둔다(오토마톤이 이미 값을 두므로 새 노출은 아니다). 자식이 값의 앞부분만 찍고 끝나면 그 조각은 가려지지 않는다. 값을 읽지 못하면 응답을 보내지 않는다(J-36).
+- 3단계 구현: Aho-Corasick 오토마톤은 패턴 사본을 자기 메모리에 두며 해제할 때 지우지 않는다(`Zeroizing`은 패턴을 만드는 동안만). `keyharbor run`은 조각 단위로 가리며 값의 앞부분일 수 있는 끝 조각은 더 오거나 스트림이 끝날 때까지 붙잡는다(J-83). 그래서 마스커는 패턴 접두사의 키 있는 해시도 메모리에 둔다(오토마톤이 이미 값을 두므로 새 노출은 아니다). 자식이 값의 앞부분만 찍고 끝나면 그 조각은 가려지지 않는다. 값을 읽지 못하거나 오토마톤을 만들지 못하면 응답을 보내지 않는다(J-36, J-150).
 
 ## 3.8 치환 입력의 origin 확인
 
@@ -291,7 +291,7 @@ classDiagram
   class Authenticator {
     <<trait>>
     +id() str
-    +challenge(scope) Result~Grant~
+    +challenge(scope) Result
   }
   class NoneAuth {
     +challenge() 항상 Grant
@@ -326,7 +326,35 @@ classDiagram
 - **이번 구현은 `NoneAuth`만** 만들고 기본값으로 쓴다. [사용자 결정 R-21]
 - `scope`는 `OpenApp`, `Reveal`, `Edit`, `Export`, `PolicyChange`로 나눈다. 사용자가 어떤 scope에 인증을 걸지 고르는 설정은 자리만 둔다.
 - 설정 화면은 "현재: 인증 없음 — 이 Mac 사용자 계정으로 접근할 수 있는 누구나 금고를 볼 수 있습니다"를 보여 준다. 막지 않는다(P2).
-- 관리 앱 인증은 **UI 통제**이며 VK를 보호하지 않는다(§3.3). CLI에서 `vault show`도 같은 trait을 거친다.
+- 관리 앱 인증은 **UI 통제**이며 VK를 보호하지 않는다(§3.3). CLI에는 평문 보기가 없으므로(§3.12 (A)) 이 trait을 부르는 쪽은 관리 앱뿐이다.
+
+**구현 위치** [설계자 판단 J-126]: port `Authenticator`·`AuthScope`와 어댑터 `NoneAuth`는 `app/src/auth.rs`에 있다(부르는 쪽이 앱 하나라 domain에 두지 않았다). `app/src/main.rs`가 `NoneAuth`를 `Ctx`에 한 번 넣고, 명령은 다른 일을 하기 전에 `ctx.challenge(scope)`를 부른다. 거절(`Refused`)이면 오류로 끝나고 아무것도 바뀌지 않는다. 시험은 `app/tests/auth.rs`.
+
+| scope | 앱의 호출 지점 (`app/src/commands/`) |
+|---|---|
+| `OpenApp` | `open_app`: 시작할 때(창은 숨긴 채로 뜬다)와 메뉴 막대 "열기". 시작할 때 거절되면 창은 숨긴 채 메뉴 막대에만 남고 "열기"가 다시 묻는다(J-177) |
+| `Reveal` | `reveal`, 이것을 거치는 `copy_value` |
+| `Edit` | 항목 추가·편집·이름 바꾸기·삭제, draft 확정·폐기, 정보 요청 응답·거절 |
+| `Export` | 앱에 내보내기 명령이 아직 없다. 생기면 같은 자리에서 부른다 |
+| `PolicyChange` | 설정 바꾸기, 규칙 추가·삭제 |
+
+```mermaid
+sequenceDiagram
+  participant 창 as 창 (ui)
+  participant 명령 as 앱 명령
+  participant 인증 as Authenticator
+  participant 처리 as core · guard
+  창->>명령: reveal(item, field)
+  명령->>인증: challenge(Reveal)
+  alt 통과 (NoneAuth는 언제나)
+    명령->>처리: guard reveal
+    처리-->>창: 값 (기록됨)
+  else Refused
+    명령-->>창: 오류, 아무것도 하지 않음
+  end
+```
+
+사이드바와 설정 화면의 "인증 없음"은 overview가 싣는 포트의 `id()`(`none`)에서 그린다.
 
 ## 3.11 알려진 한계 요약
 

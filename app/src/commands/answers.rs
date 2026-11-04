@@ -1,13 +1,14 @@
 //! What the person answers from the app: an agent's request for information (the secure input
 //! form, 09 §9.4.5) and a browser handed to them (resume).
 
-use crate::Ctx;
-use anyhow::{Context, Result, anyhow, bail};
+use super::ids::{self, item_name, request_id};
+use crate::{Ctx, auth::AuthScope};
+use anyhow::{Result, anyhow, bail};
 use keyharbor_core::{
     request::{self, Answer},
     session,
 };
-use keyharbor_domain::{RequestId, SessionId, policy::LOCAL_AGENT};
+use keyharbor_domain::policy::LOCAL_AGENT;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
@@ -32,10 +33,6 @@ pub struct RequestForm {
     /// Free-form names (env items): the person names each variable.
     pub free_fields: bool,
     pub custom_fields: bool,
-}
-
-fn request_id(id: &str) -> Result<RequestId> {
-    RequestId::parse(id).context("invalid request id")
 }
 
 /// Where the secure input window (09 §9.4.5) loads: the form for `id`, or for the oldest
@@ -85,6 +82,7 @@ pub fn request_form(ctx: &Ctx, id: &str) -> Result<RequestForm> {
 /// Stores the values the person typed as the requested item; returns its name. Empty values
 /// are left out; the values never come back.
 pub fn fulfill_request(ctx: &Ctx, id: &str, values: BTreeMap<String, String>) -> Result<String> {
+    ctx.challenge(AuthScope::Edit)?;
     let request = request::status(&*ctx.store()?, ctx.clock(), request_id(id)?)?;
     let mut fields = Vec::new();
     for (name, value) in values {
@@ -111,7 +109,8 @@ pub fn fulfill_request(ctx: &Ctx, id: &str, values: BTreeMap<String, String>) ->
 
 /// Answers a request with an item already in the vault.
 pub fn fulfill_with_item(ctx: &Ctx, id: &str, item: &str) -> Result<String> {
-    let name = keyharbor_domain::vault::ItemName::parse(item).map_err(|e| anyhow!("{e}"))?;
+    ctx.challenge(AuthScope::Edit)?;
+    let name = item_name(item)?;
     let answer = Answer::Existing(name);
     let item = request::fulfill(
         &*ctx.store()?,
@@ -136,7 +135,8 @@ pub fn handoffs(ctx: &Ctx) -> Result<Vec<HandoffDto>> {
     let (store, runtime) = (ctx.store()?, ctx.runtime());
     let mut out = Vec::new();
     for view in session::list(&*store, &*runtime)? {
-        if let Ok((request, origin)) = session::pending_handoff(&*store, &*runtime, view.row.id) {
+        // A store error stops the list; a session without a supervisor or a request is skipped.
+        if let Some((request, origin)) = session::find_handoff(&*store, &*runtime, view.row.id)? {
             out.push(HandoffDto {
                 session: view.row.id.to_string(),
                 session_name: view.row.name.as_str().to_owned(),
@@ -149,6 +149,6 @@ pub fn handoffs(ctx: &Ctx) -> Result<Vec<HandoffDto>> {
 }
 
 pub fn resume_handoff(ctx: &Ctx, session_id: &str, request: &str) -> Result<()> {
-    let id = SessionId::parse(session_id).context("invalid session id")?;
+    let id = ids::session_id(session_id)?;
     session::resume(&*ctx.store()?, &*ctx.runtime(), id, request, LOCAL_AGENT)
 }

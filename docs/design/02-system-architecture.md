@@ -117,11 +117,11 @@ flowchart TB
 
 | crate | 계층 | 의존 가능 (정상 의존) | 핵심 타입·책임 |
 |---|---|---|---|
-| `keyharbor-domain` | domain + ports | 없음 | `SessionId`·`State`·`Generation`(만들기는 `crypto::random::id`), `vault`(`ItemKind`, `KINDS`, `Origin`, placeholder 문법 `PLACEHOLDER_OPEN`·`Display for PlaceholderRef`), `policy`(`Rule`, 요청자 `AgentName`), `settings`(`SETTINGS`), `audit`, `secret`(`SecretKey`, `VaultError`), `ports`(trait; 브라우저 대상 `Target`·`FillOutcome`, 시계 `Clock`·`ManualClock`, `RotationLock`) |
+| `keyharbor-domain` | domain + ports | 없음 | 컨텍스트마다 폴더 하나(`vault`, `session`, `site`, `access`; J-170). `session`(`SessionId`·`State`·`Generation`, 만들기는 `crypto::random::id`; 시작 URL 검사), `vault`(`ItemKind`, `KINDS`, `Origin`, placeholder 문법 `PLACEHOLDER_OPEN`·`Display for PlaceholderRef`), `access`(`policy`의 `Rule`·요청자 `AgentName`, `grant`, `denial`), `settings`(`SETTINGS`), `audit`, `secret`(`SecretKey`, `VaultError`), `ports`(trait; 저장 port는 `ports/store`, 브라우저 대상 `Target`·`FillOutcome`, 시계 `Clock`·`ManualClock`, `RotationLock`) |
 | `keyharbor-crypto` | crypto | domain | 모든 암호 원시 연산과 난수, v4 id(`random::{uuid_v4, id}`) ([ADR-0016](adr/0016-crypto-crate.md)) |
 | `keyharbor-vault` | 안쪽 (형식) | domain, crypto | 레코드 seal/open, 키 분리, 메타 MAC, 키 ID(I/O 없음) |
 | `keyharbor-keystore` | adapter | domain | `KeyStore` 구현: `KeychainKeyStore`(macOS login keychain, 다른 OS는 오류만 내는 자리), 테스트용 `FileKeyStore`, `test_keystore_dir`(기능 `insecure-test-keystore`일 때만). security-framework는 여기에만(규칙 G) |
-| `keyharbor-core` | application | domain, vault(레코드 함수만), crypto | `Vault` 유스케이스(`vault/{open, items, summary, resolve}`, 에이전트용 `catalog`), `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `PlaintextAccess` |
+| `keyharbor-core` | application | domain, vault(레코드 함수만), crypto | `Vault` 유스케이스(`vault/{items, summary, resolve}`, 키 `vault/keys/{open, developer, rotate}`, 초안 `vault/drafts`, 에이전트용 `catalog`), `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `transfer/{backup, chrome, dotenv}`, `PlaintextAccess` |
 | `keyharbor-guard` | security | domain, core | `pdp::decide`, `pep::substitute`, `pep::mask::Masker`, `pep::origin`, `audit`, `run`, `items`(항목 add/edit 순서), `session`(세션 작업 → 정책 Action 표), `Guard`, `GuardedBrowser` |
 | `keyharbor-sqlite` | adapter | domain, crypto(id 난수만) | `SqliteStore`(저장소 포트 전부, `RotationLock` = 데이터 폴더의 `vault.lock`), `SqliteStores`(`StoreFactory`), 컨텍스트 레지스트리 |
 | `keyharbor-broker` | adapter (Chrome) | domain | `chrome`(Chrome 실행, CDP pipe `CdpLink`, `DevToolsActivePort` 해석), `CdpBrowser`(`BrowserPort`·`PageInput`·`FrameInspector`). supervisor만 의존한다(규칙 B) |
@@ -129,7 +129,7 @@ flowchart TB
 | `keyharbor-mcp` | interface | domain, core, guard, supervisor | `server`, `scope`, `tools/{session, browser, vault}`. 저장소·금고 opener·런타임·시계는 생성자로 받는다(`Deps`) |
 | `keyharbor` (CLI) | interface | domain, core, guard, sqlite, keystore, supervisor, mcp | `compose`(composition root: `SystemClock`, `keystore_from_env`), clap 명령, 파일 읽기·쓰기(`vault_cmd::files`, `run`의 `--env-file`), 감독자 조립(`__supervise`) |
 
-`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 crypto만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음, 표면(CLI `*_cmd`·MCP)은 저장소를 열거나 저장소 포트를 부르지 않음(규칙 A), 세션 수준 `Action`은 guard의 표만 고름(규칙 J), placeholder 문법은 domain에만(규칙 H), 요청자 이름 `*` 금지는 domain `AgentName`에만(규칙 I), broker는 domain에만 의존하고 supervisor만 broker에 의존(규칙 B), 제어 요청의 `"op"`은 `supervisor::control::wire`에만(규칙 K), 안쪽 crate(domain·crypto·vault·core·guard)는 파일·프로세스·socket·환경 변수·시계·sleep·출력을 쓰지 않음(규칙 C)과 드라이버 crate에 의존하지 않음(규칙 D), domain의 `serde_json`은 `ports/browser.rs`의 페이지 결과에만(규칙 E), 난수는 crypto만이고 uuid `v4` 기능은 아무도 켜지 않음(규칙 F), security-framework·rmcp·clap은 각자 어댑터 crate에만(규칙 G). `scripts/test-scripts.sh`가 규칙마다 위반을 심은 사본(`CHECK_LAYERS_ROOT`)으로 검사가 실패하는지 확인한다.
+`scripts/check-layers.sh`가 이 표와 다음 규칙을 CI(repo-checks)에서 검사한다: 암호 원시 crate(`chacha20poly1305`·`hkdf`·`hmac`)는 crypto만, rusqlite 금지, 운영 코드의 `sql_query`·`batch_execute` 금지(마이그레이션과 테스트만), `PlaintextAccess::issue` 호출은 guard·core export·테스트만, broker의 raw CDP 모듈 비공개, 영속성 컨텍스트끼리 models·mappers·repo를 가져다 쓰지 않음, 표면(composition root를 뺀 CLI 전체·MCP, 깊이와 상관없이)은 저장소를 열거나 저장소 포트를 부르지 않음(규칙 A), 세션 수준 `Action`은 guard의 표만 고름(규칙 J), placeholder 문법은 domain에만(규칙 H), 요청자 이름 `*` 금지는 domain `AgentName`에만(규칙 I), broker는 domain에만 의존하고 supervisor만 broker에 의존(규칙 B), 제어 요청의 `"op"`은 `supervisor::control::wire`에만(규칙 K), 안쪽 crate(domain·crypto·vault·core·guard)는 파일·프로세스·socket·환경 변수·시계·sleep·출력을 쓰지 않음(규칙 C)과 드라이버 crate에 의존하지 않음(규칙 D), domain의 `serde_json`은 `ports/browser.rs`의 페이지 결과에만(규칙 E), 난수는 crypto만이고 uuid `v4` 기능은 아무도 켜지 않음(규칙 F), security-framework·rmcp·clap은 각자 어댑터 crate에만(규칙 G). `scripts/test-scripts.sh`가 규칙마다 위반을 심은 사본(`CHECK_LAYERS_ROOT`)으로 검사가 실패하는지 확인한다.
 
 ### 2.4.0 표면과 composition root
 
@@ -173,7 +173,7 @@ flowchart LR
 
 ### 2.4.2 세션 유스케이스와 런타임 포트
 
-세션 열기·멈추기·인계·복구·endpoint의 순서와 오류 메시지는 `keyharbor-core::session`에 있고 프로세스·OS 잠금·socket·`DevToolsActivePort` 파일은 `SessionRuntime` 포트 뒤(`keyharbor-supervisor`의 `ProcessRuntime`)에 있다. 감독자가 자기 실행에 기록하는 상태(예약 확인, `starting → running/failed`, 브라우저 종료 뒤 `stopped/failed`)의 규칙은 `core::session::supervision`에 있고 감독자는 그것을 부른다. 감독자 프로세스는 `StoreFactory`(SQLite 어댑터), 금고 opener, headless 여부를 composition root에게서 받는다(`keyharbor_supervisor::Adapters`). 감독자 argv는 `SuperviseArgs` 하나가 쓰고 읽는다. [J-47, J-74]
+세션 열기·멈추기·인계·복구·endpoint의 순서와 오류 메시지는 `keyharbor-core::session`에 있고 프로세스·OS 잠금·socket·`DevToolsActivePort` 파일은 `SessionRuntime` 포트 뒤(`keyharbor-supervisor`의 `ProcessRuntime`)에 있다. 감독자가 자기 실행에 기록하는 상태(예약 확인, `starting → running/failed`, 브라우저 종료 뒤 `stopped/failed`)의 규칙은 `core::session::supervision`에 있고 감독자는 그것을 부른다. 예약을 확인한 뒤 브라우저가 뜨기 전까지의 검사와 조립(시작 페이지와 grant, 경로 준비, 세션 행·설정 읽기, 비동기 런타임)은 `process::launch::launch_for` 하나로 묶여, 어느 단계가 실패해도 세션은 `starting`에 남지 않고 `failed`와 사유가 기록된다 [J-180]. 감독자 프로세스는 `StoreFactory`(SQLite 어댑터), 금고 opener, headless 여부를 composition root에게서 받는다(`keyharbor_supervisor::Adapters`). 감독자 argv는 `SuperviseArgs` 하나가 쓰고 읽는다. [J-47, J-74]
 
 ```mermaid
 flowchart LR

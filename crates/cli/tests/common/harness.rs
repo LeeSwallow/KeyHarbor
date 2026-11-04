@@ -9,7 +9,13 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
+
+/// How long `call_until` waits for a page to settle. Generous: it only bounds a failing test.
+const PAGE_SETTLE_LIMIT: Duration = Duration::from_secs(20);
+const PAGE_SETTLE_POLL: Duration = Duration::from_millis(100);
 
 pub struct Harness {
     pub tmp: tempfile::TempDir,
@@ -110,6 +116,40 @@ impl Harness {
     pub fn ok_call(&self, request: Value) -> Value {
         let op = request["op"].clone();
         self.call(request).unwrap_or_else(|e| panic!("{op}: {e:#}"))
+    }
+    /// Repeats `request` until `ready` accepts its result or `PAGE_SETTLE_LIMIT` passes, and
+    /// returns the last result either way, so the caller's assertion reports what it saw.
+    /// For waiting on what a page does after a click (a navigation, a frame loading) instead
+    /// of sleeping a fixed time, which a loaded CI machine outruns. Every result still goes
+    /// into the transcript, so `assert_absent` checks the intermediate ones too.
+    pub fn call_until(&self, request: Value, ready: impl Fn(&Value) -> bool) -> Value {
+        let deadline = Instant::now() + PAGE_SETTLE_LIMIT;
+        loop {
+            let result = self.ok_call(request.clone());
+            if ready(&result) || Instant::now() >= deadline {
+                return result;
+            }
+            thread::sleep(PAGE_SETTLE_POLL);
+        }
+    }
+    /// `tabs`, once some tab's URL contains `fragment`.
+    pub fn tabs_once_at(&self, fragment: &str) -> Value {
+        self.call_until(json!({"op": "tabs"}), |tabs| {
+            tabs.as_array().is_some_and(|tabs| {
+                tabs.iter().any(|tab| {
+                    tab["url"]
+                        .as_str()
+                        .is_some_and(|url| url.contains(fragment))
+                })
+            })
+        })
+    }
+    /// The snapshot text, once `ready` accepts it.
+    pub fn snapshot_once(&self, ready: impl Fn(&str) -> bool) -> String {
+        let result = self.call_until(json!({"op": "snapshot"}), |snapshot| {
+            snapshot["text"].as_str().is_some_and(&ready)
+        });
+        result["text"].as_str().unwrap().to_owned()
     }
     pub fn denied(&self, request: Value) -> String {
         let error = self.call(request).expect_err("should be denied");

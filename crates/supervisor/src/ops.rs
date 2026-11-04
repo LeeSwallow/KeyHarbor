@@ -1,192 +1,72 @@
-//! Control operations: one JSON request → one command, dispatched to the session's browser
-//! through `GuardedBrowser`, the only path from the control socket to the page. The guard
-//! resolves placeholders in `fill`/`type` text and masks every result and error exactly once;
-//! requests that never reach the browser (`status`, malformed requests) are masked here.
+//! Control operations: one parsed [`Command`] dispatched to the session's browser through
+//! `GuardedBrowser`, the only path from the control socket to the page. The guard resolves
+//! placeholders in `fill`/`type` text and masks every result and error exactly once;
+//! requests that never reach the browser (`status`, malformed or refused requests) are
+//! masked here.
 
 use crate::{
-    control::wire::{
-        ControlEnvelope, ControlRequest, FillResultWire, LoginResultWire, login_submits,
+    control::{
+        command::{Command, parse},
+        wire::{FillResultWire, LoginResultWire},
     },
     process::Shared,
     upload_files,
 };
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use keyharbor_broker::CdpBrowser;
 use keyharbor_core::grant;
 use keyharbor_domain::{
+    State,
     audit::{AuditEvent, AuditKind},
-    handoff_site::{self, SiteCookie},
-    policy::AgentName,
-    ports::{
-        BrowserPort,
-        browser::{Choice, Target, WaitFor},
-    },
-    vault::{ItemName, Origin},
+    handoff_site::SiteCookie,
+    ports::BrowserPort,
+    upload::UploadPolicy,
+    vault::Origin,
 };
-use serde::Deserialize;
+use keyharbor_guard::{audit, lock_store};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
-/// A control request in our words.
-enum Command {
-    Navigate(String),
-    Snapshot,
-    Screenshot,
-    Click(Target),
-    Fill(Target, String),
-    Select(Target, Choice),
-    Upload(Target, Vec<String>),
-    Type(String),
-    Press(String),
-    Tabs,
-    NewTab(Option<String>),
-    SwitchTab(String),
-    Wait(WaitFor),
-    /// Fill a login item into the page's sign-in form (R-39).
-    Login {
-        item: ItemName,
-        submit: bool,
-    },
-    /// A site handed over by the native host (R-42).
-    ReceiveSite {
-        origin: Origin,
-        cookies: Vec<SiteCookie>,
-        local_storage: Option<BTreeMap<String, Zeroizing<String>>>,
-        ttl_seconds: u64,
-    },
-    Close,
-    Status,
-}
-
-impl Command {
-    /// Commands that act on the page. While the session is handed to the user they are
-    /// refused: the person at the browser is the only one typing, so what capture sees is
-    /// theirs (J-80). Reading the page (snapshot, tabs, screenshot, wait) still works.
-    /// The document a command loads, if it names one.
-    fn document(&self) -> Option<&str> {
-        match self {
-            Self::Navigate(url) | Self::NewTab(Some(url)) => Some(url),
-            _ => None,
-        }
-    }
-
-    fn is_input(&self) -> bool {
-        matches!(
-            self,
-            Self::Navigate(_)
-                | Self::Click(_)
-                | Self::Fill(..)
-                | Self::Select(..)
-                | Self::Upload(..)
-                | Self::Type(_)
-                | Self::Press(_)
-                | Self::NewTab(_)
-                | Self::SwitchTab(_)
-                | Self::Login { .. }
-        )
-    }
-}
+/// The refusal for a document outside the session's grants (also at start, before the browser).
+pub(crate) const DENIED_OUT_OF_GRANT: &str = "denied: navigation (out-of-grant)";
+/// The refusal for page input while the browser is with the user.
+const DENIED_WITH_USER: &str =
+    "the browser is with the user until they resume; call session_wait_for_resume";
 
 /// Whether the session's grants let it load `url` (R-43). The page watcher enforces the
 /// same rule for every document; checking here gives the agent a plain refusal.
 fn in_grants(shared: &Shared, url: &str) -> Result<bool> {
-    let store = shared
-        .store
-        .lock()
-        .map_err(|_| anyhow!("store lock poisoned"))?;
-    keyharbor_core::grant::allows(&**store, &*shared.clock, shared.id, url)
+    let store = lock_store(&shared.store)?;
+    grant::allows(&**store, &*shared.clock, shared.id, url)
 }
 
 /// The person's upload rule, read now so a change applies to the next request.
-fn upload_policy(shared: &Shared) -> Result<keyharbor_domain::upload::UploadPolicy> {
-    let store = shared
-        .store
-        .lock()
-        .map_err(|_| anyhow!("store lock poisoned"))?;
+fn upload_policy(shared: &Shared) -> Result<UploadPolicy> {
+    let store = lock_store(&shared.store)?;
     upload_files::policy(&**store, &upload_files::home())
 }
 
 /// Whether the session is waiting for the user (a handoff is open).
 fn with_user(shared: &Shared) -> Result<bool> {
-    let store = shared
-        .store
-        .lock()
-        .map_err(|_| anyhow!("store lock poisoned"))?;
+    let store = lock_store(&shared.store)?;
     Ok(store
         .get(shared.id)?
-        .is_some_and(|row| row.state == keyharbor_domain::State::AwaitingUser))
+        .is_some_and(|row| row.state == State::AwaitingUser))
 }
 
-/// The agent (`cli` when absent) and the command a request asks for.
-fn parse(request: &Value) -> Result<(String, Command)> {
-    let envelope = ControlEnvelope::deserialize(request).context("invalid request")?;
-    let agent = match envelope.agent {
-        None => AgentName::local(),
-        Some(agent) => AgentName::parse(&agent).map_err(|e| anyhow!("{e}"))?,
+/// The refusal for `command` before it reaches the browser, if any: a document outside the
+/// session's grants (R-43), or page input while the browser is with the user (J-80).
+fn precheck(shared: &Shared, command: &Command) -> Result<Option<&'static str>> {
+    if let Some(url) = command.document()
+        && !in_grants(shared, url)?
+    {
+        return Ok(Some(DENIED_OUT_OF_GRANT));
     }
-    .as_str()
-    .to_owned();
-    let command = match envelope.request {
-        ControlRequest::Navigate { url } => Command::Navigate(url),
-        ControlRequest::Snapshot => Command::Snapshot,
-        ControlRequest::Screenshot => Command::Screenshot,
-        ControlRequest::Click { target } => Command::Click(target.into()),
-        ControlRequest::Fill { target, text } => Command::Fill(target.into(), text),
-        ControlRequest::Select {
-            target,
-            value,
-            label,
-            index,
-        } => Command::Select(
-            target.into(),
-            match (value, label, index) {
-                (Some(value), None, None) => Choice::Value(value),
-                (None, Some(label), None) => Choice::Label(label),
-                (None, None, Some(index)) => Choice::Index(index),
-                _ => anyhow::bail!("select needs exactly one of value, label or index"),
-            },
-        ),
-        ControlRequest::Upload { target, files } => Command::Upload(target.into(), files),
-        ControlRequest::Type { text } => Command::Type(text),
-        ControlRequest::Press { key } => Command::Press(key),
-        ControlRequest::Tabs => Command::Tabs,
-        ControlRequest::NewTab { url } => Command::NewTab(url),
-        ControlRequest::SwitchTab { id } => Command::SwitchTab(id),
-        ControlRequest::Wait { ms, selector } => Command::Wait(match (selector, ms) {
-            (Some(selector), _) => WaitFor::Selector(selector),
-            (None, Some(ms)) => WaitFor::Millis(ms),
-            (None, None) => anyhow::bail!("wait needs ms or selector"),
-        }),
-        ControlRequest::Login { item, submit } => Command::Login {
-            item: ItemName::parse(&item).map_err(|e| anyhow!("{e}"))?,
-            submit: login_submits(submit),
-        },
-        ControlRequest::ReceiveSite {
-            origin,
-            cookies,
-            local_storage,
-            ttl_seconds,
-        } => {
-            let origin = Origin::parse(&origin).map_err(|e| anyhow!("{e}"))?;
-            let cookies: Vec<SiteCookie> = cookies.into_iter().map(Into::into).collect();
-            handoff_site::check(&origin, &cookies, ttl_seconds).map_err(|e| anyhow!("{e}"))?;
-            Command::ReceiveSite {
-                origin,
-                cookies,
-                local_storage: local_storage.map(|items| {
-                    items
-                        .into_iter()
-                        .map(|(k, v)| (k, Zeroizing::new(v)))
-                        .collect()
-                }),
-                ttl_seconds,
-            }
-        }
-        ControlRequest::Close => Command::Close,
-        ControlRequest::Status => Command::Status,
-    };
-    Ok((agent, command))
+    if command.is_input() && with_user(shared)? {
+        return Ok(Some(DENIED_WITH_USER));
+    }
+    Ok(None)
 }
 
 pub(crate) struct Ops {
@@ -204,15 +84,8 @@ impl Ops {
             Ok(parsed) => parsed,
             Err(error) => return guard.redact_outcome(Err(error)),
         };
-        if let Some(url) = command.document()
-            && !in_grants(shared, url)?
-        {
-            return guard.redact_outcome(Err(anyhow!("denied: navigation (out-of-grant)")));
-        }
-        if command.is_input() && with_user(shared)? {
-            return guard.redact_outcome(Err(anyhow!(
-                "the browser is with the user until they resume; call session_wait_for_resume"
-            )));
+        if let Some(refusal) = precheck(shared, &command)? {
+            return guard.redact_outcome(Err(anyhow!(refusal)));
         }
         // Not an agent's page operation: it talks to the browser directly (cookies, not text).
         if let Command::ReceiveSite {
@@ -233,7 +106,13 @@ impl Ops {
                 .await;
             return guard.redact_outcome(received);
         }
-        let mut browser = guard.browser(&mut self.browser, &agent);
+        self.on_page(shared, &agent, command).await
+    }
+
+    /// Runs a page command through the guard, which masks its outcome.
+    async fn on_page(&mut self, shared: &Shared, agent: &str, command: Command) -> Result<Value> {
+        let guard = &shared.guard;
+        let mut browser = guard.browser(&mut self.browser, agent);
         match command {
             Command::Navigate(url) => browser.navigate(&url).await,
             Command::Snapshot => browser.snapshot().await,
@@ -268,9 +147,7 @@ impl Ops {
             Command::ReceiveSite { .. } => Err(anyhow!("receive_site is handled above")),
         }
     }
-}
 
-impl Ops {
     /// Grants the site for `ttl_seconds`, puts its cookies (and `localStorage`) into the
     /// profile and opens it (R-42). The grant comes first so the gate lets the origin load.
     async fn receive_site(
@@ -281,25 +158,20 @@ impl Ops {
         local_storage: Option<&BTreeMap<String, Zeroizing<String>>>,
         ttl_seconds: u64,
     ) -> Result<Value> {
-        {
-            let store = shared
-                .store
-                .lock()
-                .map_err(|_| anyhow!("store lock poisoned"))?;
-            grant::add_for_handoff(
-                &**store,
-                &*shared.clock,
-                shared.id,
-                origin.clone(),
-                ttl_seconds,
-            )?;
-        }
+        grant::add_for_handoff(
+            &**lock_store(&shared.store)?,
+            &*shared.clock,
+            shared.id,
+            origin.clone(),
+            ttl_seconds,
+        )?;
         let count = self
             .browser
             .receive_site(origin.as_str(), cookies, local_storage)
             .await?;
-        if let Ok(store) = shared.store.lock() {
-            let _ = store.record(
+        if let Ok(store) = lock_store(&shared.store) {
+            audit::record(
+                &**store,
                 &AuditEvent::new(grant::HANDOFF, AuditKind::SiteHandedOff, &count.to_string())
                     .session(shared.id)
                     .origin(Some(origin.as_str())),
@@ -315,64 +187,9 @@ fn wire<T, W: serde::Serialize>(outcome: Result<T>, shape: impl FnOnce(T) -> W) 
 }
 
 fn status(shared: &Shared) -> Result<Value> {
-    let store = shared
-        .store
-        .lock()
-        .map_err(|_| anyhow!("store lock poisoned"))?;
-    let row = store.get(shared.id)?;
+    let row = lock_store(&shared.store)?.get(shared.id)?;
     Ok(json!({
         "state": row.as_ref().map(|r| r.state.as_str()),
         "generation": shared.generation.to_string(),
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use keyharbor_domain::policy::LOCAL_AGENT;
-
-    #[test]
-    fn requests_name_a_real_agent() {
-        let (agent, _) = parse(&json!({"op": "snapshot"})).unwrap();
-        assert_eq!(agent, LOCAL_AGENT);
-        let (agent, _) = parse(&json!({"op": "snapshot", "agent": "claude"})).unwrap();
-        assert_eq!(agent, "claude");
-        for bad in [json!("*"), json!(""), json!("a b"), json!(3)] {
-            assert!(
-                parse(&json!({"op": "snapshot", "agent": bad})).is_err(),
-                "{bad}"
-            );
-        }
-    }
-
-    #[test]
-    fn select_is_refused_while_awaiting_user() {
-        let (_, command) = parse(&json!({
-            "op": "select", "target": {"ref": 3}, "label": "Exempt"
-        }))
-        .unwrap();
-        assert!(
-            matches!(command, Command::Select(Target::Ref(3), Choice::Label(ref l)) if l == "Exempt")
-        );
-        assert!(
-            command.is_input(),
-            "a person at the browser is the only one choosing"
-        );
-    }
-
-    #[test]
-    fn select_needs_exactly_one_choice() {
-        for request in [
-            json!({"op": "select", "target": {"ref": 3}}),
-            json!({"op": "select", "target": {"ref": 3}, "value": "a", "index": 1}),
-        ] {
-            let Err(error) = parse(&request) else {
-                panic!("{request} should be refused");
-            };
-            assert_eq!(
-                error.to_string(),
-                "select needs exactly one of value, label or index"
-            );
-        }
-    }
 }

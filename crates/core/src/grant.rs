@@ -1,16 +1,21 @@
 //! Grants (R-43): adding (a weakening, so a person confirms), listing, revoking, and the
 //! rule a supervisor applies to every document its browser loads.
 
-use crate::{session::session, weaken};
+use crate::{
+    session::{ResumeWait, poll, session},
+    weaken,
+};
 use anyhow::{Context, Result};
 use keyharbor_crypto::random;
 use keyharbor_domain::{
     SessionId,
-    audit::{AuditEvent, AuditKind},
+    audit::{AuditEvent, AuditKind, OUT_OF_GRANT, grant_change},
     grant::{Grant, GrantId, GrantTtl, allows_document},
+    policy::{HANDOFF_AGENT, SESSION_AGENT},
     ports::{Clock, Confirm, Store},
     vault::{Description, Origin},
 };
+use std::{ops::Deref, time::Duration};
 
 /// What a person grants.
 #[derive(Clone, Debug)]
@@ -59,12 +64,18 @@ pub fn add(
         cleared: false,
     };
     store.grant_add(&grant)?;
-    note(store, agent, AuditKind::GrantChanged, &grant, "added");
+    note(
+        store,
+        agent,
+        AuditKind::GrantChanged,
+        &grant,
+        grant_change::ADDED,
+    );
     Ok(grant)
 }
 
 /// Who the record names for a grant made by handing a site over.
-pub const HANDOFF: &str = "handoff";
+pub const HANDOFF: &str = HANDOFF_AGENT;
 
 /// The grant a site handoff makes (R-42): the person handing the site over from their own
 /// browser is the confirmation, so nothing is asked (spec §3). Lasts `ttl_seconds`.
@@ -89,7 +100,13 @@ pub fn add_for_handoff(
         cleared: false,
     };
     store.grant_add(&grant)?;
-    note(store, HANDOFF, AuditKind::GrantChanged, &grant, "added");
+    note(
+        store,
+        HANDOFF,
+        AuditKind::GrantChanged,
+        &grant,
+        grant_change::ADDED,
+    );
     Ok(grant)
 }
 
@@ -109,6 +126,26 @@ pub fn handed_off(
         .max_by_key(|g| g.created_at))
 }
 
+/// Waits up to `wait` for a site to be handed over to session `id` from now on, for `origin`
+/// if given ([`handed_off`]), sleeping with `sleep` between looks: `None` when the wait ran
+/// out. `store` is called once per look, so a shared store is held for one look at a time and
+/// not for the whole wait. `session receive` and `session_wait_site` both wait with this.
+pub fn wait_handed_off<G, S>(
+    store: impl Fn() -> Result<G>,
+    clock: &dyn Clock,
+    id: SessionId,
+    origin: Option<&Origin>,
+    wait: ResumeWait,
+    sleep: impl FnMut(Duration),
+) -> Result<Option<Grant>>
+where
+    G: Deref<Target = S>,
+    S: Deref<Target = dyn Store> + ?Sized,
+{
+    let since = clock.unix_seconds();
+    poll(wait, || handed_off(&**store()?, id, since, origin), sleep)
+}
+
 pub fn list(store: &dyn Store, id: SessionId) -> Result<Vec<Grant>> {
     session(store, id)?;
     store.grants_for(id)
@@ -120,7 +157,13 @@ pub fn revoke(store: &dyn Store, clock: &dyn Clock, agent: &str, id: GrantId) ->
     if !store.grant_revoke(id, clock.unix_seconds())? {
         anyhow::bail!("grant was already revoked");
     }
-    note(store, agent, AuditKind::GrantChanged, &grant, "revoked");
+    note(
+        store,
+        agent,
+        AuditKind::GrantChanged,
+        &grant,
+        grant_change::REVOKED,
+    );
     Ok(grant)
 }
 
@@ -133,7 +176,7 @@ pub fn allows(store: &dyn Store, clock: &dyn Clock, id: SessionId, url: &str) ->
             .ok()
             .map(|u| u.origin().ascii_serialization());
         let _ = store.record(
-            &AuditEvent::new("session", AuditKind::NavigationDenied, "out-of-grant")
+            &AuditEvent::new(SESSION_AGENT, AuditKind::NavigationDenied, OUT_OF_GRANT)
                 .session(id)
                 .origin(origin.as_deref()),
         );
@@ -154,7 +197,13 @@ pub fn ended_uncleared(store: &dyn Store, clock: &dyn Clock, id: SessionId) -> R
 /// Records that an ended grant's cookies were removed.
 pub fn cleared(store: &dyn Store, grant: &Grant) -> Result<()> {
     store.grant_mark_cleared(grant.id)?;
-    note(store, "session", AuditKind::GrantChanged, grant, "cleared");
+    note(
+        store,
+        SESSION_AGENT,
+        AuditKind::GrantChanged,
+        grant,
+        grant_change::CLEARED,
+    );
     Ok(())
 }
 
@@ -244,6 +293,34 @@ mod tests {
     }
 
     #[test]
+    fn waiting_for_a_handoff_counts_only_sites_handed_over_after_it_began() {
+        let (_tmp, store, id) = setup();
+        let clock = ManualClock::at_unix_seconds(1_000);
+        let github = Origin::parse("https://github.com").unwrap();
+        add_for_handoff(&store, &clock, id, github.clone(), 600).unwrap();
+        clock.advance(Duration::from_secs(1));
+        let store: Box<dyn Store> = Box::new(store);
+        let looks = std::cell::Cell::new(0);
+        let look = || {
+            looks.set(looks.get() + 1);
+            Ok(&store)
+        };
+        let wait = ResumeWait::seconds(Some(1)).unwrap();
+        let none = wait_handed_off(look, &clock, id, None, wait, |_| {}).unwrap();
+        assert!(none.is_none(), "handed over before the wait began");
+        assert!(looks.get() > 1, "looked again until the wait ran out");
+        let mut handed = false;
+        let sleep = |_| {
+            if !handed {
+                handed = true;
+                add_for_handoff(&*store, &clock, id, github.clone(), 600).unwrap();
+            }
+        };
+        let got = wait_handed_off(|| Ok(&store), &clock, id, Some(&github), wait, sleep);
+        assert_eq!(got.unwrap().map(|g| g.origin), Some(github));
+    }
+
+    #[test]
     fn a_grant_needs_a_person_and_limits_the_session_until_it_ends() {
         let (_tmp, store, id) = setup();
         let clock = ManualClock::at_unix_seconds(1_000);
@@ -325,5 +402,38 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn grant_records_keep_their_stored_text() {
+        let (_tmp, store, id) = setup();
+        let clock = ManualClock::at_unix_seconds(1_000);
+        let origin = Origin::parse("https://github.com").unwrap();
+        let handed = add_for_handoff(&store, &clock, id, origin, 600).unwrap();
+        assert_eq!(handed.created_by, "handoff");
+        let typed = add(&store, &clock, &Says(Answer::Yes), "cli", github(id, None)).unwrap();
+        revoke(&store, &clock, "cli", typed.id).unwrap();
+        cleared(&store, &typed).unwrap();
+        assert!(!allows(&store, &clock, id, "https://example.com/").unwrap());
+
+        let records: Vec<_> = store
+            .list_audit(None)
+            .unwrap()
+            .into_iter()
+            .map(|r| (r.event.agent, r.event.kind, r.event.result))
+            .collect();
+        let expected = [
+            ("handoff", AuditKind::GrantChanged, "added"),
+            ("cli", AuditKind::GrantChanged, "added"),
+            ("session", AuditKind::GrantChanged, "cleared"),
+            ("cli", AuditKind::GrantChanged, "revoked"),
+            ("session", AuditKind::NavigationDenied, "out-of-grant"),
+        ];
+        for (agent, kind, result) in expected {
+            assert!(
+                records.contains(&(agent.into(), kind, result.into())),
+                "{agent} {kind:?} {result} in {records:?}"
+            );
+        }
     }
 }

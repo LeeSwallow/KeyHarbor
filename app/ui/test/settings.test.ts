@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { Setting } from "../src/api.js";
+import type { Setting, Weakening } from "../src/api.js";
 import { settings } from "../src/views/settings.js";
 
+const never: Weakening = { when: "never" };
 const all: Setting[] = [
-  { key: "audit_enabled", value: "true", default: "true" },
-  { key: "capture_enabled", value: "false", default: "false" },
-  { key: "default_item_ttl", value: "none", default: "none" },
-  { key: "draft_ttl", value: "45d", default: "7d" },
-  { key: "clipboard_clear_seconds", value: "30", default: "30" },
-  { key: "notify_requests", value: "true", default: "true" },
-  { key: "notify_handoffs", value: "true", default: "true" },
-  { key: "notify_drafts", value: "false", default: "true" },
-  { key: "notify_denials", value: "true", default: "true" },
+  { key: "audit_enabled", value: "true", default: "true", weakening: { when: "set_to", value: "false" } },
+  { key: "capture_enabled", value: "false", default: "false", weakening: { when: "any_change" } },
+  { key: "default_item_ttl", value: "none", default: "none", weakening: never },
+  { key: "draft_ttl", value: "45d", default: "7d", weakening: never },
+  { key: "clipboard_clear_seconds", value: "30", default: "30", weakening: { when: "above", than: "30" } },
+  { key: "notify_requests", value: "true", default: "true", weakening: never },
+  { key: "notify_handoffs", value: "true", default: "true", weakening: never },
+  { key: "notify_drafts", value: "false", default: "true", weakening: never },
+  { key: "notify_denials", value: "true", default: "true", weakening: never },
 ];
 
 describe("the settings screen", () => {
@@ -36,9 +37,27 @@ describe("the settings screen", () => {
   });
 
   it("shows a setting it does not know as a plain field, and the coming sign-in methods as disabled", () => {
-    const other = settings([{ key: "future_thing", value: "x", default: "y" }]);
+    const other = settings([{ key: "future_thing", value: "x", default: "y", weakening: never }]);
     expect(other).toContain('data-setting="future_thing"');
     expect(html).toContain("macOS 인증");
     expect(html).toMatch(/<button[^>]*disabled[^>]*>macOS 인증/);
+  });
+
+  it("words the weakening limit with the number Rust sends, not one of its own", () => {
+    expect(html).toContain("30초보다 길게 하면 확인합니다. 다른 것을 복사했으면 지우지 않습니다.");
+    const raised = settings([{ ...all[4]!, weakening: { when: "above", than: "45" } }]);
+    expect(raised).toContain("45초보다 길게 하면 확인합니다.");
+    expect(raised).not.toContain("30초보다");
+    const files = settings([{ key: "upload_max_files", value: "10", default: "10", weakening: { when: "above", than: "10" } }]);
+    expect(files).toContain("10개보다 많게 하면 확인합니다.");
+  });
+
+  it("marks the method the app's authenticator names, and marks none before it is known", () => {
+    const none = settings(all, { ego_lite: false }, "none");
+    expect(none).toMatch(/<button type="button" class="is-on">없음<\/button>/);
+    expect(none).toContain("인증 없음: 이 Mac 사용자 계정으로 접근할 수 있는 누구나 금고를 볼 수 있습니다.");
+    const unknown = settings(all, { ego_lite: false }, null);
+    expect(unknown).not.toContain('class="is-on">없음');
+    expect(unknown).not.toContain("인증 없음:");
   });
 });

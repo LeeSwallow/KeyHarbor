@@ -36,6 +36,25 @@ describe("the bridge", () => {
     expect(fake.posted[1]).toEqual({ v: 1, type: "request_answer", id: 4, outcome: "handed_off", cookies: 2 });
   });
 
+  it("drops an answer quietly when the port closed meanwhile", async () => {
+    const api = fakeBrowser();
+    const fake = fakePort();
+    let open = true;
+    const post = fake.port.postMessage;
+    fake.port.postMessage = (m: unknown) => {
+      if (!open) throw new Error("Attempting to use a disconnected port object");
+      post(m);
+    };
+    api.runtime.connectNative = () => fake.port;
+    let finish: (outcome: { outcome: "declined" }) => void = () => undefined;
+    startBridge(api, () => new Promise((resolve) => (finish = resolve)));
+    fake.send({ v: 1, type: "request_site", id: 1, session: "work", origin: "https://github.com" });
+    open = false;
+    finish({ outcome: "declined" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fake.posted).toEqual([{ v: 1, type: "bridge" }]);
+  });
+
   it("connects again after the host goes away", async () => {
     const api = fakeBrowser();
     let connects = 0;

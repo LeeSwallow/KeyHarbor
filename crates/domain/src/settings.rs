@@ -2,7 +2,7 @@
 //! weakens a protection (R-35). The store keeps strings; meaning is read from here only.
 
 use crate::date::Ttl;
-use std::fmt;
+use std::{fmt, ops::RangeInclusive};
 
 /// Turns the usage record off (`false`) or on (anything else, and the default; J-23, J-73).
 pub const AUDIT_ENABLED: &str = "audit_enabled";
@@ -16,8 +16,8 @@ pub const DRAFT_TTL: &str = "draft_ttl";
 /// Seconds a value copied in the admin app stays on the clipboard (09 §9.4.7). Longer weakens.
 pub const CLIPBOARD_CLEAR_SECONDS: &str = "clipboard_clear_seconds";
 /// The range `clipboard_clear_seconds` takes: long enough to paste, short enough to matter.
-const CLEAR_SECONDS_RANGE: std::ops::RangeInclusive<u64> = 5..=300;
-const CLEAR_SECONDS_DEFAULT: u64 = 30;
+const CLEAR_SECONDS_RANGE: RangeInclusive<u64> = 5..=300;
+number_text!(CLEAR_SECONDS_DEFAULT: u64 = 30, CLEAR_SECONDS_DEFAULT_TEXT = "", "");
 /// macOS notifications from the admin app, per kind (09 §9.3). On unless `false`. Turning one
 /// off hides nothing: what waits stays on the home screen and the menu bar.
 pub const NOTIFY_REQUESTS: &str = "notify_requests";
@@ -29,7 +29,7 @@ pub const NOTIFY_DENIALS: &str = "notify_denials";
 pub const UPLOAD_DIRS: &str = "upload_dirs";
 /// The most files one `browser_upload` may put into a page. More weakens.
 pub const UPLOAD_MAX_FILES: &str = "upload_max_files";
-const UPLOAD_MAX_FILES_RANGE: std::ops::RangeInclusive<u64> = 1..=50;
+const UPLOAD_MAX_FILES_RANGE: RangeInclusive<u64> = 1..=50;
 
 /// Which browser a session opens in when nobody says: `auto` (ego lite if it answers, else
 /// Chrome), `chrome`, `ego-lite` or an absolute path (#120, R-47(1)). Not a weakening: the
@@ -37,12 +37,12 @@ const UPLOAD_MAX_FILES_RANGE: std::ops::RangeInclusive<u64> = 1..=50;
 pub const BROWSER: &str = "browser";
 /// How long `auto` waits for ego lite to answer before it uses Chrome.
 pub const EGO_PROBE_SECONDS: &str = "ego_probe_seconds";
-const EGO_PROBE_RANGE: std::ops::RangeInclusive<u64> = 1..=30;
+const EGO_PROBE_RANGE: RangeInclusive<u64> = 1..=30;
 
 /// How often (ms) the ego lite relay takes page events (ADR-0018). Shorter reacts faster,
 /// longer costs less; ego offers no push.
 pub const EGO_POLL_MS: &str = "ego_poll_ms";
-const EGO_POLL_RANGE: std::ops::RangeInclusive<u64> = 5..=1000;
+const EGO_POLL_RANGE: RangeInclusive<u64> = 5..=1000;
 
 /// The `default_item_ttl` value meaning "never expire".
 pub const NO_TTL: &str = "none";
@@ -54,18 +54,32 @@ pub enum SettingFormat {
     Boolean,
     /// `<N>d` or `none`.
     Ttl,
-    /// Whole seconds within [`CLEAR_SECONDS_RANGE`].
-    ClearSeconds,
+    /// A whole number within `range`, counted in `unit`.
+    Range {
+        range: &'static RangeInclusive<u64>,
+        unit: RangeUnit,
+    },
     /// Folders separated by `:`, each absolute or starting with `~/`; empty for none.
     Folders,
-    /// A count within [`UPLOAD_MAX_FILES_RANGE`].
-    FileCount,
     /// `auto`, `chrome`, `ego-lite` or an absolute path.
     Browser,
-    /// Whole seconds within [`EGO_PROBE_RANGE`].
-    ProbeSeconds,
-    /// Milliseconds within [`EGO_POLL_RANGE`].
-    PollMillis,
+}
+
+/// What a [`SettingFormat::Range`] counts, as its error message names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RangeUnit {
+    Count,
+    Seconds,
+    Millis,
+}
+impl RangeUnit {
+    fn words(self) -> &'static str {
+        match self {
+            Self::Count => "a whole number",
+            Self::Seconds => "whole seconds",
+            Self::Millis => "whole milliseconds",
+        }
+    }
 }
 
 /// Which change to a setting weakens a protection and needs a person.
@@ -127,8 +141,11 @@ pub const SETTINGS: &[SettingSpec] = &[
     },
     SettingSpec {
         key: CLIPBOARD_CLEAR_SECONDS,
-        default: "30", // CLEAR_SECONDS_DEFAULT
-        format: SettingFormat::ClearSeconds,
+        default: CLEAR_SECONDS_DEFAULT_TEXT,
+        format: SettingFormat::Range {
+            range: &CLEAR_SECONDS_RANGE,
+            unit: RangeUnit::Seconds,
+        },
         weakening: SettingWeakening::AboveDefault,
     },
     SettingSpec {
@@ -140,7 +157,10 @@ pub const SETTINGS: &[SettingSpec] = &[
     SettingSpec {
         key: UPLOAD_MAX_FILES,
         default: "10",
-        format: SettingFormat::FileCount,
+        format: SettingFormat::Range {
+            range: &UPLOAD_MAX_FILES_RANGE,
+            unit: RangeUnit::Count,
+        },
         weakening: SettingWeakening::AboveDefault,
     },
     SettingSpec {
@@ -152,13 +172,19 @@ pub const SETTINGS: &[SettingSpec] = &[
     SettingSpec {
         key: EGO_PROBE_SECONDS,
         default: "5",
-        format: SettingFormat::ProbeSeconds,
+        format: SettingFormat::Range {
+            range: &EGO_PROBE_RANGE,
+            unit: RangeUnit::Seconds,
+        },
         weakening: SettingWeakening::Never,
     },
     SettingSpec {
         key: EGO_POLL_MS,
         default: "20",
-        format: SettingFormat::PollMillis,
+        format: SettingFormat::Range {
+            range: &EGO_POLL_RANGE,
+            unit: RangeUnit::Millis,
+        },
         weakening: SettingWeakening::Never,
     },
     notice(NOTIFY_REQUESTS),
@@ -194,39 +220,16 @@ impl SettingSpec {
             SettingFormat::Folders => crate::upload::parse_dirs(value, std::path::Path::new("/"))
                 .map(|_| ())
                 .map_err(InvalidSetting),
-            SettingFormat::FileCount => match value.parse::<u64>() {
-                Ok(n) if UPLOAD_MAX_FILES_RANGE.contains(&n) => Ok(()),
-                _ => Err(InvalidSetting(format!(
-                    "must be a whole number from {} to {}",
-                    UPLOAD_MAX_FILES_RANGE.start(),
-                    UPLOAD_MAX_FILES_RANGE.end()
-                ))),
-            },
             SettingFormat::Browser => crate::browser_choice::BrowserChoice::parse(value)
                 .map(|_| ())
                 .map_err(|e| InvalidSetting(e.to_string())),
-            SettingFormat::ProbeSeconds => match value.parse::<u64>() {
-                Ok(n) if EGO_PROBE_RANGE.contains(&n) => Ok(()),
-                _ => Err(InvalidSetting(format!(
-                    "must be whole seconds from {} to {}",
-                    EGO_PROBE_RANGE.start(),
-                    EGO_PROBE_RANGE.end()
-                ))),
-            },
-            SettingFormat::PollMillis => match value.parse::<u64>() {
-                Ok(n) if EGO_POLL_RANGE.contains(&n) => Ok(()),
-                _ => Err(InvalidSetting(format!(
-                    "must be whole milliseconds from {} to {}",
-                    EGO_POLL_RANGE.start(),
-                    EGO_POLL_RANGE.end()
-                ))),
-            },
-            SettingFormat::ClearSeconds => match clear_seconds(value) {
+            SettingFormat::Range { range, unit } => match in_range(value, range) {
                 Some(_) => Ok(()),
                 None => Err(InvalidSetting(format!(
-                    "must be whole seconds from {} to {}",
-                    CLEAR_SECONDS_RANGE.start(),
-                    CLEAR_SECONDS_RANGE.end()
+                    "must be {} from {} to {}",
+                    unit.words(),
+                    range.start(),
+                    range.end()
                 ))),
             },
         }
@@ -245,16 +248,16 @@ impl SettingSpec {
     }
 }
 
-/// `value` as seconds, if it is a whole number in range.
-fn clear_seconds(value: &str) -> Option<u64> {
-    let seconds = value.parse::<u64>().ok()?;
-    CLEAR_SECONDS_RANGE.contains(&seconds).then_some(seconds)
+/// `value` as a number, if it is a whole number in `range`.
+fn in_range(value: &str, range: &RangeInclusive<u64>) -> Option<u64> {
+    let n = value.parse::<u64>().ok()?;
+    range.contains(&n).then_some(n)
 }
 
 /// How long a copied value stays for a stored `clipboard_clear_seconds`. A value the setting
 /// does not take (only a tampered store holds one) falls back to the default.
 pub fn clipboard_clear_after(stored: Option<&str>) -> std::time::Duration {
-    let seconds = stored.and_then(clear_seconds);
+    let seconds = stored.and_then(|value| in_range(value, &CLEAR_SECONDS_RANGE));
     std::time::Duration::from_secs(seconds.unwrap_or(CLEAR_SECONDS_DEFAULT))
 }
 
@@ -267,6 +270,12 @@ pub fn capture_enabled(stored: Option<&str>) -> bool {
 /// Whether the usage record is on for a stored `audit_enabled` (`None` when never set): only
 /// an explicit `false` turns it off, so an odd stored value fails safe (J-73).
 pub fn audit_enabled(stored: Option<&str>) -> bool {
+    stored != Some("false")
+}
+
+/// Whether a `notify_*` notice is on for its stored value (`None` when never set): on unless
+/// set to `false`, like [`audit_enabled`]. Off is a preference, so an odd value means on.
+pub fn notify_enabled(stored: Option<&str>) -> bool {
     stored != Some("false")
 }
 
@@ -334,6 +343,14 @@ mod tests {
             );
             assert!(!spec.weakens("false"), "{key}");
         }
+    }
+
+    #[test]
+    fn only_false_turns_a_notice_off() {
+        assert!(notify_enabled(None));
+        assert!(notify_enabled(Some("true")));
+        assert!(notify_enabled(Some("yes")));
+        assert!(!notify_enabled(Some("false")));
     }
 
     #[test]

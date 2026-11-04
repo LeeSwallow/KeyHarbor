@@ -7,13 +7,10 @@
 
 mod access;
 pub mod audit;
-mod chrome_csv;
-mod dotenv;
 pub mod grant;
 pub mod policy;
 pub mod rename;
 pub mod request;
-mod rotate;
 pub mod session;
 pub mod settings;
 pub mod site;
@@ -25,14 +22,13 @@ mod vault;
 pub mod weaken;
 
 pub use access::PlaintextAccess;
-pub use dotenv::parse_dotenv;
 pub use keyharbor_crypto::export::Passphrase;
 /// The lookup socket's token for `keyharbor run` (channel ④); the guard checks it.
 pub use keyharbor_crypto::token::AccessToken;
-pub use transfer::ImportReport;
+pub use transfer::{ImportReport, parse_dotenv};
 pub use vault::{
-    CatalogEntry, DEFAULT_ITEM_TTL, DraftItem, ExpiryChoice, GeneratedLogin, ItemChange,
-    ItemDetails, ItemFilter, ItemSource, ItemStatus, ItemSummary, ItemUse, MAX_DRAFTS,
+    CatalogEntry, DEFAULT_ITEM_TTL, DraftItem, ExpiryChoice, GeneratedDraft, GeneratedLogin,
+    ItemChange, ItemDetails, ItemFilter, ItemSource, ItemStatus, ItemSummary, ItemUse, MAX_DRAFTS,
     MAX_FIELD_BYTES, MaskValues, NO_TTL, NewItem, Vault, VaultBackend, catalog,
     effective_descriptions, fill_template, generate_password,
 };

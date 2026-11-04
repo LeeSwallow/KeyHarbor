@@ -16,9 +16,9 @@
 #    reach browser operations only through the guarded control path.
 # 6. A persistence context does not reach into another context's models,
 #    schema or mappers.
-# 7. (A) Interfaces call use cases only: the CLI's command modules and the MCP
-#    server neither open the store nor call storage ports; the composition
-#    root (cli/src/main.rs, cli/src/compose.rs) builds the adapters.
+# 7. (A) Interfaces call use cases only: the CLI's modules (at any depth) and
+#    the MCP server neither open the store nor call storage ports; the
+#    composition root (cli/src/main.rs, cli/src/compose.rs) builds the adapters.
 # 8. (J) Which session operation needs which policy action is the guard's
 #    table (`keyharbor_guard::session`); interfaces never name a session-level
 #    `Action`.
@@ -137,8 +137,10 @@ hits="$(grep -rn 'rusqlite' --include='*.rs' . || true)"
 $hits"
 # Prints file:line for matches of $1 outside items marked #[cfg(test)] or
 # #[cfg(feature = "test-support")] (the marked item's brace block is skipped).
+# A module file named tests.rs is a test module moved out of its parent
+# (`#[cfg(test)] mod tests;`), so it is skipped like tests/ directories.
 outside_tests() {
-	find . -name '*.rs' -not -path '*/tests/*' -not -path '*/target/*' | while read -r f; do
+	find . -name '*.rs' -not -name tests.rs -not -path '*/tests/*' -not -path '*/target/*' | while read -r f; do
 		PAT="$1" awk -v file="$f" '
 			BEGIN { pat = ENVIRON["PAT"] }
 			/#\[cfg\((test|feature = "test-support")\)\]/ { pending = 1 }
@@ -162,7 +164,7 @@ $hits"
 hits="$(grep -rn 'PlaintextAccess::issue' --include='*.rs' . |
 	grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' |
 	grep -vE '^\./guard/' |
-	grep -vE '^\./core/src/transfer\.rs:' |
+	grep -vE '^\./core/src/transfer/backup\.rs:' |
 	grep -vE '^\./core/src/test_support\.rs:' |
 	grep -vE '^\./[a-z]+/tests/' || true)"
 [ -n "$hits" ] && no "PlaintextAccess::issue called outside the guard, core's export and tests:
@@ -193,7 +195,8 @@ else
 fi
 
 # --- 7. (A) interfaces call use cases, the composition root builds adapters --------
-surfaces="$(ls cli/src/*_cmd.rs cli/src/*_cmd/*.rs 2>/dev/null; find mcp/src -name '*.rs' 2>/dev/null)"
+# Every CLI file at any depth (browser_cmd/host/ included) except the composition root.
+surfaces="$(find cli/src mcp/src -name '*.rs' ! -path cli/src/main.rs ! -path cli/src/compose.rs 2>/dev/null)"
 if [ -n "$surfaces" ]; then
 	# shellcheck disable=SC2086 # one path per word
 	hits="$(grep -nE 'SqliteStores?\b|keystore_from_env|ProcessRuntime::new' $surfaces || true)"
@@ -212,7 +215,7 @@ $hits"
 
 # --- 9. (H) placeholder syntax in one place ------------------------------------------
 hits="$(outside_tests '[{][{]secret:' |
-	grep -v '^\./domain/src/vault\.rs:' |
+	grep -v '^\./domain/src/vault/placeholder\.rs:' |
 	grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' |
 	grep -vE 'description = "' || true)"
 [ -n "$hits" ] && no "placeholder syntax outside keyharbor-domain (use PlaceholderRef or vault::placeholder):

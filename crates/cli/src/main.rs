@@ -1,24 +1,23 @@
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use keyharbor_domain::browser_choice::BrowserChoice;
+use keyharbor_supervisor::SUPERVISE_COMMAND;
 use std::path::{Path, PathBuf};
 
+mod args;
 mod audit_cmd;
 mod browser_cmd;
 mod compose;
-mod description_args;
-mod expiry_args;
-mod grant_cmd;
 mod policy_cmd;
 mod run_cmd;
 mod session_cmd;
 mod settings_cmd;
-mod site_cmd;
 mod status_cmd;
 mod tty_confirm;
 mod vault_cmd;
 
 use compose::App;
+use session_cmd::{grant, site};
 
 #[derive(Parser)]
 #[command(
@@ -35,31 +34,13 @@ struct Cli {
 enum Command {
     #[command(flatten)]
     Session(session_cmd::SessionCmd),
+    /// Run a session's supervisor (started by `open`; arguments are `SuperviseArgs`)
+    #[command(name = SUPERVISE_COMMAND, hide = true)]
+    Supervise(session_cmd::SuperviseCmd),
     /// Counts at a glance: vault ready, sessions open, requests waiting, drafts (no names)
     Status,
     /// Serve MCP tools over stdio for an AI agent
-    Mcp {
-        /// Expose and allow only this session
-        #[arg(long)]
-        session: Option<String>,
-        /// Allow sessions with a raw CDP endpoint (bypasses KeyHarbor's protections)
-        #[arg(long)]
-        allow_cdp: bool,
-        /// Name of the agent using this server, for policies and the usage record
-        #[arg(long)]
-        agent: Option<String>,
-        /// auto, chrome, ego-lite or an absolute path to a Chrome-like executable (default:
-        /// the `browser` setting)
-        #[arg(long, value_parser = parse_browser)]
-        browser: Option<BrowserChoice>,
-        /// Nobody is watching (a scheduled run): tools that wait for a person look once and
-        /// return `needs_user` instead of waiting
-        #[arg(long)]
-        non_interactive: bool,
-        /// Print the tool names and exit (used to check the plugin's skills)
-        #[arg(long, hide = true)]
-        list_tools: bool,
-    },
+    Mcp(McpArgs),
     /// Manage the local encrypted vault
     #[command(subcommand)]
     Vault(vault_cmd::VaultCmd),
@@ -73,10 +54,10 @@ enum Command {
     Settings(settings_cmd::SettingsCmd),
     /// A session's recorded sign-in state per site
     #[command(subcommand)]
-    Site(site_cmd::SiteCmd),
+    Site(site::SiteCmd),
     /// Which sites a session may load (grants)
     #[command(subcommand)]
-    Grant(grant_cmd::GrantCmd),
+    Grant(grant::GrantCmd),
     /// Hand sites over from your own browser (Native Messaging host)
     #[command(subcommand)]
     Browser(browser_cmd::BrowserCmd),
@@ -84,14 +65,42 @@ enum Command {
     Run(run_cmd::RunArgs),
 }
 
-/// The macOS per-user application data folder; `--data-dir` and `KEYHARBOR_HOME` override it.
-/// `--browser` for `mcp` and `open`.
-pub(crate) fn parse_browser(value: &str) -> Result<BrowserChoice, String> {
-    BrowserChoice::parse(value).map_err(|e| e.to_string())
+#[derive(Args)]
+struct McpArgs {
+    /// Expose and allow only this session
+    #[arg(long)]
+    session: Option<String>,
+    /// Allow sessions with a raw CDP endpoint (bypasses KeyHarbor's protections)
+    #[arg(long)]
+    allow_cdp: bool,
+    /// Name of the agent using this server, for policies and the usage record
+    #[arg(long)]
+    agent: Option<String>,
+    /// auto, chrome, ego-lite or an absolute path to a Chrome-like executable (default:
+    /// the `browser` setting)
+    #[arg(long, value_parser = args::parse_browser)]
+    browser: Option<BrowserChoice>,
+    /// Nobody is watching (a scheduled run): tools that wait for a person look once and
+    /// return `needs_user` instead of waiting
+    #[arg(long)]
+    non_interactive: bool,
+    /// Print the tool names and exit (used to check the plugin's skills)
+    #[arg(long, hide = true)]
+    list_tools: bool,
 }
 
+/// The macOS per-user application data folder; `--data-dir` and `KEYHARBOR_HOME` override it.
 fn default_data_dir(home: &Path) -> PathBuf {
     home.join("Library/Application Support/KeyHarbor")
+}
+
+fn data_dir(given: Option<PathBuf>) -> Result<PathBuf> {
+    match given {
+        Some(path) => Ok(path),
+        None => Ok(default_data_dir(&PathBuf::from(
+            std::env::var_os("HOME").context("HOME is not set; use --data-dir")?,
+        ))),
+    }
 }
 
 /// No core dumps of this process (it holds vault values while it runs `run`, resolves
@@ -110,61 +119,53 @@ fn disable_core_dumps() -> std::io::Result<()> {
 
 fn main() -> Result<()> {
     disable_core_dumps().context("could not turn core dumps off")?;
-    let args = Cli::parse();
-    let root = match args.data_dir {
-        Some(path) => path,
-        None => default_data_dir(&PathBuf::from(
-            std::env::var_os("HOME").context("HOME is not set; use --data-dir")?,
-        )),
-    };
-    let app = App::new(root);
-    match args.command {
-        Command::Vault(command) => vault_cmd::run(&app, command),
+    let cli = Cli::parse();
+    let app = App::new(data_dir(cli.data_dir)?);
+    dispatch(&app, cli.command)
+}
+
+/// Sends a command to its module; each builds only the ports it uses.
+fn dispatch(app: &App, command: Command) -> Result<()> {
+    match command {
+        Command::Session(command) => session_cmd::run(app, command),
+        Command::Supervise(command) => session_cmd::supervise(app, command),
+        Command::Status => status_cmd::run(app),
+        Command::Mcp(args) => serve_mcp(app, args),
+        Command::Vault(command) => vault_cmd::run(app, command),
         Command::Policy(command) => policy_cmd::run(&*app.store()?, command),
         Command::Audit(args) => audit_cmd::run(&*app.store()?, args),
         Command::Settings(command) => settings_cmd::run(&*app.store()?, command),
-        Command::Site(command) => site_cmd::run(&app, command),
-        Command::Grant(command) => grant_cmd::run(&app, command),
-        Command::Status => status_cmd::run(&app),
-        Command::Browser(command) => browser_cmd::run(&app, command),
+        Command::Site(command) => site::run(app, command),
+        Command::Grant(command) => grant::run(app, command),
+        Command::Browser(command) => browser_cmd::run(app, command),
         Command::Run(args) => {
-            let code = run_cmd::run(&app, args)?;
+            let code = run_cmd::run(app, args)?;
             std::process::exit(code)
         }
-        Command::Session(command) => session_cmd::run(&app, command),
-        Command::Mcp {
-            list_tools: true,
-            allow_cdp,
-            ..
-        } => {
-            for name in keyharbor_mcp::tool_names(allow_cdp) {
-                println!("{name}");
-            }
-            Ok(())
-        }
-        Command::Mcp {
-            session,
-            allow_cdp,
-            agent,
-            browser,
-            non_interactive,
-            list_tools: false,
-        } => keyharbor_mcp::run(
-            keyharbor_mcp::Options {
-                data: app.root().to_path_buf(),
-                session,
-                allow_cdp,
-                agent,
-                browser,
-                interaction: if non_interactive {
-                    keyharbor_mcp::Interaction::NonInteractive
-                } else {
-                    keyharbor_mcp::Interaction::Interactive
-                },
-            },
-            app.mcp_deps()?,
-        ),
     }
+}
+
+fn serve_mcp(app: &App, args: McpArgs) -> Result<()> {
+    if args.list_tools {
+        for name in keyharbor_mcp::tool_names(args.allow_cdp) {
+            println!("{name}");
+        }
+        return Ok(());
+    }
+    let interaction = if args.non_interactive {
+        keyharbor_mcp::Interaction::NonInteractive
+    } else {
+        keyharbor_mcp::Interaction::Interactive
+    };
+    let options = keyharbor_mcp::Options {
+        data: app.root().to_path_buf(),
+        session: args.session,
+        allow_cdp: args.allow_cdp,
+        agent: args.agent,
+        browser: args.browser,
+        interaction,
+    };
+    keyharbor_mcp::run(options, app.mcp_deps()?)
 }
 
 #[cfg(test)]

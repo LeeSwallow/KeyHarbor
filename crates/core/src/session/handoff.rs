@@ -25,9 +25,13 @@ pub fn wait_auth(
     let origin = origin.and_then(|o| Origin::parse(o).ok());
     note_event(
         store,
-        AuditEvent::new(agent, AuditKind::HandoffRequested, "awaiting_user")
-            .session(id)
-            .origin(origin.as_ref().map(Origin::as_str)),
+        AuditEvent::new(
+            agent,
+            AuditKind::HandoffRequested,
+            State::AwaitingUser.as_str(),
+        )
+        .session(id)
+        .origin(origin.as_ref().map(Origin::as_str)),
     );
     Ok(request)
 }
@@ -45,6 +49,21 @@ pub fn pending_handoff(
         .context("no pending authentication request")
 }
 
+/// The pending request and its claimed origin, or `None` when the session has no supervisor
+/// or no request waits (a session removed meanwhile has neither). Only a store error is an
+/// error, so a list of sessions does not take a broken store for "nothing waits" (the admin
+/// app's inbox, J-201).
+pub fn find_handoff(
+    store: &dyn Store,
+    runtime: &dyn SessionRuntime,
+    id: SessionId,
+) -> Result<Option<(RequestId, Option<String>)>> {
+    if !runtime.is_alive(id) {
+        return Ok(None);
+    }
+    store.pending_handoff(id)
+}
+
 pub fn resume(
     store: &dyn Store,
     runtime: &dyn SessionRuntime,
@@ -57,7 +76,13 @@ pub fn resume(
     require_supervisor(runtime, id)?;
     let generation = row.generation.context("session is not running")?;
     store.resume_handoff(id, generation, request)?;
-    note(store, agent, AuditKind::HandoffResumed, id, "running");
+    note(
+        store,
+        agent,
+        AuditKind::HandoffResumed,
+        id,
+        State::Running.as_str(),
+    );
     Ok(())
 }
 

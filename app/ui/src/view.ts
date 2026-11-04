@@ -9,7 +9,7 @@ import { editor } from "./views/editor.js";
 import { form } from "./views/form.js";
 import { palette, paletteCommands } from "./views/palette.js";
 import { badge, btn, card, empty, glyph, heading, icon, screenIcon } from "./views/parts.js";
-import { auditWord, fieldWord, kindWord, sessionWord, siteWord, sourceWord } from "./words.js";
+import { auditWord, authWord, fieldWord, kindWord, sessionWord, siteWord, sourceWord } from "./words.js";
 
 import { esc } from "./html.js";
 
@@ -30,17 +30,18 @@ function side(s: State): string {
     const badge = n > 0 ? `<span class="kh-count">${n}</span>` : "";
     return `<button class="nav${s.view === view ? " is-on" : ""}" data-action="go" data-view="${view}">${icon(screenIcon(view))}${esc(label)}${badge}</button>`;
   }).join("");
-  return `<nav class="side" aria-label="KeyHarbor"><div class="brand"><img class="brand-icon" src="app-icon.svg" alt="">KeyHarbor</div>${links}<div class="group">인증 없음</div></nav>`;
+  // The method comes from the app's authenticator (overview), not from this file.
+  const auth = s.overview ? `<div class="group">${esc(authWord(s.overview.auth))}</div>` : "";
+  return `<nav class="side" aria-label="KeyHarbor"><div class="brand"><img class="brand-icon" src="app-icon.svg" alt="">KeyHarbor</div>${links}${auth}</nav>`;
 }
 
 /// `2026-10-29T05:02:00Z` → `10-29 05:02` (UTC as stored; the record is a glance, not a log).
 const when = (at: string) => at.replace(/^\d{4}-(\d\d-\d\d)T(\d\d:\d\d).*$/, "$1 $2");
 
 function event(e: AuditEvent): string {
-  const denied = e.kind.includes("denied");
   const what = [e.item, e.origin].filter(Boolean).map((t) => esc(t!)).join(" · ");
   return card({
-    title: `${esc(auditWord(e.kind))} ${denied ? badge("거부", "denied") : ""}`,
+    title: `${esc(auditWord(e.kind))} ${e.denied ? badge("거부", "denied") : ""}`,
     sub: `${esc(e.agent)}${what ? ` · ${what}` : ""}`,
     actions: `<span class="meta">${esc(when(e.at))}</span>`,
   });
@@ -97,7 +98,7 @@ function inbox(s: State): string {
 /// stopped session can also be opened in a named browser (when ego lite is here) and removed.
 function sessionActions(x: Session, browsers: Browsers): string {
   const id = esc(x.id);
-  if (x.state === "recovery_required" || x.state === "failed") {
+  if (x.recoverable) {
     return `<label class="kh-help"><input type="checkbox" data-closed="${id}"> 브라우저 창을 모두 닫았습니다</label>${btn("복구…", `data-action="recover" data-id="${id}"`, "danger")}`;
   }
   if (x.state !== "stopped") return btn("중지", `data-action="stop-session" data-id="${id}"`);
@@ -112,17 +113,16 @@ function sessionActions(x: Session, browsers: Browsers): string {
 /// Which browser a running session uses; ego lite also says that others can drive it (03 §3.13).
 function browserBadges(x: Session): string {
   // Only while a run is live: a stopped or failed session's last browser says nothing about the next.
-  const live = ["starting", "running", "awaiting_user", "stopping"].includes(x.state);
-  if (!x.browser || !live) return "";
+  if (!x.browser || !x.live) return "";
   const name = badge(x.browser === "ego-lite" ? "ego lite" : "Chrome", "neutral");
   return x.protection === "shared"
     ? `${name} <span title="같은 ego lite를 다른 프로그램도 조작할 수 있어, 셸이 있는 에이전트는 넣은 값을 읽을 수 있습니다">${badge("보호 낮음", "expiring")}</span>`
     : name;
 }
 
-function sessionBadge(state: string): string {
-  const tone = state === "running" ? "active" : state === "recovery_required" || state === "failed" ? "denied" : "neutral";
-  return badge(sessionWord(state), tone);
+function sessionBadge(x: Session): string {
+  const tone = x.state === "running" ? "active" : x.recoverable ? "denied" : "neutral";
+  return badge(sessionWord(x.state), tone);
 }
 
 function sessions(s: State): string {
@@ -132,12 +132,12 @@ function sessions(s: State): string {
       const sites = x.sites
         .map((t) => `<li>${esc(t.origin)} ${badge(siteWord(t.state), t.state === "logged_in" ? "active" : t.state === "expired" ? "expiring" : "neutral")}</li>`)
         .join("");
-      const failed = x.failure && x.state !== "running" && x.state !== "stopped"
+      const failed = x.failure && x.recoverable
         ? `<p class="kh-help error">${icon("triangle-alert")} 시작하지 못했습니다: ${esc(x.failure)}</p>`
         : "";
       return `<div data-session-drop="${esc(x.name)}">` + card({
         glyph: `<span class="glyph session">${icon("app-window")}</span>`,
-        title: `${esc(x.name)} ${sessionBadge(x.state)} ${browserBadges(x)}${x.cdp ? ` ${badge("raw CDP", "expiring")}` : ""}`,
+        title: `${esc(x.name)} ${sessionBadge(x)} ${browserBadges(x)}${x.cdp ? ` ${badge("raw CDP", "expiring")}` : ""}`,
         sub: x.description ? esc(x.description) : "",
         extra: failed + (sites ? `<ul class="sites">${sites}</ul>` : ""),
         actions: sessionActions(x, s.browsers),
@@ -234,7 +234,7 @@ export function render(s: State): string {
       : ["", {
           home, inbox, sessions, audit,
           policies: (x: State) => policies(x.policies),
-          settings: (x: State) => settings(x.settings, x.browsers),
+          settings: (x: State) => settings(x.settings, x.browsers, x.overview?.auth ?? null),
         }[s.view](s)];
   return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${notice}${main}</section>${undo}${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { toSiteCookie, webextCookieSource } from "../../src/adapters/webext/cookies.js";
+import { toSiteCookie, webextCookieSource } from "../../src/adapters/webext/sources/cookies.js";
 import { webextPopupDeps } from "../../src/adapters/webext/popup.js";
-import { webextStorageSource } from "../../src/adapters/webext/storage.js";
+import { webextStorageSource } from "../../src/adapters/webext/sources/storage.js";
 import { scopeOf } from "../../src/domain/scope.js";
 import { fakeBrowser } from "../support/fake-browser.js";
 
@@ -52,5 +52,22 @@ describe("webextPopupDeps", () => {
     expect(await deps.loadSession()).toBeNull();
     await deps.saveSession("work");
     expect(await deps.loadSession()).toBe("work");
+  });
+
+  it("checks the background's answer and turns a wrong shape into bad_reply", async () => {
+    const api = fakeBrowser();
+    api.runtime.sendMessage = async () => ({ ok: true, value: { cookies: "many" } });
+    expect(await webextPopupDeps(api, "en").handOff({ tabId: 7, session: "work", ttlSeconds: 3600, includeLocalStorage: false })).toEqual({ ok: false, error: "bad_reply" });
+  });
+
+  it("sends the messages the background reads", async () => {
+    const api = fakeBrowser();
+    const sent: unknown[] = [];
+    api.runtime.sendMessage = async (m) => {
+      sent.push(m);
+      return { ok: true, value: [] };
+    };
+    expect(await webextPopupDeps(api, "en").listLogins(7)).toEqual({ ok: true, value: [] });
+    expect(sent).toEqual([{ type: "list_logins", tabId: 7 }]);
   });
 });

@@ -1,20 +1,16 @@
-//! The rules, one per file, registered in `RULES`. A new rule is a file here plus one line below.
+//! The rules, one per file, grouped by what they look at: `tokens` (layers and custom
+//! properties), `theme` (dark blocks and contrast), `usage` (classes, icons and stylesheets the
+//! pages use). Every rule is registered in `RULES` here and nowhere else. A new rule is a file in
+//! its group, one `use` in the group's `mod.rs`, and one line below.
 
 use crate::model::DesignSet;
 use crate::report::Violation;
 
-mod classes;
-mod component_files;
-mod contrast;
-mod defined_vars;
-mod icons;
-mod layer_references;
-mod literal_colours;
-mod px_literals;
-mod theme_parity;
-mod token_definitions;
+mod theme;
+mod tokens;
+mod usage;
 
-pub use contrast::{CONTRAST_PAIRS, ContrastPair, Measured, measure};
+pub use theme::{CONTRAST_PAIRS, ContrastPair, Measured, measure};
 
 /// A check over the whole design system. It reports, it does not fix.
 pub trait Rule: Sync {
@@ -24,16 +20,16 @@ pub trait Rule: Sync {
 }
 
 pub static RULES: &[&dyn Rule] = &[
-    &layer_references::LayerReferences,
-    &literal_colours::LiteralColours,
-    &px_literals::PxLiterals,
-    &token_definitions::TokenDefinitions,
-    &defined_vars::DefinedVars,
-    &component_files::ComponentFiles,
-    &theme_parity::ThemeParity,
-    &contrast::Contrast,
-    &icons::Icons,
-    &classes::Classes,
+    &tokens::LayerReferences,
+    &tokens::LiteralColours,
+    &tokens::PxLiterals,
+    &tokens::TokenDefinitions,
+    &tokens::DefinedVars,
+    &usage::ComponentFiles,
+    &theme::ThemeParity,
+    &theme::Contrast,
+    &usage::Icons,
+    &usage::Classes,
 ];
 
 /// The rule named `name`.

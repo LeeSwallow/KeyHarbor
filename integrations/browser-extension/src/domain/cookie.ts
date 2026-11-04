@@ -3,6 +3,13 @@
 
 import { type SiteScope, inScope, isSitePartition } from "./scope.js";
 
+/** The `sameSite` values a cookie names outright; anything else is "unspecified". */
+export const SAME_SITE_VALUES = ["no_restriction", "lax", "strict"] as const;
+export type SameSite = (typeof SAME_SITE_VALUES)[number] | "unspecified";
+
+export const isSameSite = (value: unknown): value is (typeof SAME_SITE_VALUES)[number] =>
+  (SAME_SITE_VALUES as readonly unknown[]).includes(value);
+
 /** A cookie as the WebExtension cookies API describes it (both browsers), as plain data. */
 export interface SiteCookie {
   name: string;
@@ -13,7 +20,7 @@ export interface SiteCookie {
   path: string;
   secure: boolean;
   httpOnly: boolean;
-  sameSite: "no_restriction" | "lax" | "strict" | "unspecified";
+  sameSite: SameSite;
   session: boolean;
   /** Seconds since the epoch; absent for session cookies. */
   expirationDate?: number;
