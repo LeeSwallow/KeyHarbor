@@ -1,8 +1,8 @@
 //! Settling drafts (08 §8.3): confirm one (a numbered draft replaces the item it was made
 //! for), discard one, prune old ones, and pick the login draft a sign-in confirms.
 
-use super::{ItemSource, ItemStatus, Vault};
 use crate::LOCAL_AGENT;
+use crate::vault::{ItemChange, ItemSource, ItemStatus, Vault};
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
     date::{Date, Ttl},
@@ -19,10 +19,7 @@ impl Vault {
     /// Makes the draft `name` active and returns the name it now has: a numbered draft
     /// (`github~draft-2`) replaces `github` in one write; a draft with its own name keeps it.
     pub fn confirm(&self, name: &ItemName, agent: &str) -> Result<ItemName> {
-        let (mut row, fields) = self
-            .store
-            .item_get(name.as_str())?
-            .context("item not found")?;
+        let (mut row, fields) = self.load_item_row(name)?;
         let (kind, name, origins) = self.verified(&row)?;
         if row.status != ItemStatus::Draft.as_str() {
             bail!("{} is not a draft", name.as_str());
@@ -32,7 +29,7 @@ impl Vault {
         row.status = ItemStatus::Active.as_str().to_owned();
         row.updated_at = self.clock.now_rfc3339();
         row.meta_mac = self.mac_for(&row, kind, &target, &origins);
-        let guard = self.guard(kind.domain());
+        let guard = self.guard(kind.domain())?;
         if name.is_draft() {
             self.store
                 .item_replace(&guard, target.as_str(), &row, &fields)?;
@@ -55,7 +52,7 @@ impl Vault {
         }
         self.edit(
             name,
-            super::ItemChange {
+            ItemChange {
                 status: Some(ItemStatus::Discarded),
                 ..Default::default()
             },
@@ -75,7 +72,7 @@ impl Vault {
                         .is_ok_and(|changed| ttl.from(changed).is_expired(today))
                 });
             if stale || item.status == ItemStatus::Discarded {
-                let name = ItemName::parse(&item.name).map_err(|e| anyhow!("{e}"))?;
+                let name = ItemName::parse(&item.name)?;
                 if self.store.item_delete(&item.name)? {
                     self.note_change_by(LOCAL_AGENT, &name, "pruned");
                     removed.push(name);
@@ -120,8 +117,9 @@ impl Vault {
         candidates.sort_by(|a, b| a.updated_at.cmp(&b.updated_at));
         candidates
             .pop()
-            .map(|item| ItemName::parse(&item.name).map_err(|e| anyhow!("{e}")))
+            .map(|item| ItemName::parse(&item.name))
             .transpose()
+            .map_err(Into::into)
     }
 }
 

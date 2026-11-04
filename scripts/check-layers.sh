@@ -162,7 +162,7 @@ $hits"
 hits="$(grep -rn 'PlaintextAccess::issue' --include='*.rs' . |
 	grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' |
 	grep -vE '^\./guard/' |
-	grep -vE '^\./core/src/transfer\.rs:' |
+	grep -vE '^\./core/src/transfer/backup\.rs:' |
 	grep -vE '^\./core/src/test_support\.rs:' |
 	grep -vE '^\./[a-z]+/tests/' || true)"
 [ -n "$hits" ] && no "PlaintextAccess::issue called outside the guard, core's export and tests:
