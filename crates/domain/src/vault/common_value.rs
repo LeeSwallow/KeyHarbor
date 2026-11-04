@@ -158,10 +158,14 @@ pub fn common_value_warnings(
         .iter()
         .filter(|(field, _)| kind.is_secret_field(field.as_str()) && !plain.contains(field))
         .filter_map(|(field, value)| {
-            CommonValueReason::of(value).map(|reason| CommonValueWarning {
-                item: item.clone(),
-                field: field.clone(),
-                reason,
+            let reason = CommonValueReason::of(value)?;
+            let short_by_nature = kind.field(field.as_str()).is_some_and(|spec| spec.short);
+            (!(short_by_nature && reason == CommonValueReason::TooShortToMask)).then(|| {
+                CommonValueWarning {
+                    item: item.clone(),
+                    field: field.clone(),
+                    reason,
+                }
             })
         })
         .collect()
@@ -173,6 +177,25 @@ mod tests {
 
     fn reason(value: &str) -> Option<CommonValueReason> {
         CommonValueReason::of(value)
+    }
+
+    #[test]
+    fn a_card_security_code_does_not_warn_for_being_short() {
+        let item = ItemName::parse("visa").unwrap();
+        let field = |name: &str, value: &str| {
+            (
+                FieldName::parse(name).unwrap(),
+                Zeroizing::new(value.to_owned()),
+            )
+        };
+        let warnings = common_value_warnings(
+            &item,
+            ItemKind::Card,
+            &[field("cvc", "123"), field("note", "abc")],
+            &[],
+        );
+        let fields: Vec<&str> = warnings.iter().map(|w| w.field.as_str()).collect();
+        assert_eq!(fields, ["note"], "only the note is short for no reason");
     }
 
     #[test]

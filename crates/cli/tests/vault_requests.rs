@@ -67,12 +67,11 @@ fn the_user_answers_a_request_and_the_agent_gets_placeholders_only() {
 
     let answer = r#"{"number":"4111111111111111","cvc":"987"}"#;
     let out = cli(&data, &keys, &["vault", "fulfill", &id, "--stdin"], answer);
-    // A three-digit code is never masked: the answer warns, naming the field only (J-230).
+    // A card's security code is short by nature: storing it does not warn (J-232), and the
+    // answer never prints a value.
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        stderr.contains("my-visa.cvc") && !stderr.contains("987"),
-        "{stderr}"
-    );
+    assert!(!stderr.contains("987"), "{stderr}");
+    assert!(!stderr.contains("my-visa.cvc"), "{stderr}");
     assert!(!stderr.contains("my-visa.number"), "{stderr}");
     let fulfilled = ok(out);
     assert_eq!(fulfilled.trim_end(), format!("{id}\tfulfilled\tmy-visa"));
