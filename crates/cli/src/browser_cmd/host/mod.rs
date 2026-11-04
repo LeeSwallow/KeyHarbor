@@ -10,7 +10,7 @@ mod receive;
 
 use crate::compose::App;
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::io::{Read, Write};
 use zeroize::Zeroizing;
@@ -72,15 +72,49 @@ fn read_message(input: &mut impl Read) -> Result<Zeroizing<Vec<u8>>, Refusal> {
 }
 
 fn write_message(output: &mut impl Write, reply: &Value) -> Result<()> {
-    let body = Zeroizing::new(reply.to_string());
+    write_frame(output, Zeroizing::new(reply.to_string()).as_bytes())
+}
+
+fn write_frame(output: &mut impl Write, body: &[u8]) -> Result<()> {
     output.write_all(&u32::try_from(body.len())?.to_ne_bytes())?;
-    output.write_all(body.as_bytes())?;
+    output.write_all(body)?;
     output.flush()?;
     Ok(())
 }
 
+/// A reply without values is a `Value` that `serve` stamps with `v`. The one that carries a
+/// value (`filled`) is already written into a wiped buffer, `v` included: a `Value` would
+/// hold an unwiped `String` copy of it (#157, J-160).
+enum Reply {
+    Plain(Value),
+    Sealed(Zeroizing<Vec<u8>>),
+}
+
+/// Serializes `reply` straight into a wiped buffer. It is measured first so the buffer never
+/// grows: a reallocation would leave the old bytes behind unwiped.
+fn seal(reply: &impl Serialize) -> Result<Zeroizing<Vec<u8>>, Refusal> {
+    let mut counter = ByteCount(0);
+    serde_json::to_writer(&mut counter, reply).map_err(|_| Refusal::Failed)?;
+    let mut body = Zeroizing::new(Vec::with_capacity(counter.0));
+    serde_json::to_writer(&mut *body, reply).map_err(|_| Refusal::Failed)?;
+    Ok(body)
+}
+
+/// A writer that only counts, for [`seal`].
+struct ByteCount(usize);
+
+impl Write for ByteCount {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// The reply to one request, by its `type`.
-fn answer(app: &App, body: &[u8]) -> Result<Value, Refusal> {
+fn answer(app: &App, body: &[u8]) -> Result<Reply, Refusal> {
     let kind: Kind = serde_json::from_slice(body).map_err(|_| Refusal::BadRequest)?;
     if kind.v != VERSION {
         return Err(Refusal::BadRequest);
@@ -88,11 +122,13 @@ fn answer(app: &App, body: &[u8]) -> Result<Value, Refusal> {
     match kind.r#type.as_str() {
         "receive_site" => {
             let (session, cookies) = receive::receive(app, body)?;
-            Ok(json!({"type": "received", "session": session, "cookies": cookies}))
+            Ok(Reply::Plain(
+                json!({"type": "received", "session": session, "cookies": cookies}),
+            ))
         }
-        "autofill_list" => autofill::list(app, body),
-        "autofill_fill" => autofill::fill(app, body),
-        "save_login" => autofill::save(app, body),
+        "autofill_list" => autofill::list(app, body).map(Reply::Plain),
+        "autofill_fill" => autofill::fill(app, body).map(Reply::Sealed),
+        "save_login" => autofill::save(app, body).map(Reply::Plain),
         _ => Err(Refusal::BadRequest),
     }
 }
@@ -112,7 +148,8 @@ pub fn serve(app: &App) -> Result<()> {
         return write_message(&mut std::io::stdout().lock(), &refused);
     }
     let mut reply = match first.and_then(|body| answer(app, &body)) {
-        Ok(reply) => reply,
+        Ok(Reply::Sealed(body)) => return write_frame(&mut std::io::stdout().lock(), &body),
+        Ok(Reply::Plain(reply)) => reply,
         Err(refusal) => json!({"type": "error", "code": refusal.code()}),
     };
     reply["v"] = json!(VERSION);
