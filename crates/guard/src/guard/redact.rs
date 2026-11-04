@@ -11,15 +11,20 @@ const RESPONSE_WITHHELD: &str = "response withheld: vault values could not be lo
 const OPERATION_FAILED: &str = "operation failed";
 
 impl Guard {
-    /// Every result before it leaves the supervisor: each vault value becomes its placeholder.
-    /// If the values cannot be loaded or the masker cannot be built, the response is withheld,
-    /// never sent unmasked.
+    /// Every result before it leaves the supervisor: each vault value becomes its placeholder,
+    /// then each one-time code typed lately becomes `{{otp:item}}` (vault values first, so a
+    /// code inside a longer value never splits that value's match). If the values cannot be
+    /// loaded or a masker cannot be built, the response is withheld, never sent unmasked.
     pub fn redact(&self, value: Value) -> Result<Value> {
         let masked = self.with_vault(|loaded| -> Result<Value> {
             let Some(loaded) = loaded else {
                 return Ok(value);
             };
-            Ok(loaded.masker()?.redact_json(value))
+            let value = loaded.masker()?.redact_json(value);
+            Ok(match self.code_masker()? {
+                Some(codes) => codes.redact_json(value),
+                None => value,
+            })
         });
         match masked {
             Ok(Ok(value)) => Ok(value),

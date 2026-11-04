@@ -37,6 +37,9 @@ pub struct AddArgs {
     /// Whether `keyharbor run` may inject the item (default: on for secret and env)
     #[arg(long, value_enum)]
     run_allowed: Option<Toggle>,
+    /// Whether agents may type the login's one-time codes while agent_otp is on (default: on)
+    #[arg(long, value_enum)]
+    otp_allowed: Option<Toggle>,
     #[command(flatten)]
     expiry: ExpiryArgs,
     #[command(flatten)]
@@ -67,6 +70,9 @@ pub struct EditArgs {
     /// Whether `keyharbor run` may inject the item
     #[arg(long, value_enum)]
     run_allowed: Option<Toggle>,
+    /// Whether agents may type the login's one-time codes while agent_otp is on (on asks first)
+    #[arg(long, value_enum)]
+    otp_allowed: Option<Toggle>,
     #[command(flatten)]
     expiry: ExpiryArgs,
     #[command(flatten)]
@@ -122,6 +128,7 @@ pub fn add(app: &App, args: &AddArgs) -> Result<()> {
             field_descriptions,
             tags: tags(&args.tags)?,
             plain_fields: field_names(kind, &args.plain)?,
+            otp_allowed: args.otp_allowed.map(Toggle::on),
         },
     };
     let warnings = items::add(&vault, item, &args.about.texts())?;
@@ -155,6 +162,7 @@ pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
         remove_tags: tags(&args.untag)?,
         make_plain: field_names(kind, &args.plain)?,
         make_secret: field_names(kind, &args.secret)?,
+        otp_allowed: args.otp_allowed.map(Toggle::on),
     };
     let warnings = items::edit(&vault, &TtyConfirm, &name, change, &args.about.texts())?;
     println!("updated\t{}", name.as_str());

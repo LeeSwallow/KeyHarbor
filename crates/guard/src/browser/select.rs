@@ -83,8 +83,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         self.guard.taint(node);
         let after = self.inner.frame_origin(&page, &focus.frame).await;
         self.note_used(
-            &prepared.items,
-            &prepared.domains,
+            (&prepared.items, &prepared.domains, &prepared.codes),
             origin.as_ref(),
             after.as_ref(),
         );

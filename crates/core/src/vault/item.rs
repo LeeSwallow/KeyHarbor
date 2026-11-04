@@ -89,6 +89,8 @@ pub struct ItemDetails {
     pub tags: Vec<Tag>,
     /// Fields that are not secret: shown in listings, not masked (developer secrets spec §2).
     pub plain_fields: Vec<FieldName>,
+    /// `None` allows agents to type the item's one-time codes while `agent_otp` is on (#206).
+    pub otp_allowed: Option<bool>,
 }
 
 /// The expiry a new item gets (R-37).
@@ -121,6 +123,8 @@ pub struct ItemChange {
     pub make_plain: Vec<FieldName>,
     /// Mark fields secret again.
     pub make_secret: Vec<FieldName>,
+    /// Let agents type the item's one-time codes (on weakens: a person confirms) or not.
+    pub otp_allowed: Option<bool>,
 }
 
 /// What callers may show: never a value.
@@ -133,6 +137,8 @@ pub struct ItemSummary {
     pub origins: Vec<String>,
     pub origin_binding: bool,
     pub run_allowed: bool,
+    /// Agents may type the item's one-time codes while `agent_otp` is on (#206).
+    pub otp_allowed: bool,
     pub expires_at: Option<Expiry>,
     /// The expiry date has passed: agents may not use the item.
     pub expired: bool,

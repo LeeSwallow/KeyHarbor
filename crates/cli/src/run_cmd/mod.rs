@@ -21,7 +21,7 @@ use files::SecretFiles;
 use keyharbor_domain::{
     item_pattern::ItemPattern,
     policy::AgentName,
-    vault::{FieldName, PlaceholderRef, has_placeholder, parse_placeholders, placeholder},
+    vault::{FieldName, PlaceholderRef, has_placeholder, parse_secret_placeholders, placeholder},
 };
 use keyharbor_guard::run as guard_run;
 use lookup::LookupSocket;
@@ -70,7 +70,7 @@ fn assignment(text: &str) -> Result<(String, &str)> {
 /// `--file VAR=item.field`.
 fn secret_file(text: &str) -> Result<(String, PlaceholderRef)> {
     let (var, reference) = assignment(text)?;
-    let refs = parse_placeholders(&placeholder_text(reference)).map_err(|e| anyhow!("{e}"))?;
+    let refs = parse_secret_placeholders(&placeholder_text(reference)).map_err(|e| anyhow!("{e}"))?;
     let [reference] = <[PlaceholderRef; 1]>::try_from(refs)
         .map_err(|_| anyhow!("--file expects VAR=ITEM.FIELD"))?;
     Ok((var, reference))

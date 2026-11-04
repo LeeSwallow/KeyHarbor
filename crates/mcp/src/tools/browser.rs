@@ -33,7 +33,7 @@ struct Fill {
     reference: Option<u64>,
     /// CSS selector, used when ref is not given.
     selector: Option<String>,
-    /// Text that replaces the element's value. May contain {{secret:item.field}} placeholders.
+    /// Text that replaces the element's value. May contain {{secret:item.field}} placeholders and {{otp:item}} for a one-time code.
     text: String,
 }
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -65,7 +65,7 @@ struct Upload {
 #[derive(Deserialize, schemars::JsonSchema)]
 struct Text {
     session: String,
-    /// Text typed into the focused element. May contain {{secret:item.field}} placeholders.
+    /// Text typed into the focused element. May contain {{secret:item.field}} placeholders and {{otp:item}} for a one-time code.
     text: String,
 }
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -161,7 +161,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Replace the value of an input given by ref or CSS selector with text. To enter a secret, write its placeholder from vault_list, e.g. {{secret:github.password}}: KeyHarbor types the value only if the policy allows it and, for origin-bound items, the input's frame is one of the item's origins. You never see the value; results show placeholders instead."
+        description = "Replace the value of an input given by ref or CSS selector with text. To enter a secret, write its placeholder from vault_list, e.g. {{secret:github.password}}: KeyHarbor types the value only if the policy allows it and, for origin-bound items, the input's frame is one of the item's origins. For a two-step sign-in code write {{otp:item}}: the code of the moment goes in only if the user turned agent codes on and the input's frame is one of the item's origins; otherwise hand the step to the user. You never see the value; results show placeholders instead."
     )]
     async fn browser_fill(
         &self,

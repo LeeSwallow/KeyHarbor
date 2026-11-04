@@ -15,5 +15,6 @@ hkdf.workspace = true
 hmac.workspace = true
 keyharbor-domain = { path = "../domain" }
 sha2.workspace = true
+totp-rs.workspace = true
 uuid.workspace = true
 zeroize.workspace = true

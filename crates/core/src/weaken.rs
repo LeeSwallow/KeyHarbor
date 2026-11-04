@@ -35,6 +35,10 @@ pub enum WeakeningOp {
     RunAllowed {
         item: String,
     },
+    /// Letting agents type an item's one-time codes again (#206, R-48(3)).
+    OtpAllowed {
+        item: String,
+    },
     ExpiryExtended {
         item: String,
         from: Expiry,
@@ -75,6 +79,9 @@ impl fmt::Display for WeakeningOp {
                 write!(f, "adding {} to the origins of {item}", origins.join(", "))
             }
             Self::RunAllowed { item } => write!(f, "letting keyharbor run inject {item}"),
+            Self::OtpAllowed { item } => {
+                write!(f, "letting agents type the one-time codes of {item}")
+            }
             Self::ExpiryExtended { item, from, to } => {
                 write!(f, "extending the expiry of {item} from {from} to {to}")
             }
@@ -146,7 +153,7 @@ pub fn setting(key: &str, value: &str) -> Option<WeakeningOp> {
 
 impl Vault {
     /// What in `change` weakens the item's protection: turning origin binding off, adding an
-    /// origin, letting `keyharbor run` inject it.
+    /// origin, letting `keyharbor run` inject it, letting agents type its one-time codes again.
     pub fn weakenings(&self, name: &ItemName, change: &ItemChange) -> Result<Vec<WeakeningOp>> {
         let current = self.item_use(name)?.context("item not found")?;
         let item = name.as_str().to_owned();
@@ -169,6 +176,9 @@ impl Vault {
         }
         if change.run_allowed == Some(true) && !current.run_allowed {
             out.push(WeakeningOp::RunAllowed { item: item.clone() });
+        }
+        if change.otp_allowed == Some(true) && !current.otp_allowed {
+            out.push(WeakeningOp::OtpAllowed { item: item.clone() });
         }
         if !change.make_plain.is_empty() {
             let already: Vec<String> = self
@@ -286,9 +296,16 @@ mod tests {
             origins: Some(vec![]),
             origin_binding: Some(true),
             run_allowed: Some(false),
+            otp_allowed: Some(false),
             ..Default::default()
         };
         assert!(v.weakenings(&name, &stricter).unwrap().is_empty());
+        // Codes are on for a new item: saying on again asks nothing.
+        let codes_on = ItemChange {
+            otp_allowed: Some(true),
+            ..Default::default()
+        };
+        assert!(v.weakenings(&name, &codes_on).unwrap().is_empty());
         let same = ItemChange {
             origins: Some(vec![github.clone()]),
             ..Default::default()
@@ -314,5 +331,20 @@ mod tests {
                 "letting keyharbor run inject github",
             ]
         );
+        v.edit(
+            &name,
+            ItemChange {
+                otp_allowed: Some(false),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let shown: Vec<String> = v
+            .weakenings(&name, &codes_on)
+            .unwrap()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(shown, vec!["letting agents type the one-time codes of github"]);
     }
 }

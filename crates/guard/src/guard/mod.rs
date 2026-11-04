@@ -1,6 +1,7 @@
 //! `Guard`: the enforcement state of one session supervisor — the store it records to, and
 //! the vault (reopened whenever its version moves) with the masker built from it.
 //!
+//! - [`codes`] — one-time codes the session typed, masked for a short while.
 //! - [`denials`] — the per-second cap on recorded refusals.
 //! - [`probes`] — refusing requests that carry a vault value, and locking the session.
 //! - [`redact`] — masking every result and error before it leaves the supervisor.
@@ -19,14 +20,14 @@ use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     denial::DenialReason,
     ports::{Clock, Store},
-    vault::{Domain, ItemName, Origin},
+    vault::{Domain, ItemName, Origin, Placeholder},
 };
 use std::{
     collections::BTreeSet,
     sync::{Arc, Mutex, MutexGuard, atomic::AtomicU32},
 };
-use zeroize::Zeroizing;
 
+mod codes;
 mod denials;
 mod probes;
 mod redact;
@@ -85,7 +86,9 @@ pub struct Guard {
     /// Refusals recorded in the current second, and those left out (Minor: a flood of
     /// refused requests must not flood the record).
     denials: Mutex<denials::Denials>,
-    /// For the per-second refusal cap.
+    /// One-time codes typed in this session, masked in responses for a short while (#206).
+    codes: Mutex<codes::RecentCodes>,
+    /// For the per-second refusal cap, and the moment a one-time code is made for.
     clock: Arc<dyn Clock>,
 }
 
@@ -105,6 +108,7 @@ impl Guard {
             locked: Mutex::new(None),
             probes: AtomicU32::new(0),
             denials: Mutex::new(denials::Denials::default()),
+            codes: Mutex::new(codes::RecentCodes::default()),
             clock,
         }
     }
@@ -224,9 +228,10 @@ impl Guard {
     }
 
     /// Every text that will be typed into the page. Without placeholders it is used as is.
-    /// Otherwise every item must exist, be allowed for `agent`, — if origin-bound — list the
-    /// origin of the frame the text goes into, and each field must suit the element. Any
-    /// refusal is recorded and nothing resolves.
+    /// Otherwise every item must exist, be allowed for `agent`, — for a one-time code — be
+    /// allowed to give codes, — if origin-bound — list the origin of the frame the text goes
+    /// into, and each field must suit the element. Any refusal is recorded and nothing
+    /// resolves. A typed code is masked in responses from here on (`codes`).
     pub fn prepare_text(
         &self,
         agent: &str,
@@ -236,11 +241,7 @@ impl Guard {
         let origin = to.frame;
         let (refs, items) = references(template)?;
         let Some(first) = items.first().cloned() else {
-            return Ok(Prepared {
-                text: Zeroizing::new(template.to_owned()),
-                items,
-                domains: Vec::new(),
-            });
+            return Ok(Prepared::plain(template));
         };
         let origin_text = origin.map(Origin::as_str);
         let deny =
@@ -248,7 +249,13 @@ impl Guard {
         if self.is_locked() {
             return Err(deny(&first, DenialReason::Locked));
         }
-        let rules = lock_store(&self.store)?.policy_rules()?;
+        let asks_code = refs.iter().any(|r| matches!(r, Placeholder::Otp(_)));
+        let (rules, agent_otp) = {
+            let store = lock_store(&self.store)?;
+            let agent_otp = asks_code && keyharbor_core::settings::agent_otp(&**store)?;
+            (store.policy_rules()?, agent_otp)
+        };
+        let now = self.unix_seconds();
         let checked = self.with_vault(|loaded| {
             resolve_checked(
                 loaded.map(|l| &l.vault),
@@ -258,6 +265,8 @@ impl Guard {
                     template,
                     refs: &refs,
                     items: &items,
+                    agent_otp,
+                    unix_seconds: now,
                 },
                 to,
                 &deny,
@@ -267,10 +276,36 @@ impl Guard {
             Ok(result) => result?,
             Err(_) => return Err(deny(&first, DenialReason::Vault)),
         };
+        let codes: Vec<ItemName> = resolved.codes.iter().map(|(i, _)| i.clone()).collect();
+        self.remember_codes(resolved.codes, now);
         Ok(Prepared {
             text: resolved.text,
             items,
             domains: resolved.domains,
+            codes,
         })
+    }
+
+    /// Masks `codes` in responses from now on, for a short while.
+    fn remember_codes(&self, codes: Vec<(ItemName, keyharbor_core::OneTimeCode)>, now: u64) {
+        if codes.is_empty() {
+            return;
+        }
+        let mut recent = self
+            .codes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (item, code) in codes {
+            recent.remember(&item, code, now);
+        }
+    }
+
+    /// The masker for the one-time codes typed lately, if any.
+    pub(crate) fn code_masker(&self) -> Result<Option<Masker>> {
+        let now = self.unix_seconds();
+        self.codes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .masker(now)
     }
 }

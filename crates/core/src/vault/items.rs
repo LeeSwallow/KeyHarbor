@@ -1,8 +1,8 @@
 //! Adding, changing and removing items. Every change is recorded (without values).
 
 use super::{
-    DEFAULT_ITEM_TTL, ExpiryChoice, ItemChange, ItemStatus, NO_TTL, NewItem, Vault, check_fields,
-    sorted_origins,
+    DEFAULT_ITEM_TTL, ExpiryChoice, ItemChange, ItemSource, ItemStatus, NO_TTL, NewItem, Vault,
+    check_fields, check_seeds, sorted_origins,
 };
 use crate::{LOCAL_AGENT, expires_in};
 use anyhow::{Result, anyhow, bail};
@@ -58,6 +58,9 @@ fn apply_meta(row: &mut ItemRow, change: &ItemChange, present: &[&str]) -> Resul
     }
     if let Some(allowed) = change.run_allowed {
         row.run_allowed = allowed;
+    }
+    if let Some(allowed) = change.otp_allowed {
+        row.otp_allowed = allowed;
     }
     if let Some(expiry) = change.expiry {
         row.expires_at = expiry.map(|e| e.to_string());
@@ -125,6 +128,9 @@ impl Vault {
             bail!("a name with {DRAFT_MARK} is reserved for drafts");
         }
         check_fields(item.kind, &item.fields)?;
+        if item.source != ItemSource::Import {
+            check_seeds(item.kind, &item.fields)?;
+        }
         let id = *KeyId::new().as_bytes();
         let mut row = self.new_row(&item, id, domain)?;
         row.meta_mac = self.mac_for(&row, item.kind, &item.name, &item.origins);
@@ -173,6 +179,7 @@ impl Vault {
                 item.details.plain_fields.iter().map(|f| f.as_str()),
                 &present,
             )?,
+            otp_allowed: item.details.otp_allowed.unwrap_or(true),
             status: item.status.as_str().to_owned(),
             source: item.source.as_str().to_owned(),
             meta_mac: Vec::new(),
@@ -210,6 +217,7 @@ impl Vault {
         let (mut row, fields) = self.load_item_row(name)?;
         let (kind, name, origins) = self.verified(&row)?;
         check_fields(kind, &change.set_fields)?;
+        check_seeds(kind, &change.set_fields)?;
         let domain = kind.domain();
         let kept = self.next_fields(&row, &fields, domain, &change)?;
         let origins = change.origins.take().unwrap_or(origins);

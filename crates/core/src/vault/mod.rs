@@ -18,10 +18,11 @@ pub use drafts::{DraftItem, GeneratedDraft, GeneratedLogin, generate_password};
 pub use item::{
     ExpiryChoice, ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary, NewItem,
 };
-pub use resolve::fill_template;
+pub use resolve::{OneTimeCode, fill_placeholders, fill_template};
 pub use summary::{CatalogEntry, ItemFilter, ItemUse, catalog, effective_descriptions};
 
 use anyhow::{Context, Result, bail};
+use keyharbor_crypto::otp::OtpSeed;
 use keyharbor_domain::{
     ports::{
         AuditStore, Clock, FieldRow, ItemRow, KeyStore, RotationLock, SettingsStore, VaultStore,
@@ -93,6 +94,18 @@ pub(super) fn check_fields(
         }
         if !seen.insert(name.as_str().to_owned()) {
             bail!("field {} given twice", name.as_str());
+        }
+    }
+    Ok(())
+}
+
+/// Refuses a one-time code seed that is neither base32 nor an `otpauth://totp/` URI (#206).
+/// The error names the field, never the value. Imports skip it: a backup from before #206 may
+/// hold a seed field nobody could use, and refusing it would refuse the whole restore.
+pub(super) fn check_seeds(kind: ItemKind, fields: &[(FieldName, Zeroizing<String>)]) -> Result<()> {
+    for (name, value) in fields {
+        if kind.field(name.as_str()).is_some_and(|spec| spec.otp_seed) {
+            OtpSeed::parse(value).map_err(|e| anyhow::anyhow!("field {}: {e}", name.as_str()))?;
         }
     }
     Ok(())

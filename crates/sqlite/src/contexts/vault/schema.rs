@@ -33,6 +33,7 @@ diesel::table! {
         description -> Nullable<Text>,
         tags -> Text,
         plain_fields -> Text,
+        otp_allowed -> Bool,
     }
 }
 

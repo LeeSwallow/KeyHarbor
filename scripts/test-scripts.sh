@@ -64,6 +64,10 @@ planted "an-mcp-tool-calling-a-storage-port" mcp/src/tools/vault.rs 'fn x(s: &dy
 	"interfaces call storage ports directly"
 planted "a-placeholder-literal-outside-domain" guard/src/browser/login.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
 	"placeholder syntax outside keyharbor-domain"
+planted "an-otp-placeholder-literal-outside-domain" guard/src/browser/fill.rs 'fn x() -> String { format!("{{{{otp:{}}}}}", "a") }' \
+	"placeholder syntax outside keyharbor-domain"
+planted "the-otp-library-outside-crypto" guard/src/audit.rs 'fn x() { let _ = totp_rs::Builder::new(); }' \
+	"cryptographic primitives used outside keyharbor-crypto"
 planted "a-placeholder-literal-outside-its-module" domain/src/vault/kind.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
 	"placeholder syntax outside keyharbor-domain"
 planted "a-requester-check-outside-domain" supervisor/src/ops.rs 'fn x(a: &str) -> bool { a == ANY }' \

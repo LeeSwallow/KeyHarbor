@@ -67,8 +67,9 @@ const META_V1_HEX: &str = "7263b493640d4a2ae564062c249db35f664507d37b79a8333a6b5
 const META_V2_HEX: &str = "243dba424b4566e6d8dafec19ea3b767379af742d1c86ab7cc7fdebac551ea71";
 const META_V3_HEX: &str = "979703330f43937dc774d97860790c29c6f52135d2dedee64aa870d473cfe2c6";
 const META_V4_HEX: &str = "f6cc810227afe92f9d0c871ce7dc26c6e94abe8139094e850ee6e0007cd5971a";
+const META_V5_HEX: &str = "ab7262eac2abe9a2057a85adada7e6597ea9b1766be6587b3eeef840a79a1a2b";
 
-/// §7.6.3 metadata MAC: v4 bytes are stable, and items signed with v1–v3 still verify.
+/// §7.6.3 metadata MAC: v5 bytes are stable, and items signed with v1–v4 still verify.
 #[test]
 fn meta_macs_are_stable() {
     use keyharbor_domain::vault::{ItemKind, ItemName, Origin};
@@ -96,6 +97,7 @@ fn meta_macs_are_stable() {
         field_descriptions: &[],
         tags: &[],
         plain_fields: &[],
+        otp_allowed: true,
     };
     let v1: Vec<u8> = (0..32)
         .map(|i| u8::from_str_radix(&META_V1_HEX[2 * i..2 * i + 2], 16).unwrap())
@@ -121,6 +123,12 @@ fn meta_macs_are_stable() {
     let plain = ["username".to_owned()];
     meta.plain_fields = &plain;
     assert!(verify_meta_mac(keys.mac(), &meta, &v3).is_err());
-    let v4 = meta_mac(keys.mac(), &meta);
-    assert_eq!(hex(&v4), META_V4_HEX);
+    let v4: Vec<u8> = (0..32)
+        .map(|i| u8::from_str_radix(&META_V4_HEX[2 * i..2 * i + 2], 16).unwrap())
+        .collect();
+    assert!(verify_meta_mac(keys.mac(), &meta, &v4).is_ok());
+    meta.otp_allowed = false;
+    assert!(verify_meta_mac(keys.mac(), &meta, &v4).is_err());
+    let v5 = meta_mac(keys.mac(), &meta);
+    assert_eq!(hex(&v5), META_V5_HEX);
 }

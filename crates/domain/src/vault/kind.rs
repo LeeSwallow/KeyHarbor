@@ -44,6 +44,15 @@ impl ItemKind {
         let spec = self.spec();
         (!spec.free_fields).then(|| spec.fields.iter().map(|f| f.name).collect())
     }
+    /// The field that holds the seed of the item's one-time codes (`{{otp:item}}`, #206), if
+    /// the kind has one.
+    pub fn otp_field(self) -> Option<&'static str> {
+        self.spec()
+            .fields
+            .iter()
+            .find(|f| f.otp_seed)
+            .map(|f| f.name)
+    }
     /// The field whose value can be generated (see [`KindSpec::generated`]).
     pub fn generated_field(self) -> Option<&'static str> {
         self.spec().generated
@@ -111,6 +120,9 @@ pub struct FieldSpec {
     /// Shorter than `MIN_MASKED_CHARS` by nature (a card's security code): never masked, and
     /// storing one does not warn that it is too short to mask, since every value would (J-232).
     pub short: bool,
+    /// Holds a one-time code seed (base32 or an `otpauth://` URI): checked when stored, and
+    /// the source of `{{otp:item}}` (#206).
+    pub otp_seed: bool,
 }
 
 /// One item kind: its stored name, domain, fields and defaults (02 §2.7.2). Adding a kind is
@@ -144,6 +156,7 @@ pub const CUSTOM_FIELD: FieldSpec = FieldSpec {
     input: InputKind::Text,
     description: "Custom field",
     short: false,
+    otp_seed: false,
 };
 
 /// How a free-form field (an `env` variable) is treated: secret and masked.
@@ -154,6 +167,7 @@ pub const FREE_FIELD: FieldSpec = FieldSpec {
     input: InputKind::Text,
     description: "Environment variable",
     short: false,
+    otp_seed: false,
 };
 
 const fn plain(name: &'static str, description: &'static str) -> FieldSpec {
@@ -164,11 +178,18 @@ const fn plain(name: &'static str, description: &'static str) -> FieldSpec {
         input: InputKind::Text,
         description,
         short: false,
+        otp_seed: false,
     }
 }
 const fn short(spec: FieldSpec) -> FieldSpec {
     FieldSpec {
         short: true,
+        ..spec
+    }
+}
+const fn otp_seed(spec: FieldSpec) -> FieldSpec {
+    FieldSpec {
+        otp_seed: true,
         ..spec
     }
 }
@@ -195,7 +216,10 @@ pub static KINDS: &[KindSpec] = &[
         fields: &[
             plain("username", "Sign-in name or email"),
             password("password", "Sign-in password"),
-            secret("totp_seed", "One-time code seed (stored only)"),
+            otp_seed(secret(
+                "totp_seed",
+                "One-time code seed: base32 or an otpauth:// URI",
+            )),
             secret("note", "Free-form note"),
         ],
         free_fields: false,
@@ -340,6 +364,8 @@ mod tests {
         for name in ["password", "totp_seed", "value", "number", "cvc", "note"] {
             assert!(secrets.contains(&name), "{name}");
         }
+        assert_eq!(ItemKind::Login.otp_field(), Some("totp_seed"));
+        assert!(ItemKind::ALL[1..].iter().all(|k| k.otp_field().is_none()));
         assert!(!ItemKind::Login.is_secret_field("username"));
         assert!(
             ItemKind::Login.is_secret_field("cvc"),

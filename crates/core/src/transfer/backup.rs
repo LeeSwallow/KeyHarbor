@@ -43,6 +43,7 @@ struct ItemOut<'a> {
     tags: &'a [String],
     /// Fields that are not secret.
     plain_fields: Vec<&'a str>,
+    otp_allowed: bool,
     status: &'static str,
     source: &'static str,
     fields: BTreeMap<&'a str, &'a str>,
@@ -73,6 +74,9 @@ struct ItemIn {
     tags: Vec<String>,
     #[serde(default)]
     plain_fields: Vec<String>,
+    /// Absent in exports from before #206: on, as it was then.
+    #[serde(default)]
+    otp_allowed: Option<bool>,
     status: String,
     /// Wiped on drop from the moment it is parsed, so no early return frees a value unwiped
     /// (#154, J-190).
@@ -152,6 +156,7 @@ impl<'a> ItemOut<'a> {
                 .collect(),
             tags: &s.tags,
             plain_fields: s.plain_values.keys().map(String::as_str).collect(),
+            otp_allowed: s.otp_allowed,
             status: s.status.as_str(),
             source: s.source.as_str(),
             fields: fields
@@ -210,6 +215,7 @@ impl ItemIn {
                     .iter()
                     .map(|f| FieldName::parse(f))
                     .collect::<Result<_, _>>()?,
+                otp_allowed: self.otp_allowed,
             },
         })
     }

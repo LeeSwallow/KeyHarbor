@@ -44,6 +44,7 @@ pub fn summary_json(item: &ItemSummary) -> serde_json::Value {
         "origins": item.origins,
         "origin_binding": item.origin_binding,
         "run_allowed": item.run_allowed,
+        "otp_allowed": item.otp_allowed,
         "expires_at": item.expires_at.map(|e| e.to_string()),
         "description": item.description,
         "field_descriptions": item.field_descriptions,

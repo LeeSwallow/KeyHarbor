@@ -50,6 +50,7 @@ pub struct ItemModel {
     pub tags: String,
     /// Space-joined, sorted.
     pub plain_fields: String,
+    pub otp_allowed: bool,
 }
 
 #[derive(Queryable, Selectable, Insertable)]

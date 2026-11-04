@@ -80,4 +80,12 @@ describe("the settings screen", () => {
     expect(unknown).not.toContain('class="is-on">없음');
     expect(unknown).not.toContain("인증 없음:");
   });
+
+  it("offers agent one-time codes as one switch under 보안, off by default (#206)", () => {
+    const otp = settings([{ key: "agent_otp", value: "false", default: "false", weakening: { when: "set_to", value: "true" } }]);
+    expect(otp).toContain("<h3>보안</h3>");
+    expect(otp).toContain("에이전트가 OTP 코드 입력");
+    expect(otp).toContain('role="switch" aria-checked="false" data-action="set-setting" data-key="agent_otp" data-value="true"');
+    expect(otp).toContain("2단계 인증이 사실상 1단계가 됩니다");
+  });
 });

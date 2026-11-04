@@ -5,7 +5,9 @@
 //! before v2 still verify under v1 as long as those attributes hold their v1-era values (the
 //! kind's default run permission, no expiry, no descriptions); any other value needs v2. v3
 //! adds tags; a v2 (or v1) MAC still verifies an item without tags. v4 adds the fields marked
-//! not secret; a v3 (or older) MAC still verifies an item where every field is secret.
+//! not secret; a v3 (or older) MAC still verifies an item where every field is secret. v5 adds
+//! whether agents may type the item's one-time codes (#206); a v4 (or older) MAC still verifies
+//! an item that allows them, the value every item had before v5.
 
 use crate::{VaultError, keys::SecretKey, keys::VaultId, record::push_lp};
 use keyharbor_crypto::mac::{mac, verify_mac};
@@ -15,6 +17,7 @@ const META_TAG_V1: &[u8] = b"keyharbor/meta/v1";
 const META_TAG_V2: &[u8] = b"keyharbor/meta/v2";
 const META_TAG_V3: &[u8] = b"keyharbor/meta/v3";
 const META_TAG_V4: &[u8] = b"keyharbor/meta/v4";
+const META_TAG_V5: &[u8] = b"keyharbor/meta/v5";
 
 pub struct ItemMeta<'a> {
     pub vault: &'a VaultId,
@@ -37,6 +40,8 @@ pub struct ItemMeta<'a> {
     pub tags: &'a [String],
     /// Fields that are not secret (shown in listings, not masked); order does not matter.
     pub plain_fields: &'a [String],
+    /// Agents may type the item's one-time codes (`{{otp:item}}`) when `agent_otp` is on.
+    pub otp_allowed: bool,
 }
 
 impl ItemMeta<'_> {
@@ -93,7 +98,7 @@ fn input(tag: &[u8], meta: &ItemMeta) -> Vec<u8> {
             push_lp(&mut input, text.as_bytes());
         }
     }
-    if tag == META_TAG_V3 || tag == META_TAG_V4 {
+    if tag == META_TAG_V3 || tag == META_TAG_V4 || tag == META_TAG_V5 {
         let mut tags: Vec<&str> = meta.tags.iter().map(String::as_str).collect();
         tags.sort_unstable();
         tags.dedup();
@@ -103,7 +108,7 @@ fn input(tag: &[u8], meta: &ItemMeta) -> Vec<u8> {
             push_lp(&mut input, tag.as_bytes());
         }
     }
-    if tag == META_TAG_V4 {
+    if tag == META_TAG_V4 || tag == META_TAG_V5 {
         let mut plain: Vec<&str> = meta.plain_fields.iter().map(String::as_str).collect();
         plain.sort_unstable();
         plain.dedup();
@@ -113,18 +118,28 @@ fn input(tag: &[u8], meta: &ItemMeta) -> Vec<u8> {
             push_lp(&mut input, field.as_bytes());
         }
     }
+    if tag == META_TAG_V5 {
+        input.push(u8::from(meta.otp_allowed));
+    }
     input
 }
 
-/// The v4 MAC; every write signs with it.
+/// The v5 MAC; every write signs with it.
 pub fn meta_mac(mk: &SecretKey, meta: &ItemMeta) -> [u8; 32] {
-    mac(mk, &input(META_TAG_V4, meta))
+    mac(mk, &input(META_TAG_V5, meta))
 }
 
-/// Accepts a v4 MAC; older MACs only for an item where every field is secret: v3, v2 when
-/// it also has no tags, v1 when besides the v2 attributes hold their v1-era values. An older
-/// MAC never vouches for a field marked not secret.
+/// Accepts a v5 MAC; a v4 MAC only for an item that allows one-time codes; older MACs only for
+/// such an item where also every field is secret: v3, v2 when it also has no tags, v1 when
+/// besides the v2 attributes hold their v1-era values. An older MAC never vouches for a field
+/// marked not secret, nor for codes turned off.
 pub fn verify_meta_mac(mk: &SecretKey, meta: &ItemMeta, tag: &[u8]) -> Result<(), VaultError> {
+    if verify_mac(mk, &input(META_TAG_V5, meta), tag) {
+        return Ok(());
+    }
+    if !meta.otp_allowed {
+        return Err(VaultError::Tampered);
+    }
     if verify_mac(mk, &input(META_TAG_V4, meta), tag) {
         return Ok(());
     }
@@ -181,6 +196,7 @@ mod tests {
             field_descriptions: &[],
             tags: &[],
             plain_fields: &[],
+            otp_allowed: true,
         }
     }
 
@@ -315,5 +331,24 @@ mod tests {
         let mut swapped = meta(&f, &f.origins);
         swapped.plain_fields = &other;
         assert!(verify_meta_mac(&mk, &swapped, &v4).is_err());
+    }
+
+    #[test]
+    fn turning_codes_off_is_signed_and_no_older_mac_vouches_for_it() {
+        let f = fixture();
+        let mk = SecretKey::from_bytes([3; 32]);
+        let base = meta(&f, &f.origins);
+        let v4 = mac(&mk, &input(META_TAG_V4, &base));
+        assert!(
+            verify_meta_mac(&mk, &base, &v4).is_ok(),
+            "an item from before v5 allows codes"
+        );
+        let mut off = meta(&f, &f.origins);
+        off.otp_allowed = false;
+        assert!(verify_meta_mac(&mk, &off, &v4).is_err());
+        let v5 = meta_mac(&mk, &off);
+        assert!(verify_meta_mac(&mk, &off, &v5).is_ok());
+        // Turning codes back on in the database is caught: the v5 MAC bound "off".
+        assert!(verify_meta_mac(&mk, &base, &v5).is_err());
     }
 }

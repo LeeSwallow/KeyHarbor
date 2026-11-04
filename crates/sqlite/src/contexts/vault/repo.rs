@@ -450,6 +450,7 @@ mod tests {
             field_descriptions: vec![],
             tags: vec![],
             plain_fields: vec![],
+            otp_allowed: true,
             status: "active".into(),
             source: "user".into(),
             meta_mac: vec![id; 32],

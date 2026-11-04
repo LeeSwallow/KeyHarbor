@@ -55,6 +55,7 @@ pub fn item_row(model: ItemModel, children: ItemChildren) -> Result<ItemRow> {
             .split_whitespace()
             .map(str::to_owned)
             .collect(),
+        otp_allowed: model.otp_allowed,
         status: model.status,
         source: model.source,
         meta_mac: model.meta_mac,
@@ -79,6 +80,7 @@ pub fn item_model(row: &ItemRow) -> ItemModel {
         description: row.description.clone(),
         tags: row.tags.join(" "),
         plain_fields: row.plain_fields.join(" "),
+        otp_allowed: row.otp_allowed,
     }
 }
 

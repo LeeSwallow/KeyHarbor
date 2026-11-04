@@ -36,10 +36,14 @@ pub enum DenialReason {
     OutsideRun,
     /// A request to a run's lookup socket did not carry the run's token (channel ④).
     BadToken,
+    /// Agents may not type one-time codes: `agent_otp` is off (R-48(3)).
+    OtpOff,
+    /// The item's one-time codes are turned off (`otp_allowed`, R-48(3)).
+    OtpNotAllowed,
 }
 
 impl DenialReason {
-    pub const ALL: [DenialReason; 16] = [
+    pub const ALL: [DenialReason; 18] = [
         Self::NotFound,
         Self::Tampered,
         Self::Discarded,
@@ -56,6 +60,8 @@ impl DenialReason {
         Self::Expired,
         Self::OutsideRun,
         Self::BadToken,
+        Self::OtpOff,
+        Self::OtpNotAllowed,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -76,6 +82,8 @@ impl DenialReason {
             Self::Expired => "expired",
             Self::OutsideRun => "outside-run",
             Self::BadToken => "bad-token",
+            Self::OtpOff => "otp-off",
+            Self::OtpNotAllowed => "otp-not-allowed",
         }
     }
 
@@ -95,7 +103,10 @@ impl DenialReason {
             Self::Policy => {
                 "keyharbor policy list, then keyharbor policy allow --agent <agent> --resource item --target <item>"
             }
-            Self::Origin | Self::NoOrigin => "keyharbor vault edit <item> --origin <origin>",
+            Self::Origin => "keyharbor vault edit <item> --origin <origin>",
+            Self::NoOrigin => {
+                "keyharbor vault edit <item> --origin <origin> (a one-time code also needs --origin-binding on)"
+            }
             Self::FieldKind => {
                 "a password goes only into a password input; point the agent at that field"
             }
@@ -112,6 +123,10 @@ impl DenialReason {
             Self::BadToken => {
                 "only the program keyharbor run started may ask; check what else used its socket"
             }
+            Self::OtpOff => {
+                "type the code yourself (handoff), or let agents type codes: keyharbor settings set agent_otp true"
+            }
+            Self::OtpNotAllowed => "keyharbor vault edit <item> --otp-allowed on",
         }
     }
 }

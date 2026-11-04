@@ -79,14 +79,21 @@ pub fn collect_fields(
         if fields.iter().any(|(n, _)| n.as_str() == field) {
             continue;
         }
-        let value = Zeroizing::new(rpassword::prompt_password(format!(
-            "{field} (empty to skip): "
-        ))?);
+        let value = Zeroizing::new(rpassword::prompt_password(prompt(kind, field))?);
         if !value.is_empty() {
             fields.push((field_name(kind, field)?, value));
         }
     }
     Ok(fields)
+}
+
+/// The hidden prompt for `field`: a seed says which forms it takes.
+fn prompt(kind: ItemKind, field: &str) -> String {
+    if kind.field(field).is_some_and(|spec| spec.otp_seed) {
+        format!("{field} (base32 or otpauth:// URI, empty to skip): ")
+    } else {
+        format!("{field} (empty to skip): ")
+    }
 }
 
 pub fn read_passphrase(from_stdin: bool, confirm: bool) -> Result<Passphrase> {
