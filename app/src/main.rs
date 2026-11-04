@@ -16,7 +16,7 @@ use keyharbor_app::{
 };
 use keyharbor_keystore::KeychainKeyStore;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use tauri::{Manager, State};
+use tauri::State;
 
 type Reply<T> = Result<T, String>;
 
@@ -189,17 +189,6 @@ fn rename_item(ctx: State<'_, Ctx>, from: String, to: String) -> Reply<String> {
     commands::rename_item(&ctx, &from, &to).map_err(message)
 }
 
-/// The data folder the CLI uses: `KEYHARBOR_HOME`, else the macOS application data folder.
-fn data_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("KEYHARBOR_HOME") {
-        return PathBuf::from(dir);
-    }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    home.join("Library/Application Support/KeyHarbor")
-}
-
 /// The CLI that runs supervisors: `KEYHARBOR_CLI`, else `Contents/Helpers/keyharbor` beside
 /// this binary in the bundle (R-45), else `keyharbor` on PATH.
 fn cli_binary() -> PathBuf {
@@ -215,11 +204,11 @@ fn cli_binary() -> PathBuf {
     }
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let keys: keyharbor_app::KeyStores = Arc::new(|| Box::new(KeychainKeyStore));
     let clipboard = Arc::new(keyharbor_app::clipboard::MacClipboard);
     let ctx = Ctx::new(
-        data_dir(),
+        keyharbor_app::data_dir(|key| std::env::var_os(key))?,
         keys,
         Arc::new(SystemClock),
         cli_binary(),
@@ -231,18 +220,16 @@ fn main() {
         .manage(ctx)
         .setup(|app| {
             shell::install(app.handle())?;
-            // The window starts hidden (tauri.conf.json) and shows only past `OpenApp`.
-            commands::open_app(&app.state::<Ctx>())?;
-            if let Some(window) = app.get_webview_window("main") {
-                window.show()?;
-            }
+            // The window starts hidden (tauri.conf.json) and shows only past `OpenApp`. Refused,
+            // it stays hidden and the menu bar's "열기" asks again; the app does not stop (J-177).
+            shell::show_window(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
             // Closing the window keeps KeyHarbor in the menu bar (09 §9.2).
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                shell::log_ignored("hide the window", window.hide());
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -281,6 +268,6 @@ fn main() {
             remove_item,
             rename_item
         ])
-        .run(tauri::generate_context!())
-        .expect("KeyHarbor app failed to start");
+        .run(tauri::generate_context!())?;
+    Ok(())
 }

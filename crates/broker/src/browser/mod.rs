@@ -3,17 +3,11 @@
 //! It types exactly the text it is given and returns results unmasked; the supervisor only
 //! ever reaches it through `keyharbor_guard::GuardedBrowser`.
 
-mod form;
-mod frames;
+mod dom;
 mod input;
-mod login;
-mod navigate;
+mod inspect;
 mod navigation;
 mod receive;
-mod screenshot;
-mod snapshot;
-mod tabs;
-mod wait;
 
 use crate::cdp::Cdp;
 use anyhow::{Context, Result};
@@ -29,12 +23,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     path::PathBuf,
     sync::Arc,
-    time::Duration,
 };
-
-pub(crate) const LOAD_TIMEOUT: Duration = Duration::from_secs(15);
-pub(crate) const WAIT_TIMEOUT: Duration = Duration::from_secs(15);
-pub(crate) const POLL: Duration = Duration::from_millis(100);
 
 /// Built with [`crate::chrome::CdpLink::browser`].
 pub struct CdpBrowser {
