@@ -16,7 +16,7 @@ cargo run -p keyharbor -- list
 
 | 계층 | crate | 하는 일 | 주요 모듈 |
 |---|---|---|---|
-| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립(`compose` 한 곳: 저장소·키 저장소·시계·감독자), 파일 읽기·쓰기, `run`의 프로세스 실행 | `compose`, `session_cmd`, `grant_cmd`, `browser_cmd/{host, install}`, `vault_cmd/{input, items, output, files}`, `policy_cmd`, `audit_cmd`, `settings_cmd`, `site_cmd`, `run_cmd/{child, files, lookup, output, signals}`, `tty_confirm` |
+| interfaces | `keyharbor` (CLI) | clap 명령, 어댑터 조립(`compose` 한 곳: 저장소·키 저장소·시계·감독자), 파일 읽기·쓰기, `run`의 프로세스 실행 | `compose`, `args/{choice, description, expiry, browser}`, `session_cmd/{site, grant}`, `browser_cmd/{host, install}`, `vault_cmd/{items, files, keys, input, output, requests, drafts}`, `policy_cmd`, `audit_cmd`, `settings_cmd`, `status_cmd`, `run_cmd/{child, files, lookup, output, signals}`, `tty_confirm` |
 | | `keyharbor-mcp` | stdio MCP 서버. 저장소·금고 opener·런타임은 생성자로 받는다 | `server`, `scope`, `tools/{session, browser, site, vault}` |
 | adapters | `keyharbor-supervisor` | 세션 감독자 프로세스: 잠금, Chrome을 guard로 감싸 제어 socket 처리, 상태 기록(`core::session::supervision`), 제어 프로토콜 wire 타입과 client, `__supervise` argv(`SuperviseArgs`), `SessionRuntime`(`ProcessRuntime`) | `process/{mod, prepare}`, `control/{wire, server, client}`, `ops`, `argv`, `runtime`, `lock`, `paths` |
 | | `keyharbor-broker` | 브라우저 어댑터: Chrome 실행과 CDP pipe, ego lite 탐지와 CDP 중계기(`ego/{probe, relay.js}`, ADR-0018), `BrowserPort`·`PageInput`·`FrameInspector` 구현(`CdpBrowser`), 모든 페이지 감시(`pages/{capture, gate, cookies}`: 로그인 포착, grant 밖 문서 차단, 끝난 grant의 쿠키 삭제). domain에만 의존하고 supervisor만 이것에 의존한다 | `chrome`, `ego/{probe, relay.js}`, `cdp/{client, protocol}`(crate 내부), `browser/{navigate, snapshot, input, tabs, screenshot, wait, frames}`(crate 내부) |

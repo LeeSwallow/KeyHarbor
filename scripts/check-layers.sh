@@ -16,9 +16,9 @@
 #    reach browser operations only through the guarded control path.
 # 6. A persistence context does not reach into another context's models,
 #    schema or mappers.
-# 7. (A) Interfaces call use cases only: the CLI's command modules and the MCP
-#    server neither open the store nor call storage ports; the composition
-#    root (cli/src/main.rs, cli/src/compose.rs) builds the adapters.
+# 7. (A) Interfaces call use cases only: the CLI's modules (at any depth) and
+#    the MCP server neither open the store nor call storage ports; the
+#    composition root (cli/src/main.rs, cli/src/compose.rs) builds the adapters.
 # 8. (J) Which session operation needs which policy action is the guard's
 #    table (`keyharbor_guard::session`); interfaces never name a session-level
 #    `Action`.
@@ -193,7 +193,8 @@ else
 fi
 
 # --- 7. (A) interfaces call use cases, the composition root builds adapters --------
-surfaces="$(ls cli/src/*_cmd.rs cli/src/*_cmd/*.rs 2>/dev/null; find mcp/src -name '*.rs' 2>/dev/null)"
+# Every CLI file at any depth (browser_cmd/host/ included) except the composition root.
+surfaces="$(find cli/src mcp/src -name '*.rs' ! -path cli/src/main.rs ! -path cli/src/compose.rs 2>/dev/null)"
 if [ -n "$surfaces" ]; then
 	# shellcheck disable=SC2086 # one path per word
 	hits="$(grep -nE 'SqliteStores?\b|keystore_from_env|ProcessRuntime::new' $surfaces || true)"

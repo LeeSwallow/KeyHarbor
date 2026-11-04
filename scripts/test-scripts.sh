@@ -56,6 +56,10 @@ planted "mcp-depends-on-sqlite" mcp/Cargo.toml 'keyharbor-sqlite = { path = "../
 	"mcp must not depend on keyharbor-sqlite"
 planted "a-cli-command-opening-the-store" cli/src/policy_cmd.rs 'fn x() { let _ = keyharbor_sqlite::SqliteStore::open; }' \
 	"interfaces build adapters outside the composition root"
+planted "a-nested-cli-module-opening-the-store" cli/src/browser_cmd/host/receive.rs 'fn x() { let _ = keyharbor_sqlite::SqliteStore::open; }' \
+	"interfaces build adapters outside the composition root"
+planted "a-nested-cli-module-calling-a-storage-port" cli/src/session_cmd/grant.rs 'fn x(s: &dyn S) { let _ = s.policy_rules(); }' \
+	"interfaces call storage ports directly"
 planted "an-mcp-tool-calling-a-storage-port" mcp/src/tools/vault.rs 'fn x(s: &dyn S) { let _ = s.policy_rules(); }' \
 	"interfaces call storage ports directly"
 planted "a-placeholder-literal-outside-domain" guard/src/login.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
