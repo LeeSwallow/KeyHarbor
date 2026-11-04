@@ -3,35 +3,47 @@
 // While the connection is open Chrome keeps the service worker alive; when it drops (the host is
 // not installed, KeyHarbor was updated) the bridge tries again a minute later.
 
-import { parseRequestSite, toBridgeWire, toRequestAnswerWire } from "../wire/protocol.js";
-import { HOST_NAME } from "../wire/protocol.js";
 import type { SiteRequestOutcome } from "../../domain/site-request.js";
-import type { WebExtApi } from "./api.js";
+import { HOST_NAME, parseRequestSite, toBridgeWire, toRequestAnswerWire } from "../wire/protocol.js";
+import type { NativePortWire, WebExtApi } from "./api.js";
 
+/**
+ * How long to wait before connecting again. Fixed, and not tied to the app's BRIDGE_WAIT: a
+ * missing host fails at once, so a shorter wait only spins, and a longer one leaves a freshly
+ * installed host unreached for longer.
+ */
 const RETRY_MS = 60_000;
 
 export type AnswerSiteRequest = (origin: string, session: string) => Promise<SiteRequestOutcome>;
 
+/** Posts on a port that may have dropped meanwhile; the reconnect is onDisconnect's job. */
+function postQuietly(port: NativePortWire, message: unknown): void {
+  try {
+    port.postMessage(message);
+  } catch {
+    // The port is gone; the host sees the drop and ends the ask without an answer.
+  }
+}
+
 export function startBridge(api: WebExtApi, answer: AnswerSiteRequest, retryMs: number = RETRY_MS): void {
   const connect = () => {
-    let port;
+    let port: NativePortWire;
     try {
       port = api.runtime.connectNative(HOST_NAME);
     } catch {
       setTimeout(connect, retryMs);
       return;
     }
-    const live = port;
-    live.onMessage.addListener((raw) => {
+    port.onMessage.addListener((raw) => {
       const ask = parseRequestSite(raw);
       if (!ask) return;
       void answer(ask.origin, ask.session).then(
-        (outcome) => live.postMessage(toRequestAnswerWire(ask.id, outcome)),
-        () => live.postMessage(toRequestAnswerWire(ask.id, { outcome: "failed" })),
+        (outcome) => postQuietly(port, toRequestAnswerWire(ask.id, outcome)),
+        () => postQuietly(port, toRequestAnswerWire(ask.id, { outcome: "failed" })),
       );
     });
-    live.onDisconnect.addListener(() => setTimeout(connect, retryMs));
-    live.postMessage(toBridgeWire());
+    port.onDisconnect.addListener(() => setTimeout(connect, retryMs));
+    port.postMessage(toBridgeWire());
   };
   connect();
 }
