@@ -155,7 +155,7 @@ npm run check     # lint + test (CI가 이것을 돈다)
 
 - native host는 `keyharbor browser host`다. stdin/stdout의 길이 접두 JSON 하나를 받고, `receive_site` v1과 쿠키가 그 사이트 것인지 검사한 뒤 실행 중인 세션의 감독자에게 넘긴다. 응답의 오류 코드는 `bad_request`·`no_session`·`not_running`·`refused`(다른 사이트 쿠키, TTL 범위 밖)·`failed`이고, 값은 응답·오류·사용 기록·DB에 없다(`crates/cli/tests/browser_host.rs`).
 - 감독자가 grant(`created_by = handoff`, `ttl_seconds` 동안)를 먼저 기록하고 쿠키를 넣은 뒤(`Storage.setCookies`), `localStorage`가 있으면 그 origin에 넣고 origin을 연다. 사용 기록은 `site_handed_off`. 이 세션은 그때부터 grant 안의 사이트만 연다([J-81](../../docs/design/06-requirements-log.md)).
-- 남은 것: `keyharbor session receive` 대기 명령과 관리 앱의 끌어다 놓기 대상(5단계).
+- 기다리는 쪽: CLI `keyharbor session receive <id> [--origin] [--timeout-seconds]`, MCP `session_wait_site`, 관리 앱 세션 카드에 탭 끌어다 놓기(#113).
 
 ## 스토어에 올리기 (#124)
 
