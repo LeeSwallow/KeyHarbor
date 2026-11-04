@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-04
+
+자동화가 멈췄을 때 사람이 짧게 다시 이어 가게 하는 릴리스다. 판정은 그대로이고, 멈춘 이유를 보고 푸는 길을 더했다.
+
+### Added
+
+- `keyharbor unlock <세션>`: guard가 세션의 치환을 잠갔을 때(금고 값이 든 요청 세 번, 입력 중 포커스 이동) 사람이 풀어 이어 간다. 약화 작업이라 터미널에서 확인을 받는다. 관리 앱 세션 카드에는 "치환 잠김"과 [다시 허용]이 보이고, 잠기면 알림이 온다(설정 `notify_locks`). MCP·에이전트 경로로는 풀 수 없고, 푼 것도 사용 기록에 남는다. (#195)
+- `keyharbor audit --denials [--session <id>] [--since 24h] [--json]`: 거부·잠금·기다리는 인계를 사유별로 묶고, 사유마다 푸는 방법을 한 줄로 보여 준다. 값은 출력하지 않는다. (#193)
+- secret 필드에 "해당없음"·"none" 같은 흔한 말이나 가려지지 않을 만큼 짧은 값을 저장하면 CLI와 관리 앱이 경고한다(항목·필드·이유만, 값 없음). 저장은 막지 않는다. (#194)
+
+### Changed
+
+- 카드 CVC처럼 원래 짧은 필드는 "너무 짧아 가려지지 않는다" 경고를 내지 않는다. (#196)
+
 ## [0.3.0] - 2026-11-04
 
 ### Added
@@ -98,7 +112,8 @@
 - 보호를 약하게 하는 변경(정책 allow, 기록 끄기, 포착, origin 추가, 클립보드 시간 늘리기 등)은 사람이 확인한다.
 - 관리 앱은 네트워크 listener를 열지 않고, 창의 capability는 `core:default`뿐이다.
 
-[Unreleased]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.0...v0.1.1
