@@ -4,9 +4,19 @@
 use super::Shared;
 use keyharbor_broker::{DocumentRule, Gate, PageHooks, chrome::CdpLink};
 use keyharbor_core::grant;
-use keyharbor_domain::ports::Clock;
-use keyharbor_guard::lock_store;
+use keyharbor_domain::{
+    SessionId,
+    audit::{AuditEvent, AuditKind},
+    policy::SESSION_AGENT,
+    ports::Clock,
+    vault::Origin,
+};
+use keyharbor_guard::{audit, lock_store};
 use std::{sync::Arc, time::Duration};
+
+/// The `result` of a `credential_captured` record whose capture failed. Stored, so the text
+/// never changes.
+const CAPTURE_FAILED: &str = "failed";
 
 /// Captured sign-ins waiting for the guard. A person submits one form at a time; when the
 /// queue is full the page watcher waits (`send().await`), so none is dropped.
@@ -36,10 +46,25 @@ pub(super) fn watch_pages(shared: &Arc<Shared>, link: &CdpLink, clock: Arc<dyn C
     let shared = shared.clone();
     tokio::spawn(async move {
         while let Some(login) = captured.recv().await {
-            let shared = shared.clone();
-            let _ = tokio::task::spawn_blocking(move || shared.guard.capture(login)).await;
+            let origin = Origin::parse(&login.origin).ok();
+            let worker = shared.clone();
+            let outcome = tokio::task::spawn_blocking(move || worker.guard.capture(login)).await;
+            if !matches!(outcome, Ok(Ok(_)))
+                && let Ok(store) = lock_store(&shared.store)
+            {
+                audit::record(&**store, &capture_failed(shared.id, origin.as_ref()));
+            }
         }
     });
+}
+
+/// The record of a sign-in the guard could not capture (the vault would not open, the store
+/// failed, the task panicked): the origin and a fixed result, never the error, whose text
+/// is not ours to vouch for, and never a value (J-181).
+fn capture_failed(session: SessionId, origin: Option<&Origin>) -> AuditEvent {
+    AuditEvent::new(SESSION_AGENT, AuditKind::CredentialCaptured, CAPTURE_FAILED)
+        .session(session)
+        .origin(origin.map(Origin::as_str))
 }
 
 /// Removes the cookies of every grant of this session that has ended (R-43).
@@ -66,4 +91,31 @@ pub(super) fn sweep_ended_grants(shared: &Arc<Shared>, link: &CdpLink, clock: Ar
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ID: &str = "11111111-1111-4111-8111-111111111111";
+
+    #[test]
+    fn a_failed_capture_is_recorded_with_its_origin_and_a_fixed_result() {
+        let id = SessionId::parse(ID).unwrap();
+        let origin = Origin::parse("https://example.com").unwrap();
+        let event = capture_failed(id, Some(&origin));
+        assert_eq!(event.agent, SESSION_AGENT);
+        assert_eq!(event.kind, AuditKind::CredentialCaptured);
+        assert_eq!(event.result, "failed");
+        assert_eq!(event.session_id.as_deref(), Some(ID));
+        assert_eq!(event.origin.as_deref(), Some("https://example.com"));
+        assert_eq!(event.item_name, None, "no item was stored");
+    }
+
+    #[test]
+    fn a_capture_from_an_unreadable_origin_is_recorded_without_one() {
+        let event = capture_failed(SessionId::parse(ID).unwrap(), None);
+        assert_eq!(event.origin, None);
+        assert_eq!(event.result, "failed");
+    }
 }
