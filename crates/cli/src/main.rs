@@ -133,7 +133,7 @@ fn dispatch(app: &App, command: Command) -> Result<()> {
         Command::Mcp(args) => serve_mcp(app, args),
         Command::Vault(command) => vault_cmd::run(app, command),
         Command::Policy(command) => policy_cmd::run(&*app.store()?, command),
-        Command::Audit(args) => audit_cmd::run(&*app.store()?, args),
+        Command::Audit(args) => audit_cmd::run(app, args),
         Command::Settings(command) => settings_cmd::run(&*app.store()?, command),
         Command::Site(command) => site::run(app, command),
         Command::Grant(command) => grant::run(app, command),

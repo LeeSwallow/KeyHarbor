@@ -274,3 +274,107 @@ fn session_lifecycle_is_recorded() {
     assert_eq!(last["agent"], "browser");
     assert_eq!(last["result"], "stopped");
 }
+
+#[test]
+fn denials_are_grouped_by_cause_with_a_fix_and_no_values() {
+    let c = Cli::new();
+    let secret = format!(
+        "KH-SYNTH-{}",
+        c.tmp.path().file_name().unwrap().to_string_lossy()
+    );
+    c.ok(&["vault", "init"], None);
+    c.ok(
+        &["vault", "add", "app", "--kind", "env", "--stdin"],
+        Some(&serde_json::json!({ "API_KEY": secret }).to_string()),
+    );
+    c.ok(
+        &[
+            "policy",
+            "deny",
+            "--agent",
+            "codex",
+            "--resource",
+            "item",
+            "--target",
+            "app",
+        ],
+        None,
+    );
+    for _ in 0..2 {
+        let out = c.run(
+            &["run", "--agent", "codex", "--env", "app", "--", "true"],
+            None,
+        );
+        assert!(!out.status.success());
+    }
+    let missing = c.run(&["run", "--env", "nope", "--", "true"], None);
+    assert!(!missing.status.success());
+    let browser = c.tmp.path().join("browser");
+    fs::write(&browser, FAKE_BROWSER).unwrap();
+    fs::set_permissions(&browser, fs::Permissions::from_mode(0o700)).unwrap();
+    let id = c
+        .ok(&["create", "work"], None)
+        .split('\t')
+        .next()
+        .unwrap()
+        .to_owned();
+    c.ok(&["open", &id, "--browser", browser.to_str().unwrap()], None);
+    c.ok(&["wait-auth", &id, "--origin", "https://example.com"], None);
+
+    let text = c.ok(&["audit", "--denials"], None);
+    let heads: Vec<(&str, &str)> = text
+        .lines()
+        .filter(|l| !l.starts_with(' '))
+        .map(|l| {
+            let mut parts = l.split('\t');
+            (parts.next().unwrap(), parts.next().unwrap())
+        })
+        .collect();
+    // Most frequent first; at equal counts, the more recent first.
+    assert_eq!(
+        heads,
+        [
+            ("policy", "2"),
+            ("awaiting-handoff", "1"),
+            ("not_found", "1")
+        ],
+        "{text}"
+    );
+    assert!(text.contains("  codex\t-\tapp\t-\t2\t"), "{text}");
+    assert!(
+        text.contains("  fix: keyharbor policy list, then keyharbor policy allow"),
+        "{text}"
+    );
+    assert!(text.contains("  fix: finish in the browser"), "{text}");
+
+    let only_session = c.ok(&["audit", "--denials", "--session", &id], None);
+    assert!(
+        only_session.starts_with("awaiting-handoff\t1\t"),
+        "{only_session}"
+    );
+    let recent = c.ok(&["audit", "--denials", "--since", "1h", "--json"], None);
+    let groups: Value = serde_json::from_str(&recent).unwrap();
+    assert_eq!(groups[0]["reason"], "policy");
+    assert_eq!(groups[0]["count"], 2);
+    assert_eq!(groups[0]["rows"][0]["item_name"], "app");
+    assert!(groups[0]["fix"].as_str().unwrap().contains("policy allow"));
+
+    // A stopped session no longer waits for its handoff.
+    c.ok(&["stop", &id], None);
+    assert_eq!(
+        c.ok(&["audit", "--denials", "--session", &id], None),
+        "no refusals, locks or waiting handoffs\n"
+    );
+    for bad in [
+        &["audit", "--denials", "--since", "1w"][..],
+        &["audit", "--since", "1h"],
+        &["audit", "--session", "x"],
+        &["audit", "--denials", "--limit", "3"],
+    ] {
+        assert!(!c.run(bad, None).status.success(), "{bad:?}");
+    }
+
+    for out in [text, only_session, recent] {
+        assert!(!out.contains(&secret), "the summary leaks a value");
+    }
+}
