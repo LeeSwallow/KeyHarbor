@@ -289,3 +289,21 @@ fn without_authentication_the_app_opens_and_says_which_method_it_uses() {
         "the screens show the authenticator's own id"
     );
 }
+
+#[test]
+fn lifting_a_session_lock_asks_the_authenticator_first() {
+    let tmp = tempfile::tempdir().unwrap();
+    seed(tmp.path());
+    let id = "11111111-1111-4111-8111-111111111111";
+    let auth = Arc::new(RefuseAll::default());
+    let refusing = ctx(tmp.path(), auth.clone(), Arc::default());
+    refused_for(
+        commands::unlock_session(&refusing, id),
+        AuthScope::PolicyChange,
+    );
+    assert_eq!(*auth.0.lock().unwrap(), [AuthScope::PolicyChange]);
+    // Past the challenge, a session with no supervisor has nothing to lift.
+    let open = ctx(tmp.path(), Arc::new(NoneAuth), Arc::default());
+    let error = commands::unlock_session(&open, id).unwrap_err();
+    assert!(error.to_string().contains("not running"), "{error}");
+}

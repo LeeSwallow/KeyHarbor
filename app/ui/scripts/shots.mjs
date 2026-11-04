@@ -50,7 +50,7 @@ const answers = {
     ["browser", "auto", "auto"], ["ego_probe_seconds", "5", "5"], ["ego_poll_ms", "20", "20"],
     ["upload_dirs", "~/Documents/Recruiting:~/Pictures/증명사진", ""], ["upload_max_files", "10", "10"],
     ["default_item_ttl", "none", "none"], ["draft_ttl", "7d", "7d"], ["clipboard_clear_seconds", "30", "30"],
-    ["notify_requests", "true", "true"], ["notify_handoffs", "true", "true"], ["notify_drafts", "true", "true"], ["notify_denials", "true", "true"],
+    ["notify_requests", "true", "true"], ["notify_handoffs", "true", "true"], ["notify_drafts", "true", "true"], ["notify_denials", "true", "true"], ["notify_locks", "true", "true"],
   ].map(([key, value, def]) => ({ key, value, default: def })),
   policies: [
     { agent: "*", resource: "domain", target: "payment", effect: "deny" },

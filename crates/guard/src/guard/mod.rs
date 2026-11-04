@@ -23,10 +23,7 @@ use keyharbor_domain::{
 };
 use std::{
     collections::BTreeSet,
-    sync::{
-        Arc, Mutex, MutexGuard,
-        atomic::{AtomicBool, AtomicU32},
-    },
+    sync::{Arc, Mutex, MutexGuard, atomic::AtomicU32},
 };
 use zeroize::Zeroizing;
 
@@ -36,7 +33,9 @@ mod redact;
 
 #[cfg(test)]
 pub(crate) use denials::MAX_DENIALS_PER_SECOND;
-pub(crate) use probes::LockReason;
+pub(crate) use keyharbor_domain::session::substitution_lock::LockReason;
+#[cfg(test)]
+pub(crate) use probes::MAX_PROBES;
 
 /// The store a supervisor shares between its control connections and the guard.
 pub type SharedStore = Arc<Mutex<Box<dyn Store>>>;
@@ -77,8 +76,9 @@ pub struct Guard {
     /// Backend node ids of every element that received substituted text in this session.
     /// Snapshots show them as `[redacted]` whatever their value becomes (03 §3.7, C1).
     tainted: Mutex<BTreeSet<u64>>,
-    /// Once set, nothing more is substituted in this session (C2, I1).
-    locked: AtomicBool,
+    /// Once set, nothing more is substituted in this session until a person lifts it (C2, I1,
+    /// #190).
+    locked: Mutex<Option<LockReason>>,
     /// Requests that carried a vault value (I1). At [`probes::MAX_PROBES`] the session stops
     /// substituting and refuses every request that carries agent text.
     probes: AtomicU32,
@@ -102,7 +102,7 @@ impl Guard {
             open_vault,
             vault: Mutex::new(None),
             tainted: Mutex::new(BTreeSet::new()),
-            locked: AtomicBool::new(false),
+            locked: Mutex::new(None),
             probes: AtomicU32::new(0),
             denials: Mutex::new(denials::Denials::default()),
             clock,

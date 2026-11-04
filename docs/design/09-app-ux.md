@@ -39,7 +39,7 @@ flowchart LR
 | 메인 창 | 사용자가 열 때 | 창을 닫아도 메뉴 막대에 남는다 |
 | 메뉴 막대 아이콘 | 로그인 시 자동 실행(설정으로 끌 수 있음) | 템플릿 이미지, 상태 배지 |
 | 보안 입력 창 | 에이전트가 `vault_request`를 보낸 뒤 사용자가 알림을 누르거나 앱을 열 때 | 항상 위·작은 창, 페이지 밖에서 입력 |
-| 알림 | 입력 요청, 인계 요청, draft 생성, 정책 거부 | 각 종류를 설정에서 끌 수 있다. 무엇이 거부인지는 사용 기록 화면의 "거부" 배지와 같은 domain 판정(`AuditKind::is_denial`: 값 거부, 반복 거부 묶음, 문서 이동 거부)이다(J-200) |
+| 알림 | 입력 요청, 인계 요청, draft 생성, 정책 거부, 세션 치환 잠김 | 각 종류를 설정에서 끌 수 있다(`notify_*`, 잠김은 `notify_locks`). 잠김 알림은 세션 이름과 이유(`mask_probe`·`focus_moved`)를 사람 말로 말하고 값·항목 이름은 넣지 않는다(J-220). 무엇이 거부인지는 사용 기록 화면의 "거부" 배지와 같은 domain 판정(`AuditKind::is_denial`: 값 거부, 반복 거부 묶음, 문서 이동 거부)이다(J-200) |
 
 ## 9.3 정보 구조
 
@@ -148,6 +148,16 @@ flowchart TB
 "복구…"를 누르면 브라우저 창을 모두 닫았는지 확인하는 체크박스를 보여 준다. 체크한 뒤에만 `recover --confirm-browser-closed`와 같은 동작을 한다. 막는 게 아니라 데이터 충돌을 막는 확인이다.
 
 **브라우저와 지우기(#123, J-119)**: 실행 중인 세션에 브라우저 배지(Chrome · ego lite)를, ego lite면 "보호 낮음" 배지(마우스를 올리면 이유)를 단다. 멈춘 세션은 [열기](설정 `browser`를 따름)와, ego lite가 있으면 [Chrome으로]·[ego lite로], 그리고 [지우기](10초 실행 취소, 항목 삭제와 같은 틀)를 보인다. 시작하지 못한 세션은 이유를 한 줄로 보인다(`sessions.failure`). 실패한 세션에도 [복구…]를 준다. 배지를 달지(실행 중), [복구…]와 실패 이유를 보일지는 화면이 상태 이름으로 고르지 않고 Rust가 내려 준 `live`·`recoverable`을 따른다. 탭을 끌어 넘긴 결과는 결과 태그(`handed_off`, `declined`, …)로 오고 문구는 화면이 고른다(J-202).
+
+**치환 잠김과 [다시 허용](#190, J-220)**: guard가 세션의 치환을 잠그면(요청 속 금고 값 세 번 `mask_probe`, 입력 중 포커스 이동 `focus_moved`, [03 §3.8](03-security-whitepaper.md#38-치환-입력의-origin-확인)) 카드에 "치환 잠김" 배지와 이유 한 줄, [다시 허용] 버튼이 뜬다. 이유는 Rust가 감독자에게 물어 `sessions.locked`로 내려 준다. [다시 허용]은 `Authenticator` challenge(`PolicyChange`)를 거친 뒤 한 번 누르는 것으로 끝난다. 버튼은 사람만 보는 창에 있고 하는 일을 이름으로 말하므로, 그 누름이 약화 작업의 확인이다. 에이전트에게는 같은 동작이 없다.
+
+```mermaid
+stateDiagram-v2
+  [*] --> 치환함
+  치환함 --> 잠김: mask_probe 세 번 · focus_moved<br/>(substitution_locked 기록, 알림)
+  잠김 --> 치환함: 사람이 [다시 허용] · keyharbor unlock<br/>(substitution_locked/unlocked 기록)
+  잠김 --> [*]: 세션 중지
+```
 
 | 라이트 | 다크 |
 |---|---|
@@ -356,6 +366,7 @@ flowchart LR
 | 열기 (시작 URL 선택) · 중지 · 모든 세션 중지 | 세션 · 메뉴 막대 | `session_opened` / `_stopped` |
 | 브라우저 창 앞으로 가져오기 | 세션 | — |
 | 복구 (브라우저 종료 확인 체크) | 세션 | `session_recovered` |
+| 다시 허용 (치환 잠김을 풀기, 인증 범위 정책 변경) | 세션 · 알림 | `substitution_locked`/`unlocked` |
 | 사이트 로그인 상태 수정 · 지우기 | 세션 상세 | `site_state_changed` |
 | raw CDP로 다시 열기 (1회 설명) | 세션 ⋯ | `session_opened(cdp)` |
 

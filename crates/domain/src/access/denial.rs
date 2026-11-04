@@ -117,7 +117,7 @@ impl DenialReason {
 }
 
 /// Lifting a session's substitution lock. The command arrives with #190 (J-241).
-const SESSION_UNLOCK: &str = "keyharbor session unlock <session>";
+const SESSION_UNLOCK: &str = "keyharbor unlock <session>";
 
 /// Why an agent's run stopped, as the usage record tells it: a refused item, a document
 /// outside the session's grants, refusals counted together under the per-second cap, a

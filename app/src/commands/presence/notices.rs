@@ -1,16 +1,22 @@
-//! macOS notifications (09 §9.3, U2): what newly waits for the person, and denials. The menu
-//! bar loop takes a [`snapshot`] every few seconds; [`notices`] says what is new since the last
-//! one. Text names agents, items and sites, never a value or an agent's free-text reason.
+//! macOS notifications (09 §9.3, U2): what newly waits for the person, denials, and sessions
+//! that stopped substituting. The menu bar loop takes a [`snapshot`] every few seconds;
+//! [`notices`] says what is new since the last one. Text names agents, items, sites and
+//! sessions, never a value or an agent's free-text reason.
 
 use crate::{
     Ctx,
     commands::{audit, handoffs, inbox},
 };
 use anyhow::Result;
-use keyharbor_domain::settings::{
-    NOTIFY_DENIALS, NOTIFY_DRAFTS, NOTIFY_HANDOFFS, NOTIFY_REQUESTS, notify_enabled,
+use keyharbor_domain::{
+    audit::AuditKind,
+    session::substitution_lock::LockReason,
+    settings::{
+        NOTIFY_DENIALS, NOTIFY_DRAFTS, NOTIFY_HANDOFFS, NOTIFY_LOCKS, NOTIFY_REQUESTS,
+        notify_enabled,
+    },
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// More new things than this at once become one notice with the count.
 const MAX_SEPARATE: usize = 3;
@@ -27,6 +33,8 @@ pub struct Snapshot {
     pub drafts: Vec<String>,
     /// (at, agent, item or origin), newest first as the record reads.
     pub denials: Vec<(String, String, Option<String>)>,
+    /// (record sequence number, session name, why), for each `substitution_locked` lock.
+    pub locks: Vec<(i64, String, LockReason)>,
 }
 
 /// Which kinds the person wants notices for (settings `notify_*`).
@@ -36,6 +44,7 @@ pub struct NoticeKinds {
     pub handoffs: bool,
     pub drafts: bool,
     pub denials: bool,
+    pub locks: bool,
 }
 
 /// What the last snapshot held. The first snapshot only fills it: what already waited when
@@ -45,6 +54,7 @@ pub struct Seen {
     primed: bool,
     waiting: BTreeSet<String>,
     last_denial: Option<String>,
+    last_lock: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,7 +89,30 @@ pub fn snapshot(ctx: &Ctx) -> Result<Snapshot> {
             .collect(),
         drafts: inbox.drafts.into_iter().map(|d| d.name).collect(),
         denials,
+        locks: locks(ctx)?,
     })
+}
+
+/// The recent `substitution_locked` records that locked a session (not those that lifted a
+/// lock), with the session's name.
+fn locks(ctx: &Ctx) -> Result<Vec<(i64, String, LockReason)>> {
+    let store = ctx.store()?;
+    let names: BTreeMap<String, String> = store
+        .list()?
+        .into_iter()
+        .map(|row| (row.id.to_string(), row.name.as_str().to_owned()))
+        .collect();
+    Ok(store
+        .list_audit(Some(DENIAL_WINDOW))?
+        .into_iter()
+        .filter(|r| r.event.kind == AuditKind::SubstitutionLocked)
+        .filter_map(|r| {
+            let reason = LockReason::parse(&r.event.result)?;
+            let session = r.event.session_id?;
+            let name = names.get(&session).cloned().unwrap_or(session);
+            Some((r.seq, name, reason))
+        })
+        .collect())
 }
 
 /// The `notify_*` settings, read by the domain's rule (`notify_enabled`).
@@ -91,6 +124,7 @@ pub fn notice_kinds(ctx: &Ctx) -> Result<NoticeKinds> {
         handoffs: on(NOTIFY_HANDOFFS)?,
         drafts: on(NOTIFY_DRAFTS)?,
         denials: on(NOTIFY_DENIALS)?,
+        locks: on(NOTIFY_LOCKS)?,
     })
 }
 
@@ -98,6 +132,7 @@ pub fn notice_kinds(ctx: &Ctx) -> Result<NoticeKinds> {
 pub fn notices(seen: &mut Seen, now: &Snapshot, kinds: NoticeKinds) -> Vec<Notice> {
     let mut out = waiting_notices(seen, now, kinds);
     out.extend(denial_notices(seen, now, kinds));
+    out.extend(lock_notices(seen, now, kinds));
     seen.primed = true;
     collapse(out)
 }
@@ -158,6 +193,35 @@ fn denial_notices(seen: &mut Seen, now: &Snapshot, kinds: NoticeKinds) -> Vec<No
     out
 }
 
+/// Why a session stopped, in the person's words. No value, no item name (I1 records none).
+fn lock_words(reason: LockReason) -> &'static str {
+    match reason {
+        LockReason::MaskProbe => "금고 값이 든 요청이 세 번 와서 값 넣기를 멈췄습니다",
+        LockReason::FocusMoved => "값을 넣는 중에 페이지가 포커스를 옮겨 값 넣기를 멈췄습니다",
+    }
+}
+
+/// A notice for each lock newer than the newest seen; remembers the newest.
+fn lock_notices(seen: &mut Seen, now: &Snapshot, kinds: NoticeKinds) -> Vec<Notice> {
+    let mut out = Vec::new();
+    for (seq, session, reason) in &now.locks {
+        let newer = seen.last_lock.is_none_or(|last| *seq > last);
+        if seen.primed && kinds.locks && newer {
+            out.push(Notice::new(
+                format!("치환 잠김 · {session}"),
+                format!(
+                    "{} — 세션 화면에서 다시 허용할 수 있습니다",
+                    lock_words(*reason)
+                ),
+            ));
+        }
+    }
+    if let Some(newest) = now.locks.iter().map(|(seq, ..)| *seq).max() {
+        seen.last_lock = seen.last_lock.max(Some(newest));
+    }
+    out
+}
+
 /// More than [`MAX_SEPARATE`] at once become one notice with the count.
 fn collapse(out: Vec<Notice>) -> Vec<Notice> {
     if out.len() > MAX_SEPARATE {
@@ -178,6 +242,7 @@ mod tests {
         handoffs: true,
         drafts: true,
         denials: true,
+        locks: true,
     };
 
     fn request(id: &str) -> (String, String, String) {
@@ -279,6 +344,46 @@ mod tests {
                 body: "bank".into()
             }]
         );
+    }
+
+    #[test]
+    fn a_locked_session_says_why_in_words_and_only_once() {
+        let mut seen = Seen::default();
+        let old = Snapshot {
+            locks: vec![(1, "work".into(), LockReason::MaskProbe)],
+            ..Default::default()
+        };
+        assert!(
+            notices(&mut seen, &old, ALL).is_empty(),
+            "not news at start"
+        );
+        let now = Snapshot {
+            locks: vec![
+                (1, "work".into(), LockReason::MaskProbe),
+                (7, "jobs".into(), LockReason::FocusMoved),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            notices(&mut seen, &now, ALL),
+            [Notice {
+                title: "치환 잠김 · jobs".into(),
+                body: "값을 넣는 중에 페이지가 포커스를 옮겨 값 넣기를 멈췄습니다 — 세션 화면에서 다시 허용할 수 있습니다".into()
+            }]
+        );
+        assert!(notices(&mut seen, &now, ALL).is_empty(), "each once");
+        let quiet = NoticeKinds {
+            locks: false,
+            ..ALL
+        };
+        let later = Snapshot {
+            locks: vec![(9, "work".into(), LockReason::MaskProbe)],
+            ..Default::default()
+        };
+        assert!(notices(&mut seen, &later, quiet).is_empty());
+        for reason in LockReason::ALL {
+            assert!(!lock_words(reason).is_empty());
+        }
     }
 
     #[test]

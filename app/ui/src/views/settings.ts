@@ -68,6 +68,7 @@ const SHOWN: Record<string, Shown> = {
   notify_handoffs: { group: "알림", label: "브라우저 인계", control: { kind: "switch" }, help: "에이전트가 로그인을 넘길 때" },
   notify_drafts: { group: "알림", label: "새 draft", control: { kind: "switch" }, help: "확정을 기다리는 항목이 생길 때" },
   notify_denials: { group: "알림", label: "거부", control: { kind: "switch" }, help: "정책이 에이전트의 사용을 막았을 때" },
+  notify_locks: { group: "알림", label: "치환 잠김", control: { kind: "switch" }, help: "세션이 값 넣기를 멈췄을 때. 세션 화면에서 다시 허용합니다" },
 };
 
 const GROUPS = ["보안", "브라우저", "파일 올리기", "새 항목과 draft", "클립보드", "알림"];

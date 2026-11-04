@@ -9,6 +9,7 @@ mod lifecycle;
 mod manage;
 pub mod remove;
 pub mod supervision;
+mod unlock;
 
 pub use handoff::{
     ResumeWait, find_handoff, pending_handoff, poll, resume, resume_check, wait_auth,
@@ -18,6 +19,7 @@ pub use lifecycle::{
     OpenOptions, ego_lite_answers, endpoint, open, recover, resolve_browser, stop,
 };
 pub use manage::{SessionView, create, describe, list};
+pub use unlock::unlock;
 
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{

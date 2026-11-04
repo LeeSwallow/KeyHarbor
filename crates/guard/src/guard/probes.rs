@@ -1,13 +1,15 @@
 //! Requests whose agent-written text holds a vault value (I1), and the session lock that
-//! stops all substitution once the session cannot be trusted any more (C2).
+//! stops all substitution once the session cannot be trusted any more (C2). Only a person
+//! lifts the lock ([`Guard::unlock`], #190).
 
 use super::Guard;
 use anyhow::{Result, bail};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
+    session::substitution_lock::{LockReason, UNLOCKED},
     vault::placeholder,
 };
-use std::sync::atomic::Ordering;
+use std::sync::{MutexGuard, atomic::Ordering};
 
 /// Requests carrying a vault value a session tolerates before it locks (I1). Fixed, not a
 /// setting: raising it gives a guessing agent more answers, and an agent cannot be trusted
@@ -28,29 +30,20 @@ fn probe_refusal() -> String {
     )
 }
 
-/// Why a session stopped substituting. Its text is what the usage record keeps.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum LockReason {
-    /// [`MAX_PROBES`] requests carried a vault value.
-    MaskProbe,
-    /// Page code moved the focus while a value was being typed.
-    FocusMoved,
-}
-
-impl LockReason {
-    /// The `substitution_locked` result recorded for this reason.
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::MaskProbe => "mask_probe",
-            Self::FocusMoved => "focus_moved",
-        }
-    }
-}
-
 impl Guard {
-    /// Stops all substitution for the rest of the session and records why.
+    /// The lock slot. A holder that panicked left a plain `Option`, so it is read through.
+    fn lock_slot(&self) -> MutexGuard<'_, Option<LockReason>> {
+        self.locked
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Stops all substitution until a person lifts it ([`Self::unlock`]) and records why.
     pub(crate) fn lock(&self, agent: &str, reason: LockReason) {
-        if !self.locked.swap(true, Ordering::SeqCst) {
+        let mut slot = self.lock_slot();
+        if slot.is_none() {
+            *slot = Some(reason);
+            drop(slot);
             self.record(
                 &AuditEvent::new(agent, AuditKind::SubstitutionLocked, reason.as_str())
                     .session(self.session),
@@ -59,7 +52,28 @@ impl Guard {
     }
 
     pub fn is_locked(&self) -> bool {
-        self.locked.load(Ordering::SeqCst)
+        self.lock_reason().is_some()
+    }
+
+    /// Why the session stopped substituting, or `None` while it still does.
+    pub fn lock_reason(&self) -> Option<LockReason> {
+        *self.lock_slot()
+    }
+
+    /// Lets the session substitute again: the lock and the count of requests that carried a
+    /// vault value start over. For a person's request only — the supervisor refuses it from an
+    /// agent (#190, J-220). Records `substitution_locked`/`unlocked` under `person` when a lock
+    /// was lifted, and returns why it had locked.
+    pub fn unlock(&self, person: &str) -> Option<LockReason> {
+        let lifted = self.lock_slot().take();
+        self.probes.store(0, Ordering::SeqCst);
+        if lifted.is_some() {
+            self.record(
+                &AuditEvent::new(person, AuditKind::SubstitutionLocked, UNLOCKED)
+                    .session(self.session),
+            );
+        }
+        lifted
     }
 
     /// Refuses a request whose agent-written text (URL, typed text, selector, tab id) holds a

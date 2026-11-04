@@ -114,6 +114,9 @@ pub enum ControlRequest {
     },
     Close,
     Status,
+    /// Let the session substitute again after the guard locked it (#190). Only a person's
+    /// request: the supervisor refuses it when the envelope names an agent.
+    Unlock,
 }
 
 /// `login` presses Enter in the password input unless asked not to.
@@ -175,6 +178,16 @@ impl From<LoginOutcome> for LoginResultWire {
             url: outcome.url,
         }
     }
+}
+
+/// The `result` of `status`: the stored state, the run, and why substitution stopped (a
+/// `substitution_locked` word) while it is stopped.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatusResultWire {
+    pub state: Option<String>,
+    pub generation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locked: Option<String>,
 }
 
 /// One response.
@@ -254,6 +267,24 @@ mod tests {
             wire(ControlRequest::NewTab { url: None }),
             json!({"op": "new_tab"})
         );
+        assert_eq!(wire(ControlRequest::Unlock), json!({"op": "unlock"}));
+    }
+
+    #[test]
+    fn status_says_why_substitution_stopped() {
+        let status = StatusResultWire {
+            state: Some("running".into()),
+            generation: "g".into(),
+            locked: Some("mask_probe".into()),
+        };
+        let value = serde_json::to_value(&status).unwrap();
+        assert_eq!(
+            value,
+            json!({"state": "running", "generation": "g", "locked": "mask_probe"})
+        );
+        let read: StatusResultWire =
+            serde_json::from_value(json!({"state": "running", "generation": "g"})).unwrap();
+        assert_eq!(read.locked, None, "an older supervisor never locked");
     }
 
     #[test]

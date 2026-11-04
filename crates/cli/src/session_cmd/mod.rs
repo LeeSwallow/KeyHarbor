@@ -1,7 +1,7 @@
 //! Session commands: `create`, `edit`, `list` (`ls`), `rm`, `open`, `stop`, `wait-auth`,
-//! `receive`, `handoff`, `resume`, `recover`, `endpoint`, and the hidden `__supervise` used by
-//! `open` ([`supervise`]). A session's sites are in [`site`] (sign-in state) and [`grant`]
-//! (which sites it may load).
+//! `receive`, `handoff`, `resume`, `recover`, `endpoint`, `unlock`, and the hidden
+//! `__supervise` used by `open` ([`supervise`]). A session's sites are in [`site`] (sign-in
+//! state) and [`grant`] (which sites it may load).
 
 pub mod grant;
 pub mod site;
@@ -9,6 +9,7 @@ pub mod site;
 use crate::{
     args::{parse_browser, parse_description},
     compose::App,
+    tty_confirm::TtyConfirm,
 };
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
@@ -113,6 +114,9 @@ pub enum SessionCmd {
     },
     /// Print the raw CDP endpoint of a session opened with --cdp
     Endpoint { id: String },
+    /// Let a session that stopped substituting (a vault value in requests, or the focus moved
+    /// while typing) substitute again; asks for confirmation
+    Unlock { id: String },
 }
 
 /// `__supervise`: arguments are `SuperviseArgs`. Not a [`SessionCmd`]: it runs on the
@@ -205,6 +209,7 @@ impl Ports<'_> {
                 confirm_browser_closed,
             } => self.recover(&id, confirm_browser_closed),
             SessionCmd::Endpoint { id } => self.endpoint(&id),
+            SessionCmd::Unlock { id } => self.unlock(&id),
         }
     }
 
@@ -351,6 +356,14 @@ impl Ports<'_> {
         let id = session_id(id)?;
         lifecycle::recover(&*self.store, &*self.runtime, id)?;
         println!("{id}\t{}", State::Stopped.as_str());
+        Ok(())
+    }
+
+    /// A weakening: the person at the terminal confirms (#190, J-220). No MCP tool does this.
+    fn unlock(&self, id: &str) -> Result<()> {
+        let id = session_id(id)?;
+        let reason = lifecycle::unlock(&*self.runtime, &TtyConfirm, id)?;
+        println!("{id}\tunlocked\t{}", reason.as_str());
         Ok(())
     }
 

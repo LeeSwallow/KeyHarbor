@@ -253,6 +253,25 @@ flowchart TD
   re --> o["origin 재확인: 다르면 경고 audit"]
 ```
 
+- **잠금은 사람만 푼다 (#190, J-220).** 포커스 이동(C2)이나 요청 속 금고 값 세 번(I1)으로 잠긴 세션은 판정 그대로 잠긴다. 정상 페이지(자동 완성 위젯, 흔한 말이 secret 값인 경우)에서도 걸릴 수 있어서, 사람은 세션을 새로 열지 않고 잠금을 풀 수 있다: CLI `keyharbor unlock <id>`(약화 작업 `WeakeningOp::SessionUnlock`, 터미널 확인)와 관리 앱 세션 카드의 [다시 허용](`Authenticator` challenge `PolicyChange`). 감독자의 제어 요청 `unlock` 하나가 guard의 잠금과 probe 수를 되돌리고, 푼 것을 `substitution_locked`/`unlocked`(누가 풀었는지, 값 없음)로 기록한다. MCP에는 이 도구가 없고, 감독자는 `agent`를 단 `unlock` 요청을 거부한다(MCP 서버의 요청은 언제나 `agent`를 단다).
+
+```mermaid
+sequenceDiagram
+  participant 사람 as 사람 (터미널 · 관리 앱)
+  participant 핵심 as core session::unlock
+  participant 감독 as 감독자 (제어 socket)
+  participant 가드 as guard
+  participant 에이전트 as 에이전트 (MCP)
+  사람->>핵심: unlock(id)
+  핵심->>감독: status → locked?
+  핵심->>사람: Confirm (TtyConfirm · [다시 허용] 누름)
+  핵심->>감독: {"op":"unlock"} (agent 없음)
+  감독->>가드: unlock → 잠금·probe 수 되돌림
+  가드-->>감독: substitution_locked/unlocked 기록
+  에이전트-x감독: {"op":"unlock","agent":…}
+  Note over 에이전트,감독: 도구 없음 · agent를 단 요청은 거부
+```
+
 - **개발자 도메인 항목(`secret`·`env`)은 브라우저에서 언제나 origin에 묶인다(R-36, J-58).** origin 목록이 비면 `no-origin`으로 거부하고, 목록에 없는 frame이면 `origin`으로 거부한다. 프롬프트 인젝션으로 공격자 페이지 입력란에 API 키를 넣게 하는 유출을 막는다. origin 추가는 사람 확인이 필요한 약화 작업이다.
 - **개인정보 항목(`identity`·`address`)은 어디든 입력되지만**, 처음 쓰이는 origin이면 `first_use_origin`을 기록한다.
 - **남는 TOCTOU**: 탐색 이벤트는 CDP에서 비동기로 온다. 확인과 `Input.insertText` 사이에 시작된 탐색은 거의 다 잡지만, 이벤트가 입력 뒤에 도착하는 경우까지 없애지는 못한다. 다른 frame의 탐색도 페이지 전체 탐색 횟수를 올리므로 드물게 정상 입력이 거부될 수 있다(재시도하면 된다).
@@ -337,7 +356,7 @@ classDiagram
 | `Reveal` | `reveal`, 이것을 거치는 `copy_value` |
 | `Edit` | 항목 추가·편집·이름 바꾸기·삭제, draft 확정·폐기, 정보 요청 응답·거절 |
 | `Export` | 앱에 내보내기 명령이 아직 없다. 생기면 같은 자리에서 부른다 |
-| `PolicyChange` | 설정 바꾸기, 규칙 추가·삭제 |
+| `PolicyChange` | 설정 바꾸기, 규칙 추가·삭제, 세션 잠금 풀기(`unlock_session`, J-220) |
 
 ```mermaid
 sequenceDiagram
@@ -372,6 +391,7 @@ sequenceDiagram
 11. 4자보다 짧은 값(세 글자 이름 등)은 가리지 않는다. KeyHarbor가 채운 입력칸은 snapshot에서 가려지지만, 페이지가 그 값을 다른 곳에 다시 쓰면 결과에 보인다. 그런 값이나 흔한 말을 비밀 필드에 저장하면 값 없이 경고한다(3.7, J-230).
 12. ego lite 세션은 셸을 가진 에이전트가 채운 값을 읽을 수 있다(§3.13).
 13. `keyharbor run`이 도는 동안 그 토큰을 아는 같은 사용자 프로세스는 로컬 조회 socket에 `run` 범위 안의 값을 물을 수 있다(T13b).
+14. 세션의 치환 잠금(§3.8)은 사람이 풀 수 있고, 푼 것은 사용 기록에 남는다. 감독자의 제어 socket은 같은 OS 사용자의 요청을 구분하지 못하므로, MCP 서버를 거치지 않고 socket에 `agent` 없는 `unlock`을 직접 쓰는 프로세스는 막지 못한다(1번과 같은 경계, J-220). 풀면 그 세션의 probe 수도 처음부터 다시 세므로 9번의 추측 기회가 늘어난다. 그래서 사람만 푼다.
 
 ## 3.12 열린 질문 — 셸을 가진 에이전트와 CLI 평문 경로
 
@@ -393,6 +413,7 @@ Claude Code·Codex 같은 에이전트는 MCP뿐 아니라 **셸**도 쓴다. �
 |---|---|---|
 | `vault edit` | origin 바인딩 끄기, 지금 목록에 없는 origin 추가, `--run-allowed on`, 만료 연장·제거, 비밀 필드를 `--plain`으로 표시(값이 목록에 보이고 가려지지 않는다) | 바인딩 켜기, origin 빼기, run 끄기, 첫 만료 설정·단축, `--secret`으로 되돌리기 |
 | `grant add` | 언제나(세션이 그 사이트로 갈 수 있게 된다) | `grant revoke` |
+| `unlock` | 잠긴 세션을 다시 치환하게 할 때(§3.8, J-220). 관리 앱은 [다시 허용] 누름이 확인이다 | 잠기지 않은 세션(묻지 않고 거부) |
 | `policy` | `allow`(어떤 대상이든), deny 규칙 `rm` | `deny`, allow 규칙 `rm` |
 | `settings set` | `audit_enabled false`, `capture_enabled` 변경 | `audit_enabled true`, `default_item_ttl` |
 

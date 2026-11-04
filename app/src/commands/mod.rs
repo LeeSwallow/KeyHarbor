@@ -32,7 +32,7 @@ pub use presence::{
 };
 pub use sessions::{
     BrowsersDto, SessionDto, SiteHandOff, browsers, open_session, recover_session, remove_session,
-    request_site, sessions, stop_session,
+    request_site, sessions, stop_session, unlock_session,
 };
 
 /// Errors cross to the window as text: a short reason, never a value.

@@ -44,7 +44,14 @@ pub(crate) enum Command {
     },
     Close,
     Status,
+    /// Let the session substitute again (#190): a person's request only.
+    Unlock,
 }
+
+/// The refusal of a request only a person may send, when it names an agent. The MCP server
+/// names its agent in every request, so no agent lifts a lock through it (#190, J-220).
+pub(crate) const PERSON_ONLY: &str =
+    "denied: only a person lifts a session's lock (keyharbor unlock, or the admin app)";
 
 impl Command {
     /// The document a command loads, if it names one.
@@ -73,18 +80,27 @@ impl Command {
                 | Self::Login { .. }
         )
     }
+
+    /// Commands only a person may send: a request naming an agent is refused (#190).
+    pub(crate) fn is_for_a_person(&self) -> bool {
+        matches!(self, Self::Unlock)
+    }
 }
 
 /// The agent (`cli` when absent) and the command a request asks for.
 pub(crate) fn parse(request: &Value) -> Result<(String, Command)> {
     let envelope = ControlEnvelope::deserialize(request).context("invalid request")?;
-    let agent = match envelope.agent {
+    let agent = match &envelope.agent {
         None => AgentName::local(),
-        Some(agent) => AgentName::parse(&agent).map_err(|e| anyhow!("{e}"))?,
+        Some(agent) => AgentName::parse(agent).map_err(|e| anyhow!("{e}"))?,
     }
     .as_str()
     .to_owned();
-    Ok((agent, command(envelope.request)?))
+    let command = command(envelope.request)?;
+    if envelope.agent.is_some() && command.is_for_a_person() {
+        anyhow::bail!(PERSON_ONLY);
+    }
+    Ok((agent, command))
 }
 
 fn command(request: ControlRequest) -> Result<Command> {
@@ -138,6 +154,7 @@ fn command(request: ControlRequest) -> Result<Command> {
         }
         ControlRequest::Close => Command::Close,
         ControlRequest::Status => Command::Status,
+        ControlRequest::Unlock => Command::Unlock,
     })
 }
 
@@ -168,6 +185,20 @@ mod tests {
                 parse(&json!({"op": "snapshot", "agent": bad})).is_err(),
                 "{bad}"
             );
+        }
+    }
+
+    #[test]
+    fn only_a_person_unlocks_a_session() {
+        let (agent, command) = parse(&json!({"op": "unlock"})).unwrap();
+        assert_eq!(agent, LOCAL_AGENT);
+        assert!(matches!(command, Command::Unlock));
+        // What the MCP server sends always names its agent, so no agent can lift a lock.
+        for agent in ["claude", LOCAL_AGENT] {
+            let Err(error) = parse(&json!({"op": "unlock", "agent": agent})) else {
+                panic!("{agent} unlocked a session");
+            };
+            assert_eq!(error.to_string(), PERSON_ONLY);
         }
     }
 

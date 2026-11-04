@@ -5,7 +5,7 @@ use crate::{
     argv::SuperviseArgs,
     control::{
         client,
-        wire::{ControlEnvelope, ControlRequest},
+        wire::{ControlEnvelope, ControlRequest, StatusResultWire},
     },
     lock, paths,
 };
@@ -24,6 +24,7 @@ use keyharbor_domain::{
         SessionRuntime,
         runtime::{LaunchOptions, ResolvedBrowser, RuntimeLock, StartedSupervisor},
     },
+    session::substitution_lock::LockReason,
 };
 use std::{
     path::{Path, PathBuf},
@@ -148,6 +149,27 @@ impl SessionRuntime for ProcessRuntime {
             &self.data,
             &id,
             &ControlEnvelope::local(ControlRequest::Close),
+        )?;
+        Ok(())
+    }
+
+    fn lock_reason(&self, id: SessionId) -> Result<Option<LockReason>> {
+        let result = client::request(
+            &self.data,
+            &id,
+            &ControlEnvelope::local(ControlRequest::Status),
+        )?;
+        let status: StatusResultWire = serde_json::from_value(result)?;
+        Ok(status.locked.as_deref().and_then(LockReason::parse))
+    }
+
+    /// Sent as the local user: only the person's interfaces (CLI after `TtyConfirm`, the admin
+    /// app) call this; the MCP server's requests name its agent and are refused (#190).
+    fn unlock(&self, id: SessionId) -> Result<()> {
+        client::request(
+            &self.data,
+            &id,
+            &ControlEnvelope::local(ControlRequest::Unlock),
         )?;
         Ok(())
     }

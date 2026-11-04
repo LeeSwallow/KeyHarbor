@@ -157,6 +157,7 @@ keyharbor grant add <세션 id> https://github.com --ttl 8h # 이 세션이 열 
 keyharbor receive <세션 id> --origin https://github.com  # 사람이 사이트를 넘길 때까지 기다림
 keyharbor open work --browser ego-lite                  # 사람이 쓰는 ego lite로 (없으면 auto가 Chrome을 고른다)
 keyharbor rm old-session                                 # 멈춘 세션과 프로필 지우기 (--force면 먼저 닫음)
+keyharbor unlock <세션 id>                               # 값 넣기를 멈춘 세션을 다시 허용 (사람이 yes로 확인)
 keyharbor audit --limit 20                               # 사용 기록 (값 없음)
 keyharbor audit --denials --since 24h                    # 어디서 왜 멈췄나: 사유별 수와 푸는 방법
 keyharbor browser install-host                           # 확장과 연결 (평소 Chrome의 로그인 넘기기)
@@ -168,6 +169,7 @@ keyharbor browser install-host                           # 확장과 연결 (평
 
 - **CLI는 평문을 출력하지 않습니다.** 셸을 쓰는 에이전트가 값을 꺼내지 못하게 하려는 설계입니다. 평문 보기·복사는 관리 앱에서만 합니다.
 - **보호를 약하게 하는 변경은 사람이 확인합니다.** 터미널에서는 `yes`를, 앱에서는 확인 창을 거칩니다. 터미널을 흉내 내는 프로그램은 대신 답할 수 있어 강한 경계는 아닙니다([보안 백서 §3.12](docs/design/03-security-whitepaper.md)).
+- **세션이 값 넣기를 멈추면 사람이 다시 허용합니다.** 요청에 금고 값이 세 번 들어오거나 입력 중 페이지가 포커스를 옮기면 그 세션은 치환을 멈추고 관리 앱이 알립니다. 페이지가 정상이면 세션 카드의 [다시 허용]이나 `keyharbor unlock`으로 풉니다. 에이전트는 풀 수 없고, 푼 것은 사용 기록에 남습니다.
 - **Mac이나 Keychain 항목을 잃으면 금고도 잃습니다.** 복구 서비스는 없습니다. `vault export` 백업과 그 비밀번호를 따로 보관하세요.
 - 서명하지 않은 빌드라서 업데이트 후 macOS가 Keychain 접근을 다시 물을 수 있습니다. "항상 허용"을 누르면 됩니다.
 - `keyharbor run`의 자식 프로세스는 값을 평문으로 갖습니다. 그 프로세스가 값을 밖으로 보내는 것은 막지 못하고, 출력만 가립니다. 실행 중 이름으로 묻는 socket([Python keyring 백엔드](integrations/python-keyring/README.md))은 `run`이 도는 동안 그 토큰을 아는 같은 사용자 프로세스도 쓸 수 있습니다.

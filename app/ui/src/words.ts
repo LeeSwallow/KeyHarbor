@@ -45,6 +45,12 @@ export const sessionWord = word({
   failed: "실패", recovery_required: "복구 필요",
 });
 
+/// Why a session stopped substituting (domain `LockReason`), as the session card says it.
+export const lockWord = word({
+  mask_probe: "금고 값이 든 요청이 세 번 와서 값 넣기를 멈췄습니다",
+  focus_moved: "값을 넣는 중에 페이지가 포커스를 옮겨 값 넣기를 멈췄습니다",
+});
+
 /// How a site dragged onto `session` ended (`SiteHandOff`, J-202).
 export function handOffWord(answer: SiteHandOff, session: string): string {
   switch (answer.outcome) {

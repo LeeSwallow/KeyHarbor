@@ -151,6 +151,10 @@ fn browsers(ctx: State<'_, Ctx>) -> Reply<commands::BrowsersDto> {
     commands::browsers(&ctx).map_err(message)
 }
 #[tauri::command]
+fn unlock_session(ctx: State<'_, Ctx>, id: String) -> Reply<()> {
+    commands::unlock_session(&ctx, &id).map_err(message)
+}
+#[tauri::command]
 fn recover_session(ctx: State<'_, Ctx>, id: String, browser_closed: bool) -> Reply<()> {
     commands::recover_session(&ctx, &id, browser_closed).map_err(message)
 }
@@ -255,6 +259,7 @@ fn main() -> anyhow::Result<()> {
             remove_session,
             browsers,
             recover_session,
+            unlock_session,
             kinds,
             add_item,
             edit_item,

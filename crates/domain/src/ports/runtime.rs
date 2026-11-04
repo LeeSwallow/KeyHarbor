@@ -4,6 +4,7 @@
 use crate::{
     Generation, SessionId,
     browser_choice::{BrowserChoice, BrowserKind},
+    session::substitution_lock::LockReason,
 };
 use anyhow::Result;
 use std::{
@@ -62,6 +63,12 @@ pub trait SessionRuntime: Send + Sync {
     ) -> Result<Box<dyn StartedSupervisor>>;
     /// Asks the running supervisor to close the browser.
     fn close(&self, id: SessionId) -> Result<()>;
+    /// Why the running supervisor stopped substituting, or `None` while it still does.
+    fn lock_reason(&self, id: SessionId) -> Result<Option<LockReason>>;
+    /// Asks the running supervisor to substitute again: its lock and its count of requests
+    /// that carried a vault value start over. Only for a person who confirmed it (#190); the
+    /// supervisor refuses the request when it names an agent.
+    fn unlock(&self, id: SessionId) -> Result<()>;
     /// Removes a dead supervisor's control socket (best effort).
     fn remove_socket(&self, id: SessionId);
     /// Deletes the session's browser profile, if it has one. Only for a stopped session.
