@@ -140,8 +140,12 @@ fn placeholders_fill_only_allowed_items_into_bound_frames() {
         "op": "navigate",
         "url": format!("{}/embed?port={}", shop.base, other.base.rsplit(':').next().unwrap()),
     }));
-    h.ok_call(json!({"op": "wait", "ms": 300}));
-    let snapshot = h.snapshot();
+    // The frame loads after the top document; wait for its form, not for a fixed time.
+    let snapshot = h.snapshot_once(|text| {
+        text.lines()
+            .skip_while(|line| !line.contains("[frame]"))
+            .any(|line| line.contains("textbox \"User\""))
+    });
     let framed = reference(&snapshot, "[frame]", "textbox \"User\"");
     let error = h.denied(
         json!({"op": "fill", "target": {"ref": framed}, "text": "{{secret:site.username}}"}),
@@ -262,8 +266,7 @@ fn values_shown_back_by_the_page_are_masked() {
     h.ok_call(json!({"op": "navigate", "url": format!("{}/find", shop.base)}));
     h.fill("#q", "{{secret:api.value}}").unwrap();
     h.ok_call(json!({"op": "click", "target": {"selector": "#find"}}));
-    h.ok_call(json!({"op": "wait", "ms": 500}));
-    let tabs = h.ok_call(json!({"op": "tabs"}));
+    let tabs = h.tabs_once_at("/missing?");
     assert!(
         tabs.to_string().contains("/missing?q={{secret:api.value}}"),
         "{tabs}"
@@ -275,8 +278,7 @@ fn values_shown_back_by_the_page_are_masked() {
     h.ok_call(json!({"op": "navigate", "url": format!("{}/find", shop.base)}));
     h.fill("#q", "{{secret:late.value}}").unwrap();
     h.ok_call(json!({"op": "click", "target": {"selector": "#find"}}));
-    h.ok_call(json!({"op": "wait", "ms": 500}));
-    let tabs = h.ok_call(json!({"op": "tabs"}));
+    let tabs = h.tabs_once_at("/missing?");
     assert!(
         tabs.to_string()
             .contains("/missing?q={{secret:late.value}}"),
