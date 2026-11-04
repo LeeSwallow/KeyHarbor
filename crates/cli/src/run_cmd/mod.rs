@@ -152,7 +152,7 @@ fn supervise(
         child.stderr.take().context("child stderr")?,
     );
     let stop = AtomicBool::new(false);
-    let status = std::thread::scope(|scope| {
+    std::thread::scope(|scope| {
         scope.spawn(|| output::pump(out, std::io::stdout().lock(), masker));
         scope.spawn(|| output::pump(err, std::io::stderr().lock(), masker));
         let waiter = scope.spawn(|| {
@@ -169,13 +169,25 @@ fn supervise(
             };
             answer(&ask).map_err(|refusal| refusal.to_string())
         });
-        waiter.join().expect("the waiting thread does not panic")
-    })?;
-    Ok(status)
+        let status = waiter
+            .join()
+            .map_err(|_| anyhow!("waiting for the command failed"))??;
+        Ok(status)
+    })
 }
 
-/// Runs the command and returns the exit code to pass on (128 + signal if it was killed).
-pub fn run(app: &App, args: RunArgs) -> Result<i32> {
+/// The arguments read and checked, before the vault is opened.
+struct Inputs {
+    agent: AgentName,
+    command_args: Vec<String>,
+    allow: Vec<ItemPattern>,
+    files: Vec<Zeroizing<String>>,
+    secret_files: Vec<(String, PlaceholderRef)>,
+    templates: Vec<(String, Zeroizing<String>)>,
+}
+
+/// Reads the arguments and the files they name; refuses a run that injects nothing.
+fn parse_inputs(args: &RunArgs) -> Result<Inputs> {
     let agent = AgentName::parse(&args.agent).map_err(|e| anyhow!("{e}"))?;
     let command_args = arguments(&args.command)?;
     let nothing_given = args.items.is_empty()
@@ -189,30 +201,39 @@ pub fn run(app: &App, args: RunArgs) -> Result<i32> {
             "give --env, --env-file, --file, --template, --allow or a placeholder in an argument"
         );
     }
-    let allow = patterns(&args.allow)?;
-    let files = read_env_files(&args.files)?;
-    let secret_files = args
-        .secret_files
-        .iter()
-        .map(|f| secret_file(f))
-        .collect::<Result<Vec<_>>>()?;
-    let templates = args
-        .templates
-        .iter()
-        .map(|t| template(t))
-        .collect::<Result<Vec<_>>>()?;
+    Ok(Inputs {
+        agent,
+        allow: patterns(&args.allow)?,
+        files: read_env_files(&args.files)?,
+        secret_files: args
+            .secret_files
+            .iter()
+            .map(|f| secret_file(f))
+            .collect::<Result<_>>()?,
+        templates: args
+            .templates
+            .iter()
+            .map(|t| template(t))
+            .collect::<Result<_>>()?,
+        command_args,
+    })
+}
+
+/// Runs the command and returns the exit code to pass on (128 + signal if it was killed).
+pub fn run(app: &App, args: RunArgs) -> Result<i32> {
+    let inputs = parse_inputs(&args)?;
     let (store, vault) = (app.store()?, app.vault()?);
     // The guard checks every item before resolving any, and builds the output masker.
     let mut injection = guard_run::prepare(
         &*store,
         &vault,
         &guard_run::Request {
-            agent: agent.as_str(),
+            agent: inputs.agent.as_str(),
             items: &args.items,
-            files: &files,
-            secret_files: &secret_files,
-            templates: &templates,
-            args: &command_args,
+            files: &inputs.files,
+            secret_files: &inputs.secret_files,
+            templates: &inputs.templates,
+            args: &inputs.command_args,
         },
     )?;
     if injection.args_hold_values {
@@ -224,7 +245,7 @@ pub fn run(app: &App, args: RunArgs) -> Result<i32> {
     let mut vars = std::mem::take(&mut injection.vars);
     vars.extend(paths);
     let socket = LookupSocket::open()?;
-    let lookup = injection.lookup(allow);
+    let lookup = injection.lookup(inputs.allow);
     lookup_vars(&mut vars, &socket, lookup.token())?;
     let child_args = std::mem::take(&mut injection.args);
     signals::block_forwarded()?;

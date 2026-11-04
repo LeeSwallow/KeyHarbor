@@ -44,6 +44,10 @@ impl ItemKind {
         let spec = self.spec();
         (!spec.free_fields).then(|| spec.fields.iter().map(|f| f.name).collect())
     }
+    /// The field whose value can be generated (see [`KindSpec::generated`]).
+    pub fn generated_field(self) -> Option<&'static str> {
+        self.spec().generated
+    }
     pub fn default_origin_binding(self) -> bool {
         self.spec().default_origin_binding
     }
@@ -119,6 +123,9 @@ pub struct KindSpec {
     /// Besides its declared fields the kind takes fields the person names (`school`, `gpa`),
     /// each treated as [`CUSTOM_FIELD`] (J-111).
     pub custom_fields: bool,
+    /// The field whose value KeyHarbor can make up instead of taking one (a login's password,
+    /// `generate_password`); `None` when the kind has none. Always one of `fields`.
+    pub generated: Option<&'static str>,
     pub default_origin_binding: bool,
     /// `keyharbor run` may inject the values unless the user turns it off: true for API keys
     /// and environment items, false for anything a site signs in or pays with (R-36).
@@ -181,6 +188,7 @@ pub static KINDS: &[KindSpec] = &[
         ],
         free_fields: false,
         custom_fields: false,
+        generated: Some("password"),
         default_origin_binding: true,
         default_run_allowed: false,
     },
@@ -194,6 +202,7 @@ pub static KINDS: &[KindSpec] = &[
         ],
         free_fields: false,
         custom_fields: false,
+        generated: None,
         default_origin_binding: false,
         default_run_allowed: true,
     },
@@ -204,6 +213,7 @@ pub static KINDS: &[KindSpec] = &[
         fields: &[],
         free_fields: true,
         custom_fields: false,
+        generated: None,
         default_origin_binding: false,
         default_run_allowed: true,
     },
@@ -222,6 +232,7 @@ pub static KINDS: &[KindSpec] = &[
         ],
         free_fields: false,
         custom_fields: false,
+        generated: None,
         default_origin_binding: true,
         default_run_allowed: false,
     },
@@ -248,6 +259,7 @@ pub static KINDS: &[KindSpec] = &[
         ],
         free_fields: false,
         custom_fields: true,
+        generated: None,
         default_origin_binding: false,
         default_run_allowed: false,
     },
@@ -268,6 +280,7 @@ pub static KINDS: &[KindSpec] = &[
         ],
         free_fields: false,
         custom_fields: true,
+        generated: None,
         default_origin_binding: false,
         default_run_allowed: false,
     },
@@ -382,6 +395,18 @@ mod tests {
         assert!(!ItemKind::Identity.field("email").unwrap().secret);
         assert!(ItemKind::Identity.is_secret_field("password"));
         assert!(ItemKind::Identity.is_secret_field("cvc"));
+    }
+    #[test]
+    fn only_a_login_generates_and_only_a_declared_secret_field() {
+        assert_eq!(ItemKind::Login.generated_field(), Some("password"));
+        for spec in KINDS {
+            if let Some(field) = spec.generated {
+                let declared = spec.fields.iter().find(|f| f.name == field);
+                assert!(declared.is_some_and(|f| f.secret), "{}", spec.name);
+            } else {
+                assert_ne!(spec.kind, ItemKind::Login);
+            }
+        }
     }
     #[test]
     fn schemas_cover_every_kind() {

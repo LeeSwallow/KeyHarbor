@@ -49,6 +49,21 @@ pub fn pending_handoff(
         .context("no pending authentication request")
 }
 
+/// The pending request and its claimed origin, or `None` when the session has no supervisor
+/// or no request waits (a session removed meanwhile has neither). Only a store error is an
+/// error, so a list of sessions does not take a broken store for "nothing waits" (the admin
+/// app's inbox, J-201).
+pub fn find_handoff(
+    store: &dyn Store,
+    runtime: &dyn SessionRuntime,
+    id: SessionId,
+) -> Result<Option<(RequestId, Option<String>)>> {
+    if !runtime.is_alive(id) {
+        return Ok(None);
+    }
+    store.pending_handoff(id)
+}
+
 pub fn resume(
     store: &dyn Store,
     runtime: &dyn SessionRuntime,

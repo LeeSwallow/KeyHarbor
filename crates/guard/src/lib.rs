@@ -34,5 +34,5 @@ pub mod session;
 mod test_support;
 
 pub use browser::{GuardedBrowser, LoginOutcome};
-pub use guard::{Guard, SharedStore, VaultOpener};
+pub use guard::{Guard, SharedStore, VaultOpener, lock_store};
 pub use person::{autofill, capture, reveal};

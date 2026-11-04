@@ -55,7 +55,7 @@ function newItem(kinds: KindForm[], kind: string): string {
     ? `<label class="kh-field"><span class="kh-label">KEY=VALUE (한 줄에 하나)</span><textarea class="kh-textarea" name="__env" rows="5" ${quiet}></textarea></label>`
     : grouped(spec.kind, spec.fields.map(([name]) => name), (name) => field(name, secret.get(name) ?? true)) +
       (spec.custom_fields ? customFields() : "");
-  const generate = spec.kind === "login" ? `<label><input type="checkbox" name="generate"> 비밀번호 생성</label>` : "";
+  const generate = spec.generates ? `<label><input type="checkbox" name="generate"> ${esc(fieldWord(spec.generates))} 생성</label>` : "";
   return `<form class="kh-dialog" data-editor="new" data-kind="${esc(spec.kind)}"><div class="body">
     <h2>새 항목</h2>
     <label class="kh-field"><span class="kh-label">종류</span><select class="kh-input" name="kind" data-action="pick-kind">${picker}</select></label>

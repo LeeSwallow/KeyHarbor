@@ -1583,6 +1583,7 @@ dependencies = [
  "keyharbor-crypto",
  "keyharbor-domain",
  "keyharbor-guard",
+ "keyharbor-sqlite",
  "serde",
  "serde_json",
  "tempfile",

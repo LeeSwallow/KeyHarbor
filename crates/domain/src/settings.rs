@@ -273,6 +273,12 @@ pub fn audit_enabled(stored: Option<&str>) -> bool {
     stored != Some("false")
 }
 
+/// Whether a `notify_*` notice is on for its stored value (`None` when never set): on unless
+/// set to `false`, like [`audit_enabled`]. Off is a preference, so an odd value means on.
+pub fn notify_enabled(stored: Option<&str>) -> bool {
+    stored != Some("false")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,6 +343,14 @@ mod tests {
             );
             assert!(!spec.weakens("false"), "{key}");
         }
+    }
+
+    #[test]
+    fn only_false_turns_a_notice_off() {
+        assert!(notify_enabled(None));
+        assert!(notify_enabled(Some("true")));
+        assert!(notify_enabled(Some("yes")));
+        assert!(!notify_enabled(Some("false")));
     }
 
     #[test]

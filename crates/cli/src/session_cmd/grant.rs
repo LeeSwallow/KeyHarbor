@@ -1,15 +1,15 @@
 //! `keyharbor grant`: which sites a session may load (R-43). The rules are core's
 //! (`keyharbor_core::grant`); adding one asks the person at the terminal.
 
-use crate::{compose::App, tty_confirm::TtyConfirm};
+use super::session_id;
+use crate::{args::parse_description, compose::App, tty_confirm::TtyConfirm};
 use anyhow::{Context, Result, anyhow};
 use clap::Subcommand;
 use keyharbor_core::grant::{self, NewGrant};
 use keyharbor_domain::{
-    SessionId,
     grant::{Grant, GrantId, GrantTtl},
     policy::LOCAL_AGENT,
-    vault::{Description, Origin},
+    vault::Origin,
 };
 
 #[derive(Subcommand)]
@@ -52,10 +52,6 @@ fn invalid(error: keyharbor_domain::vault::InvalidValue) -> anyhow::Error {
     anyhow!("{error}")
 }
 
-fn session_id(value: &str) -> Result<SessionId> {
-    SessionId::parse(value).context("invalid session id")
-}
-
 pub fn run(app: &App, command: GrantCmd) -> Result<()> {
     let store = app.store()?;
     let now = app.clock().unix_seconds();
@@ -79,11 +75,7 @@ pub fn run(app: &App, command: GrantCmd) -> Result<()> {
                     .map(GrantTtl::parse)
                     .transpose()
                     .map_err(invalid)?,
-                reason: reason
-                    .as_deref()
-                    .map(Description::parse)
-                    .transpose()
-                    .map_err(invalid)?,
+                reason: reason.as_deref().map(parse_description).transpose()?,
             };
             let added = grant::add(&*store, app.clock(), &TtyConfirm, LOCAL_AGENT, new)?;
             println!("{}", line(&added, now));

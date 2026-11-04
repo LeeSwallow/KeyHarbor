@@ -11,9 +11,12 @@ pub mod remove;
 pub mod supervision;
 
 pub use handoff::{
-    ResumeWait, pending_handoff, poll, resume, resume_check, wait_auth, wait_for_resume,
+    ResumeWait, find_handoff, pending_handoff, poll, resume, resume_check, wait_auth,
+    wait_for_resume,
 };
-pub use lifecycle::{OpenOptions, endpoint, open, recover, resolve_browser, stop};
+pub use lifecycle::{
+    OpenOptions, ego_lite_answers, endpoint, open, recover, resolve_browser, stop,
+};
 pub use manage::{SessionView, create, describe, list};
 
 use anyhow::{Context, Result, bail};
@@ -49,6 +52,14 @@ impl DisplayState {
             Self::RecoveryRequired => "recovery_required",
         }
     }
+    /// A run is under way and its supervisor holds it: the browser it names is the one in use.
+    pub fn is_live(self) -> bool {
+        matches!(self, Self::Stored(state) if active(state))
+    }
+    /// Only `recover` (after the person closed the browser) brings it back to `stopped`.
+    pub fn is_recoverable(self) -> bool {
+        matches!(self, Self::RecoveryRequired | Self::Stored(State::Failed))
+    }
 }
 
 impl std::fmt::Display for DisplayState {
@@ -82,4 +93,32 @@ fn note(store: &dyn AuditStore, agent: &str, kind: AuditKind, id: SessionId, res
 }
 fn note_event(store: &dyn AuditStore, event: AuditEvent) {
     let _ = store.record(&event);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_live_run_and_a_recoverable_one_are_told_apart() {
+        let live: Vec<&str> = [
+            State::Stopped,
+            State::Starting,
+            State::Running,
+            State::AwaitingUser,
+            State::Stopping,
+            State::Failed,
+        ]
+        .into_iter()
+        .map(DisplayState::Stored)
+        .chain([DisplayState::RecoveryRequired])
+        .filter(|s| s.is_live())
+        .map(DisplayState::as_str)
+        .collect();
+        assert_eq!(live, ["starting", "running", "awaiting_user", "stopping"]);
+        assert!(DisplayState::RecoveryRequired.is_recoverable());
+        assert!(DisplayState::Stored(State::Failed).is_recoverable());
+        assert!(!DisplayState::Stored(State::Stopped).is_recoverable());
+        assert!(!DisplayState::Stored(State::Running).is_recoverable());
+    }
 }

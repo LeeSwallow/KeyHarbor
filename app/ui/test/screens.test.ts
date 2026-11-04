@@ -12,9 +12,9 @@ const state = {
     requests: [{ id: "r1", agent: "codex", kind: "card", name: "visa", origin: "https://shop.example", reason: "checkout" }],
     drafts: [{ name: "vercel", kind: "login", source: "generated", origins: [] }],
   },
-  sessions: [{ id: "s1", name: "work", state: "running", cdp: false, description: null, browser: null, protection: null, failure: null, sites: [{ origin: "https://github.com", state: "logged_in", item: null, checked_at: "" }] }],
+  sessions: [{ id: "s1", name: "work", state: "running", cdp: false, description: null, browser: null, protection: null, failure: null, live: true, recoverable: false, sites: [{ origin: "https://github.com", state: "logged_in", item: null, checked_at: "" }] }],
   policies: [{ agent: "codex", resource: "domain", target: "payment", effect: "deny" }],
-  audit: [{ at: "2026-10-29T05:02:00Z", agent: "codex", kind: "secret_denied", item: "bank", origin: null, result: "origin" }],
+  audit: [{ at: "2026-10-29T05:02:00Z", agent: "codex", kind: "secret_denied", denied: true, item: "bank", origin: null, result: "origin" }],
 };
 
 describe("every screen", () => {
