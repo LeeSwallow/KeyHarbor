@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- 모든 항목 종류(env 제외)에 직접 이름 붙인 필드를 더하고, 필드마다 비밀/일반을 고른다(`vault add|edit --field`). 새 종류 `credential`과 설정의 자격 증명 틀(`keyharbor vault template add|ls|rm`, 관리 앱 설정)로 틀 없는 자격 증명을 담는다. (#208)
+- 에이전트가 `{{otp:<항목>}}`으로 그 순간의 OTP 코드를 묶인 사이트에만 입력한다. 설정 `agent_otp`(기본 꺼짐, 켤 때 사람 확인)와 항목별 `--otp-allowed`로 켜고 끈다. 코드는 응답에서 가리고 기록에 남기지 않는다. 같은 금고에 비밀번호와 시드가 있으면 2단계 인증이 사실상 1단계가 된다. (#209)
+- 고정이던 대기·상한을 설정으로: `session_start_seconds`, `session_stop_seconds`, `browser_endpoint_seconds`, `browser_call_seconds`, `request_ttl_hours`, `max_drafts`. 기본값은 이전과 같다. 관리 앱 설정의 "고급". (#204)
+
+### Changed
+
+- 자동 완성에서 사람이 확인한 뒤 금고 값을 읽지 못하면 `not_confirmed` 대신 `failed`를 돌려준다. (#207)
+- 저장소 오류를 문구가 아닌 종류로 판정한다(`StoreError`). 보이는 오류 문구는 그대로다. (#203)
+
 ## [0.3.1] - 2026-11-04
 
 자동화가 멈췄을 때 사람이 짧게 다시 이어 가게 하는 릴리스다. 판정은 그대로이고, 멈춘 이유를 보고 푸는 길을 더했다.
