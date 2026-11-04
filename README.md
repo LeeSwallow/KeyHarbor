@@ -157,6 +157,7 @@ keyharbor open work --browser ego-lite                  # 사람이 쓰는 ego l
 keyharbor rm old-session                                 # 멈춘 세션과 프로필 지우기 (--force면 먼저 닫음)
 keyharbor unlock <세션 id>                               # 값 넣기를 멈춘 세션을 다시 허용 (사람이 yes로 확인)
 keyharbor audit --limit 20                               # 사용 기록 (값 없음)
+keyharbor audit --denials --since 24h                    # 어디서 왜 멈췄나: 사유별 수와 푸는 방법
 keyharbor browser install-host                           # 확장과 연결 (평소 Chrome의 로그인 넘기기)
 ```
 

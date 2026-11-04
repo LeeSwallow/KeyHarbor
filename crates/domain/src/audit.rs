@@ -1,5 +1,10 @@
 //! Usage records (02 §2.7). An event names who did what to which item where — never a value.
 
+use crate::{
+    denial::{DenialReason, StopCause},
+    vault::InvalidValue,
+};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum AuditKind {
     SecretUsed,
@@ -150,6 +155,49 @@ impl AuditEvent {
         self.origin = origin.map(str::to_owned);
         self
     }
+
+    /// Why this event stopped an agent, if it did, and how many stops it stands for (a
+    /// suppressed record counts every refusal it holds). A handoff request is a stop even if
+    /// it was answered later; whether it still waits is for the caller to tell (J-240).
+    /// A refusal whose reason this build does not know is not counted.
+    pub fn stop(&self) -> Option<(StopCause, u64)> {
+        let cause = match self.kind {
+            AuditKind::SecretDenied => StopCause::Denied(DenialReason::parse(&self.result)?),
+            AuditKind::NavigationDenied => StopCause::OutOfGrant,
+            AuditKind::DeniedSuppressed => {
+                return Some((StopCause::Suppressed, self.result.parse().unwrap_or(1)));
+            }
+            AuditKind::SubstitutionLocked => StopCause::SessionLocked,
+            AuditKind::HandoffRequested => StopCause::AwaitingHandoff,
+            _ => return None,
+        };
+        Some((cause, 1))
+    }
+}
+
+/// How far back to look in the usage record: `<N>m`, `<N>h` or `<N>d` (`--since 24h`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Lookback(u64);
+
+impl Lookback {
+    pub fn parse(value: &str) -> Result<Self, InvalidValue> {
+        const BAD: InvalidValue = InvalidValue("a period is <N>m, <N>h or <N>d with N above 0");
+        let (number, unit) = value.split_at(value.len().saturating_sub(1));
+        let unit: u64 = match unit {
+            "m" => 60,
+            "h" => 3_600,
+            "d" => 86_400,
+            _ => return Err(BAD),
+        };
+        let n: u64 = number.parse().map_err(|_| BAD)?;
+        match n.checked_mul(unit) {
+            Some(seconds) if seconds > 0 => Ok(Self(seconds)),
+            _ => Err(BAD),
+        }
+    }
+    pub fn seconds(self) -> u64 {
+        self.0
+    }
 }
 
 /// The `result` of a [`AuditKind::GrantChanged`] record. Stored, so the text never changes.
@@ -202,6 +250,58 @@ mod tests {
                 "navigation_denied"
             ]
         );
+    }
+
+    #[test]
+    fn stops_are_refusals_locks_and_handoffs() {
+        let stop = |kind, result: &str| AuditEvent::new("a", kind, result).stop();
+        assert_eq!(
+            stop(AuditKind::SecretDenied, "origin"),
+            Some((StopCause::Denied(DenialReason::Origin), 1))
+        );
+        assert_eq!(stop(AuditKind::SecretDenied, "no-such-reason"), None);
+        assert_eq!(
+            stop(AuditKind::NavigationDenied, OUT_OF_GRANT),
+            Some((StopCause::OutOfGrant, 1))
+        );
+        assert_eq!(
+            stop(AuditKind::DeniedSuppressed, "15"),
+            Some((StopCause::Suppressed, 15))
+        );
+        assert_eq!(
+            stop(AuditKind::SubstitutionLocked, "focus_moved"),
+            Some((StopCause::SessionLocked, 1))
+        );
+        assert_eq!(
+            stop(AuditKind::HandoffRequested, "awaiting_user"),
+            Some((StopCause::AwaitingHandoff, 1))
+        );
+        for kind in [
+            AuditKind::SecretUsed,
+            AuditKind::MaskProbe,
+            AuditKind::HandoffResumed,
+        ] {
+            assert_eq!(stop(kind, "ok"), None);
+        }
+    }
+
+    #[test]
+    fn lookbacks_are_minutes_hours_or_days() {
+        assert_eq!(Lookback::parse("30m").unwrap().seconds(), 1_800);
+        assert_eq!(Lookback::parse("24h").unwrap().seconds(), 86_400);
+        assert_eq!(Lookback::parse("7d").unwrap().seconds(), 7 * 86_400);
+        for bad in [
+            "",
+            "h",
+            "0h",
+            "5",
+            "1w",
+            "-1h",
+            "1.5h",
+            "99999999999999999999d",
+        ] {
+            assert!(Lookback::parse(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]
