@@ -1,7 +1,7 @@
 // StorageSource: runs a one-line reader in the tab (needs the `scripting` permission and host access).
 
-import type { StorageSource } from "../../ports/index.js";
-import type { WebExtApi } from "./api.js";
+import type { StorageSource } from "../../../ports/index.js";
+import type { WebExtApi } from "../api.js";
 
 /** Runs inside the page. Must be self-contained: it is serialised, not closed over. */
 export function readPageLocalStorage(): Record<string, string> {

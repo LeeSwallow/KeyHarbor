@@ -2,6 +2,7 @@
 // in adapters/wire/command.ts only.
 
 import type { PopupDeps } from "../../ui/popup/deps.js";
+import { mountPopup } from "../../ui/popup/popup.js";
 import {
   type CommandWire,
   parseCommandAnswer,
@@ -32,4 +33,9 @@ export function webextPopupDeps(api: WebExtApi, language: string): PopupDeps {
     },
     saveSession: (session) => api.storage.local.set({ [LAST_SESSION]: session }),
   };
+}
+
+/** Everything a popup entry point does once it has its browser's namespace. */
+export function startPopup(api: WebExtApi, doc: Document, language: string): Promise<void> {
+  return mountPopup(doc, webextPopupDeps(api, language));
 }
