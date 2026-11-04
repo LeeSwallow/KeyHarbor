@@ -30,11 +30,11 @@ export function refocus(root: HTMLElement, typing: boolean): void {
 export const load = (w: Win) =>
   w.guard(async () => {
     const { api } = w;
-    const [overview, inbox, sessions, items, audit, handoffs, settings, policies, kinds] = await Promise.all([
+    const [overview, inbox, sessions, items, audit, handoffs, settings, policies, kinds, templates] = await Promise.all([
       api.overview(), api.inbox(), api.sessions(), api.items(), api.audit(AUDIT_SHOWN),
-      api.handoffs(), api.settings(), api.policies(), api.kinds(),
+      api.handoffs(), api.settings(), api.policies(), api.kinds(), api.templates(),
     ]);
-    w.set({ ...w.state, overview, inbox, sessions, items, audit, handoffs, settings, policies, kinds });
+    w.set({ ...w.state, overview, inbox, sessions, items, audit, handoffs, settings, policies, kinds, templates });
   });
 
 /// After a request is answered: the secure input window closes, the main window reloads.

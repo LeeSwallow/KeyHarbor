@@ -11,6 +11,7 @@ mod manage;
 mod overview;
 mod presence;
 mod sessions;
+mod templates;
 
 pub use admin::{
     RuleDto, RuleForm, SettingDto, WeakeningDto, policies, remove_policy, set_policy, set_setting,
@@ -34,6 +35,7 @@ pub use sessions::{
     BrowsersDto, SessionDto, SiteHandOff, browsers, open_session, recover_session, remove_session,
     request_site, sessions, stop_session, unlock_session,
 };
+pub use templates::{TemplateDto, TemplateFieldDto, add_template, remove_template, templates};
 
 /// Errors cross to the window as text: a short reason, never a value.
 pub fn message(error: anyhow::Error) -> String {

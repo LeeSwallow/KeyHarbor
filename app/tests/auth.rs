@@ -118,11 +118,13 @@ fn a_refused_challenge_stops_every_protected_command_before_it_does_anything() {
         origins: vec![],
         values: [("value".to_owned(), "v-SECRET".to_owned())].into(),
         generate_password: false,
+        plain: vec![],
     };
     refused_for(commands::add_item(&c, new_item), Edit);
     let change = ChangeForm {
         values: [("password".to_owned(), "changed-1234".to_owned())].into(),
         origins: None,
+        ..Default::default()
     };
     refused_for(commands::edit_item(&c, "github", change, true), Edit);
     refused_for(commands::rename_item(&c, "github", "gh"), Edit);

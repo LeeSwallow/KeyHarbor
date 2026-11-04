@@ -209,7 +209,8 @@ fn the_secure_form_shows_the_request_and_stores_what_the_person_typed() {
 
     let empty = std::collections::BTreeMap::from([("number".to_owned(), String::new())]);
     assert!(commands::fulfill_request(&c, &id, empty).is_err());
-    let bad = std::collections::BTreeMap::from([("nope".to_owned(), "x".to_owned())]);
+    // A card takes fields the person names (R-48); a name no field may have is refused.
+    let bad = std::collections::BTreeMap::from([("no-pe".to_owned(), "x".to_owned())]);
     assert!(commands::fulfill_request(&c, &id, bad).is_err());
     let typed = std::collections::BTreeMap::from([("number".to_owned(), "4111-SECRET".to_owned())]);
     let saved = commands::fulfill_request(&c, &id, typed).unwrap();
@@ -359,6 +360,7 @@ fn items_are_added_changed_and_removed_through_the_guard() {
         origins: vec!["https://shop.example".into()],
         values: [("username".to_owned(), "me".to_owned())].into(),
         generate_password: true,
+        plain: vec![],
     };
     assert_eq!(commands::add_item(&c, form).unwrap().name, "shop");
     let generated = commands::reveal(&c, "shop", "password").unwrap();
@@ -369,6 +371,7 @@ fn items_are_added_changed_and_removed_through_the_guard() {
         origins: vec![],
         values: Default::default(),
         generate_password: true,
+        plain: vec![],
     };
     assert!(
         commands::add_item(&c, bad).is_err(),
@@ -378,6 +381,7 @@ fn items_are_added_changed_and_removed_through_the_guard() {
     let new_value = ChangeForm {
         values: [("password".to_owned(), "chosen-1234".to_owned())].into(),
         origins: None,
+        ..Default::default()
     };
     assert_eq!(
         commands::edit_item(&c, "shop", new_value, false)
@@ -395,6 +399,7 @@ fn items_are_added_changed_and_removed_through_the_guard() {
             "https://shop.example".into(),
             "https://pay.example".into(),
         ]),
+        ..Default::default()
     };
     assert!(matches!(
         commands::edit_item(&c, "shop", more_sites(), false)
@@ -561,10 +566,11 @@ fn a_form_with_an_unknown_field_is_refused_and_stores_nothing() {
     init_vault(tmp.path())
         .add(login("github", ItemStatus::Active))
         .unwrap();
-    // "nope" sorts before "password": the refusal comes with a value still unread.
+    // "no-pe" sorts before "password": the refusal comes with a value still unread. Every
+    // kind takes a field the person names now (R-48), so the refused one is a bad name.
     let values = || {
         [
-            ("nope".to_owned(), "n-SECRET".to_owned()),
+            ("no-pe".to_owned(), "n-SECRET".to_owned()),
             ("password".to_owned(), "changed-SECRET".to_owned()),
         ]
         .into()
@@ -572,6 +578,7 @@ fn a_form_with_an_unknown_field_is_refused_and_stores_nothing() {
     let change = ChangeForm {
         values: values(),
         origins: None,
+        ..Default::default()
     };
     let error = commands::edit_item(&c, "github", change, true).unwrap_err();
     assert!(!format!("{error:#}").contains("SECRET"), "{error:#}");
@@ -581,6 +588,7 @@ fn a_form_with_an_unknown_field_is_refused_and_stores_nothing() {
         origins: vec![],
         values: values(),
         generate_password: false,
+        plain: vec![],
     };
     let error = commands::add_item(&c, new).unwrap_err();
     assert!(!format!("{error:#}").contains("SECRET"), "{error:#}");
@@ -680,6 +688,7 @@ fn a_common_secret_value_comes_back_as_a_warning_without_the_value() {
         ]
         .into(),
         generate_password: false,
+        plain: vec![],
     };
     let saved = commands::add_item(&c, form).unwrap();
     assert_eq!(
@@ -699,6 +708,7 @@ fn a_common_secret_value_comes_back_as_a_warning_without_the_value() {
     let change = ChangeForm {
         values: [("note".to_owned(), "N/A".to_owned())].into(),
         origins: None,
+        ..Default::default()
     };
     let edited = commands::edit_item(&c, "me", change, false).unwrap();
     let shown = serde_json::to_string(&edited).unwrap();

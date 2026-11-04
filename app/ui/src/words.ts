@@ -15,6 +15,7 @@ export const authWord = word({ [NO_AUTH]: "인증 없음" });
 
 export const kindWord = word({
   login: "로그인", secret: "API 키", env: "환경 변수", card: "카드", identity: "신원", address: "주소",
+  credential: "자격 증명",
 });
 
 /// Each kind's domain glyph (design system `.glyph.<domain>`) and icon.
@@ -25,6 +26,7 @@ export const kindLook: Record<string, { domain: string; icon: string }> = {
   card: { domain: "pay", icon: "credit-card" },
   identity: { domain: "personal", icon: "id-card" },
   address: { domain: "personal", icon: "map-pin" },
+  credential: { domain: "cred", icon: "key-square" },
 };
 
 export const fieldWord = word({

@@ -3,7 +3,7 @@
 // Review Focus 1).
 
 import type {
-  AuditEvent, Browsers, Handoff, Inbox, Item, KindForm, Overview, RequestForm, Rule, Session, Setting, ValueWarning,
+  AuditEvent, Browsers, Handoff, Inbox, Item, KindForm, Overview, RequestForm, Rule, Session, Setting, Template, ValueWarning,
 } from "./api.js";
 
 export type View = "home" | "inbox" | "sessions" | "items" | "audit" | "policies" | "settings";
@@ -33,8 +33,9 @@ export interface Palette { query: string }
 /// A question a change is waiting on, and the change to send again once confirmed.
 export interface Ask { question: string; retry: () => Promise<unknown>; title?: string }
 
-/// The item form open in the detail pane: a new item of a kind, or a change to one.
-export type Editor = { mode: "new"; kind: string } | { mode: "edit"; name: string } | { mode: "rename"; name: string };
+/// The item form open in the detail pane: a new item of a kind (a credential maybe from a
+/// template, R-48), or a change to one.
+export type Editor = { mode: "new"; kind: string; template?: string } | { mode: "edit"; name: string } | { mode: "rename"; name: string };
 
 export interface Revealed { item: string; field: string; value: string }
 
@@ -51,6 +52,8 @@ export interface State {
   /// The secure input form being filled; its values live only in the form's inputs.
   form: RequestForm | null;
   kinds: KindForm[];
+  /// Credential templates, for the new item form and the settings screen.
+  templates: Template[];
   editor: Editor | null;
   ask: Ask | null;
   palette: Palette | null;
@@ -85,6 +88,7 @@ export const initial: State = {
   policies: [],
   form: null,
   kinds: [],
+  templates: [],
   editor: null,
   ask: null,
   palette: null,

@@ -181,19 +181,26 @@ mod custom_field_tests {
     }
 
     #[test]
-    fn login_still_rejects_an_unknown_field() {
+    fn a_login_takes_a_custom_field_and_env_still_takes_only_variable_names() {
         let e = env();
         let vault = init(&e);
-        let err = vault
+        vault
             .add(item(
                 ItemKind::Login,
-                &[("password", "pw-1234"), ("school", "x")],
+                &[
+                    ("password", "pw-1234-long"),
+                    ("second_password", "2nd-pw-9876"),
+                ],
             ))
-            .unwrap_err();
+            .unwrap();
         assert!(
-            err.to_string()
-                .contains("field school is not part of a login item"),
-            "{err}"
+            vault.list().unwrap()[0]
+                .fields
+                .contains(&"second_password".to_owned())
         );
+        let err = vault
+            .add(item(ItemKind::Env, &[("school", "x")]))
+            .unwrap_err();
+        assert!(err.to_string().contains("environment variable"), "{err}");
     }
 }

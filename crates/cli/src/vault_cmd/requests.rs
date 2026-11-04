@@ -3,7 +3,7 @@
 //! core's (`keyharbor_core::request`).
 
 use super::{
-    input::{FieldInput, collect_fields, item_name},
+    input::{FieldInput, Fill, collect_fields, item_name},
     output::warn_common_values,
 };
 use crate::compose::App;
@@ -64,7 +64,11 @@ pub fn run(app: &App, command: RequestCmd) -> Result<()> {
             let (answer, warnings) = match existing {
                 Some(name) => (Answer::Existing(item_name(&name)?), Vec::new()),
                 None => {
-                    let fields = collect_fields(asked.kind, &input, true)?;
+                    let fill = Fill {
+                        kind_secrets: true,
+                        ..Fill::default()
+                    };
+                    let fields = collect_fields(asked.kind, &input, fill)?;
                     let warnings = common_value_warnings(&asked.name, asked.kind, &fields, &[]);
                     (Answer::Values(fields), warnings)
                 }
