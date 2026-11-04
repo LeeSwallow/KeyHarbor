@@ -14,7 +14,7 @@ mod resolve;
 mod signing;
 mod summary;
 
-pub use drafts::{DraftItem, GeneratedDraft, GeneratedLogin, MAX_DRAFTS, generate_password};
+pub use drafts::{DraftItem, GeneratedDraft, GeneratedLogin, generate_password};
 pub use item::{
     ExpiryChoice, ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary, NewItem,
 };
@@ -35,6 +35,8 @@ use keyharbor_vault::{
 use std::{collections::BTreeMap, sync::Arc};
 use zeroize::Zeroizing;
 
+/// The largest value one field holds. Fixed, not a setting (J-274): it bounds what is sealed,
+/// masked and scanned for in every page response, and a key file or certificate fits.
 pub const MAX_FIELD_BYTES: usize = 64 * 1024;
 
 /// What a vault needs from storage: its tables, the usage record and the settings

@@ -1,13 +1,14 @@
 //! The supervisor process's command line, written and read here only:
-//! `exe --data-dir DATA __supervise ID GENERATION BROWSER [--url URL] [--cdp] [--ego-lite]
-//! [--headless]`.
+//! `exe --data-dir DATA __supervise ID GENERATION BROWSER --call-seconds N [--url URL] [--cdp]
+//! [--ego-lite] [--headless]`.
 
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{Generation, SessionId, browser_choice::BrowserKind};
-use std::{ffi::OsString, path::PathBuf};
+use std::{ffi::OsString, path::PathBuf, time::Duration};
 
 /// The hidden subcommand the binary runs a supervisor under.
 pub const SUPERVISE_COMMAND: &str = "__supervise";
+const CALL_SECONDS: &str = "--call-seconds";
 
 /// What one supervisor run is for.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,6 +21,9 @@ pub struct SuperviseArgs {
     pub cdp: bool,
     pub kind: BrowserKind,
     pub headless: bool,
+    /// How long one CDP call (and ego lite's relay connection) may take: the
+    /// `browser_call_seconds` setting as the session opened, in whole seconds (J-272).
+    pub call_timeout: Duration,
 }
 
 impl SuperviseArgs {
@@ -32,6 +36,8 @@ impl SuperviseArgs {
             self.id.to_string().into(),
             self.generation.to_string().into(),
             self.browser.clone().into(),
+            CALL_SECONDS.into(),
+            self.call_timeout.as_secs().to_string().into(),
         ];
         if let Some(url) = &self.url {
             argv.extend(["--url".into(), url.into()]);
@@ -52,12 +58,17 @@ impl SuperviseArgs {
     pub fn parse(args: &[OsString]) -> Result<Self> {
         let mut positional = Vec::new();
         let (mut url, mut cdp, mut kind, mut headless) = (None, false, BrowserKind::Chrome, false);
+        let mut call_seconds = None;
         let mut args = args.iter();
         while let Some(arg) = args.next() {
             match arg.to_str() {
                 Some("--url") => {
                     let value = args.next().context("--url needs a value")?;
                     url = Some(value.to_str().context("--url is not UTF-8")?.to_owned());
+                }
+                Some(CALL_SECONDS) => {
+                    let value = args.next().and_then(|v| v.to_str()?.parse::<u64>().ok());
+                    call_seconds = Some(value.context("--call-seconds needs whole seconds")?);
                 }
                 Some("--cdp") => cdp = true,
                 Some("--ego-lite") => kind = BrowserKind::EgoLite,
@@ -68,6 +79,7 @@ impl SuperviseArgs {
         let [id, generation, browser] = positional[..] else {
             bail!("expected ID GENERATION BROWSER");
         };
+        let call_seconds = call_seconds.context("expected --call-seconds")?;
         Ok(Self {
             id: SessionId::parse(id.to_str().context("invalid session id")?)
                 .context("invalid session id")?,
@@ -78,6 +90,7 @@ impl SuperviseArgs {
             cdp,
             kind,
             headless,
+            call_timeout: Duration::from_secs(call_seconds),
         })
     }
 }
@@ -96,8 +109,15 @@ mod tests {
             cdp: true,
             kind: BrowserKind::EgoLite,
             headless: true,
+            call_timeout: Duration::from_secs(45),
         };
         let argv = args.to_argv(std::path::Path::new("/data"));
+        let at = argv.iter().position(|a| a == CALL_SECONDS).unwrap();
+        assert_eq!(
+            argv[at + 1],
+            "45",
+            "the CDP call limit goes to the supervisor"
+        );
         assert_eq!(
             argv[..3],
             [
@@ -119,5 +139,8 @@ mod tests {
             plain
         );
         assert!(SuperviseArgs::parse(&["x".into()]).is_err());
+        let mut without_limit = plain.to_argv(std::path::Path::new("/d"));
+        without_limit.drain(6..8);
+        assert!(SuperviseArgs::parse(&without_limit[3..]).is_err());
     }
 }

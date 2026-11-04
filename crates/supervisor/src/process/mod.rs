@@ -38,7 +38,8 @@ pub struct Adapters {
     pub headless: bool,
 }
 
-/// How long the browser gets to exit after `close` before it is killed.
+/// How long the browser gets to exit after `close` before it is killed. Fixed: `stop` waits
+/// `session_stop_seconds`, whose range starts above it (J-271).
 const CLOSE_GRACE: Duration = Duration::from_secs(10);
 
 /// After the kill is sent the deadline moves this far out of the way: the kill is sent once,
@@ -266,6 +267,14 @@ mod tests {
             .unwrap()
     }
 
+    /// The shortest `stop` wait the setting allows still covers the close grace (J-271).
+    #[test]
+    fn stop_waits_longer_than_the_close_grace() {
+        use keyharbor_domain::settings::{SESSION_STOP_SECONDS, SettingSpec};
+        let stop = SettingSpec::find(SESSION_STOP_SECONDS).unwrap().range();
+        assert!(Duration::from_secs(*stop.unwrap().start()) > CLOSE_GRACE);
+    }
+
     #[test]
     fn a_start_that_cannot_read_its_settings_fails_with_a_reason() {
         let dir = short_dir();
@@ -290,6 +299,7 @@ mod tests {
             cdp: false,
             kind: BrowserKind::EgoLite,
             headless: true,
+            call_timeout: Duration::from_secs(30),
         };
         let adapters = Adapters {
             stores: stores.clone(),

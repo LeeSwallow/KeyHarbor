@@ -41,7 +41,7 @@ pub struct SessionDto {
 
 pub fn sessions(ctx: &Ctx) -> Result<Vec<SessionDto>> {
     let store = ctx.store()?;
-    let runtime = ctx.runtime();
+    let runtime = ctx.runtime()?;
     session::list(&*store, &*runtime)?
         .into_iter()
         .map(|view| {
@@ -82,7 +82,7 @@ pub fn sessions(ctx: &Ctx) -> Result<Vec<SessionDto>> {
 /// Opens the session's browser (09 §9.4.3 [열기]) in `browser`, or the `browser` setting.
 pub fn open_session(ctx: &Ctx, id: &str, browser: Option<&str>) -> Result<()> {
     let choice = browser.map(BrowserChoice::parse).transpose()?;
-    let resolved = session::resolve_browser(&*ctx.store()?, &*ctx.runtime(), choice.as_ref())?;
+    let resolved = session::resolve_browser(&*ctx.store()?, &*ctx.runtime()?, choice.as_ref())?;
     let options = session::OpenOptions {
         url: None,
         cdp: false,
@@ -92,7 +92,7 @@ pub fn open_session(ctx: &Ctx, id: &str, browser: Option<&str>) -> Result<()> {
     };
     session::open(
         &*ctx.store()?,
-        &*ctx.runtime(),
+        &*ctx.runtime()?,
         ctx.clock(),
         session_id(id)?,
         &options,
@@ -103,7 +103,7 @@ pub fn open_session(ctx: &Ctx, id: &str, browser: Option<&str>) -> Result<()> {
 pub fn stop_session(ctx: &Ctx, id: &str) -> Result<()> {
     session::stop(
         &*ctx.store()?,
-        &*ctx.runtime(),
+        &*ctx.runtime()?,
         ctx.clock(),
         session_id(id)?,
         LOCAL_AGENT,
@@ -117,7 +117,7 @@ pub fn stop_session(ctx: &Ctx, id: &str) -> Result<()> {
 pub fn unlock_session(ctx: &Ctx, id: &str) -> Result<()> {
     ctx.challenge(AuthScope::PolicyChange)?;
     let clicked = DialogConfirm::new(true);
-    session::unlock(&*ctx.runtime(), &clicked, session_id(id)?).map(|_| ())
+    session::unlock(&*ctx.runtime()?, &clicked, session_id(id)?).map(|_| ())
 }
 
 /// Marks a session whose supervisor is gone as stopped ([복구…]). Only after the person
@@ -126,7 +126,7 @@ pub fn recover_session(ctx: &Ctx, id: &str, browser_closed: bool) -> Result<()> 
     if !browser_closed {
         anyhow::bail!("close the session's browser windows first, then confirm");
     }
-    session::recover(&*ctx.store()?, &*ctx.runtime(), session_id(id)?)
+    session::recover(&*ctx.store()?, &*ctx.runtime()?, session_id(id)?)
 }
 
 /// How a site handed off from the person's browser ended. The window words it (`words.ts`
@@ -174,7 +174,7 @@ pub fn request_site(ctx: &Ctx, name: &str, url: &str) -> Result<SiteHandOff> {
 pub fn remove_session(ctx: &Ctx, id: &str) -> Result<()> {
     session::remove::remove(
         &*ctx.store()?,
-        &*ctx.runtime(),
+        &*ctx.runtime()?,
         ctx.clock(),
         session_id(id)?,
         session::remove::Force::No,
@@ -191,6 +191,6 @@ pub struct BrowsersDto {
 /// Whether ego lite answers now, given as long as `auto` would give it (`ego_probe_seconds`).
 pub fn browsers(ctx: &Ctx) -> Result<BrowsersDto> {
     Ok(BrowsersDto {
-        ego_lite: session::ego_lite_answers(&*ctx.store()?, &*ctx.runtime())?,
+        ego_lite: session::ego_lite_answers(&*ctx.store()?, &*ctx.runtime()?)?,
     })
 }

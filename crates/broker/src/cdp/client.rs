@@ -19,7 +19,6 @@ use tokio::{
     sync::{broadcast, mpsc, oneshot},
 };
 
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How many events a subscriber may fall behind before it misses some (`RecvError::Lagged`).
 /// What a miss means is up to each subscriber (`pages::watch_pages`, `navigation::track`).
 const EVENT_BACKLOG: usize = 1024;
@@ -39,8 +38,9 @@ pub struct Cdp {
 }
 
 impl Cdp {
-    /// Starts the reader and writer tasks; must be called inside a Tokio runtime.
-    pub fn new<W, R>(writer: W, reader: R) -> Self
+    /// Starts the reader and writer tasks; must be called inside a Tokio runtime. A call that
+    /// gets no answer within `timeout` (the `browser_call_seconds` setting) fails.
+    pub fn new<W, R>(writer: W, reader: R, timeout: Duration) -> Self
     where
         W: AsyncWrite + Unpin + Send + 'static,
         R: AsyncRead + Unpin + Send + 'static,
@@ -56,14 +56,8 @@ impl Cdp {
             closed,
             events,
             next_id: AtomicU64::new(1),
-            timeout: DEFAULT_TIMEOUT,
+            timeout,
         }
-    }
-
-    #[cfg(test)]
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self
     }
 
     fn enqueue(&self, bytes: Vec<u8>) -> Result<()> {
@@ -213,7 +207,7 @@ mod tests {
         let (client_write, browser_read) = duplex(1 << 16);
         let (browser_write, client_read) = duplex(1 << 16);
         (
-            Arc::new(Cdp::new(client_write, client_read)),
+            Arc::new(Cdp::new(client_write, client_read, Duration::from_secs(30))),
             FakeBrowser {
                 from_client: BufReader::new(browser_read),
                 to_client: browser_write,
@@ -292,10 +286,18 @@ mod tests {
     async fn unanswered_calls_time_out_and_closed_pipe_fails_calls() {
         let (client_write, browser_read) = duplex(1 << 16);
         let (browser_write, client_read) = duplex(1 << 16);
-        let cdp =
-            Arc::new(Cdp::new(client_write, client_read).with_timeout(Duration::from_millis(100)));
+        let cdp = Arc::new(Cdp::new(
+            client_write,
+            client_read,
+            Duration::from_millis(100),
+        ));
+        let started = std::time::Instant::now();
         let error = cdp.call("Slow", json!({}), None).await.unwrap_err();
         assert!(error.to_string().contains("timed out"), "{error}");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the given timeout, not a built-in one"
+        );
         drop(browser_write);
         tokio::time::sleep(Duration::from_millis(50)).await;
         let error = cdp.call("Gone", json!({}), None).await.unwrap_err();

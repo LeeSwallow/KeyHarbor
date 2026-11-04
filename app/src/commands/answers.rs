@@ -123,7 +123,7 @@ pub struct HandoffDto {
 }
 
 pub fn handoffs(ctx: &Ctx) -> Result<Vec<HandoffDto>> {
-    let (store, runtime) = (ctx.store()?, ctx.runtime());
+    let (store, runtime) = (ctx.store()?, ctx.runtime()?);
     let mut out = Vec::new();
     for view in session::list(&*store, &*runtime)? {
         // A store error stops the list; a session without a supervisor or a request is skipped.
@@ -141,5 +141,5 @@ pub fn handoffs(ctx: &Ctx) -> Result<Vec<HandoffDto>> {
 
 pub fn resume_handoff(ctx: &Ctx, session_id: &str, request: &str) -> Result<()> {
     let id = ids::session_id(session_id)?;
-    session::resume(&*ctx.store()?, &*ctx.runtime(), id, request, LOCAL_AGENT)
+    session::resume(&*ctx.store()?, &*ctx.runtime()?, id, request, LOCAL_AGENT)
 }

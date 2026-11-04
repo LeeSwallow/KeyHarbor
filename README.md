@@ -98,6 +98,19 @@ Codex와 다른 MCP 클라이언트는 [docs/plugin.md](docs/plugin.md)에 있�
 
 다크 모드도 그대로 따릅니다.
 
+### 대기 시간과 상한
+
+느린 Mac에서 Chrome 첫 실행이 오래 걸리면 대기 시간을 늘립니다. 관리 앱 [설정] → 고급, 또는 `keyharbor settings set <이름> <값>`으로 바꿉니다.
+
+| 설정 | 무엇 | 기본 | 범위 | 늘리면 확인 |
+|---|---|---|---|---|
+| `session_start_seconds` | 세션을 열 때 브라우저가 뜨기를 기다리는 시간(초) | 15 | 5–300 | |
+| `session_stop_seconds` | 세션을 멈출 때 브라우저가 닫히기를 기다리는 시간(초) | 15 | 15–300 | |
+| `browser_endpoint_seconds` | `--cdp` 세션의 CDP 주소를 기다리는 시간(초) | 15 | 5–120 | |
+| `browser_call_seconds` | 브라우저 명령 하나를 기다리는 시간(초), 새로 여는 세션부터 | 30 | 5–90 | |
+| `request_ttl_hours` | 에이전트의 정보 요청이 만료되는 시간 | 24 | 1–168 | 예 |
+| `max_drafts` | 한 이름으로 쌓아 둘 수 있는 draft 수 | 20 | 1–100 | 예 |
+
 ![다크 모드의 항목 화면](docs/assets/screenshots/items-dark.png)
 
 ## 동작 방식

@@ -32,6 +32,9 @@ pub(crate) use {grant_ttl_max_seconds, grant_ttl_min_seconds};
 pub struct GrantTtl(u64);
 impl GrantTtl {
     pub const MIN_SECONDS: u64 = grant_ttl_min_seconds!();
+    /// Fixed, not a setting (J-274): a grant is the scope an agent may browse unattended, and a
+    /// longer cap would let one approval stand for longer than a person can keep in mind. A
+    /// grant that needs more is approved again.
     pub const MAX_SECONDS: u64 = grant_ttl_max_seconds!();
     pub fn parse(value: &str) -> Result<Self, InvalidValue> {
         let invalid = InvalidValue("grant TTL must be <N>m, <N>h or <N>d, at most 30d");
