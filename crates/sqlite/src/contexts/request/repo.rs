@@ -11,8 +11,6 @@ use keyharbor_domain::{
     vault::ItemName,
 };
 
-const PENDING: &str = "pending";
-
 impl VaultRequestStore for SqliteStore {
     fn vault_request_add(&self, request: &VaultRequest) -> Result<()> {
         let model = mappers::model(request)?;
@@ -39,7 +37,7 @@ impl VaultRequestStore for SqliteStore {
     fn vault_requests_pending(&self) -> Result<Vec<VaultRequest>> {
         self.read(|conn| {
             vault_requests::table
-                .filter(vault_requests::status.eq(PENDING))
+                .filter(vault_requests::status.eq(VaultRequestStatus::Pending.as_str()))
                 .order((vault_requests::created_at, vault_requests::id))
                 .select(RequestModel::as_select())
                 .load(conn)?
@@ -59,7 +57,7 @@ impl VaultRequestStore for SqliteStore {
             let changed = diesel::update(
                 vault_requests::table
                     .find(id.to_string())
-                    .filter(vault_requests::status.eq(PENDING)),
+                    .filter(vault_requests::status.eq(VaultRequestStatus::Pending.as_str())),
             )
             .set((
                 vault_requests::status.eq(status.as_str()),

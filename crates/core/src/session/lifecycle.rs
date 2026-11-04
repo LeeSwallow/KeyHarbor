@@ -1,14 +1,14 @@
 //! Opening, stopping and recovering a session's supervisor, and reading its raw CDP endpoint.
 
-use super::{active, note, require_supervisor, session, supervision};
-use anyhow::{Context, Result, bail};
+use super::{RECOVER, active, note, require_supervisor, session, supervision};
+use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::{
-    SessionId, State,
+    Generation, SessionId, State,
     audit::AuditKind,
     browser_choice::BrowserChoice,
     ports::{
         Clock, SessionRuntime, SettingsStore, Store,
-        runtime::{LaunchOptions, ResolvedBrowser},
+        runtime::{LaunchOptions, ResolvedBrowser, StartedSupervisor},
     },
     settings::{BROWSER, EGO_PROBE_SECONDS},
 };
@@ -18,8 +18,6 @@ const START_TIMEOUT: Duration = Duration::from_secs(15);
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 /// How often `open` and `stop` look at the session while they wait.
 const POLL: Duration = Duration::from_millis(50);
-/// What to do after a run failed.
-const RECOVER_HINT: &str = "run recover --confirm-browser-closed before retrying";
 
 pub struct OpenOptions<'a> {
     pub url: Option<&'a str>,
@@ -45,7 +43,7 @@ pub fn resolve_browser(
     };
     let probe = crate::settings::get(settings, EGO_PROBE_SECONDS)?
         .parse()
-        .context("invalid ego_probe_seconds")?;
+        .with_context(|| format!("invalid {EGO_PROBE_SECONDS}"))?;
     runtime.resolve_browser(&choice, Duration::from_secs(probe))
 }
 
@@ -60,27 +58,8 @@ pub fn open(
     let url = options
         .url
         .map(keyharbor_domain::validate_start_url)
-        .transpose()
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    if !runtime.has_browser(&options.browser.executable) {
-        bail!(
-            "browser executable not found: {}",
-            options.browser.executable.display()
-        );
-    }
-    runtime.preflight(id)?;
-    let row = session(store, id)?;
-    let lock = runtime.lock(id).context("session is already open")?;
-    let Some(generation) = store.reserve(id, options.cdp, options.browser.kind)? else {
-        if active(row.state) || row.state == State::Failed {
-            bail!(
-                "session is {} without a supervisor; close its browser, then run recover --confirm-browser-closed",
-                row.state.as_str()
-            );
-        }
-        bail!("session is {}", row.state.as_str());
-    };
-    drop(lock);
+        .transpose()?;
+    let generation = reserve_run(store, runtime, id, options)?;
     let launch = LaunchOptions {
         browser: options.browser,
         url: url.as_deref(),
@@ -95,41 +74,14 @@ pub fn open(
             return Err(error);
         }
     };
-    let deadline = clock.now() + START_TIMEOUT;
-    let result = loop {
-        let row = session(store, id)?;
-        if row.generation != Some(generation) {
-            break Err(anyhow::anyhow!(
-                "session reservation changed during startup"
-            ));
-        }
-        match row.state {
-            State::Running | State::AwaitingUser => break Ok(()),
-            State::Starting => (),
-            other => {
-                let why = row
-                    .failure
-                    .as_deref()
-                    .map(|r| format!(": {r}"))
-                    .unwrap_or_default();
-                break Err(anyhow::anyhow!(
-                    "session did not start ({}{why}); {RECOVER_HINT}",
-                    other.as_str()
-                ));
-            }
-        }
-        if let Some(status) = child.exited()? {
-            let error = anyhow::anyhow!("session supervisor exited during startup ({status})");
-            supervision::mark_failed(store, id, generation, &error);
-            break Err(anyhow::anyhow!("{error}; {RECOVER_HINT}"));
-        }
-        if clock.now() >= deadline {
-            break Err(anyhow::anyhow!(
-                "supervisor did not report ready; inspect the session with list before retrying"
-            ));
-        }
-        clock.sleep(POLL);
-    };
+    let result = wait_until_running(
+        store,
+        clock,
+        id,
+        generation,
+        child.as_mut(),
+        clock.now() + START_TIMEOUT,
+    );
     // Reap the supervisor when it eventually exits, so a long-lived caller leaves no zombie.
     child.detach();
     if result.is_ok() {
@@ -142,6 +94,77 @@ pub fn open(
         );
     }
     result
+}
+
+/// Checks that the run can start and reserves it under the supervisor lock, returning the
+/// run's generation. The lock is released before the supervisor takes it.
+fn reserve_run(
+    store: &dyn Store,
+    runtime: &dyn SessionRuntime,
+    id: SessionId,
+    options: &OpenOptions<'_>,
+) -> Result<Generation> {
+    if !runtime.has_browser(&options.browser.executable) {
+        bail!(
+            "browser executable not found: {}",
+            options.browser.executable.display()
+        );
+    }
+    runtime.preflight(id)?;
+    let row = session(store, id)?;
+    let _lock = runtime.lock(id).context("session is already open")?;
+    let Some(generation) = store.reserve(id, options.cdp, options.browser.kind)? else {
+        if active(row.state) || row.state == State::Failed {
+            bail!(
+                "session is {} without a supervisor; close its browser, then {RECOVER}",
+                row.state.as_str()
+            );
+        }
+        bail!("session is {}", row.state.as_str());
+    };
+    Ok(generation)
+}
+
+/// Looks at the session every [`POLL`] until run `generation` reports `running` (or awaits the
+/// user), fails, loses its reservation, its supervisor exits, or `deadline` passes.
+fn wait_until_running(
+    store: &dyn Store,
+    clock: &dyn Clock,
+    id: SessionId,
+    generation: Generation,
+    child: &mut dyn StartedSupervisor,
+    deadline: Duration,
+) -> Result<()> {
+    loop {
+        let row = session(store, id)?;
+        if row.generation != Some(generation) {
+            bail!("session reservation changed during startup");
+        }
+        match row.state {
+            State::Running | State::AwaitingUser => return Ok(()),
+            State::Starting => (),
+            other => {
+                let why = row
+                    .failure
+                    .as_deref()
+                    .map(|r| format!(": {r}"))
+                    .unwrap_or_default();
+                bail!(
+                    "session did not start ({}{why}); {RECOVER} before retrying",
+                    other.as_str()
+                );
+            }
+        }
+        if let Some(status) = child.exited()? {
+            let error = anyhow!("session supervisor exited during startup ({status})");
+            supervision::mark_failed(store, id, generation, &error);
+            bail!("{error}; {RECOVER} before retrying");
+        }
+        if clock.now() >= deadline {
+            bail!("supervisor did not report ready; inspect the session with list before retrying");
+        }
+        clock.sleep(POLL);
+    }
 }
 
 /// Asks the supervisor to close the browser and waits until the session has stopped.

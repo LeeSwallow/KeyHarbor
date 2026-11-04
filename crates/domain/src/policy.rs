@@ -71,6 +71,14 @@ pub const ANY: &str = "*";
 /// The agent name recorded for the local user (CLI commands, direct control-socket calls).
 pub const LOCAL_AGENT: &str = "cli";
 
+/// The agent name recorded for what a session's supervisor does on its own (a refused
+/// navigation, cookies cleared after a grant ended).
+pub const SESSION_AGENT: &str = "session";
+
+/// The agent name recorded, and the grant's `created_by`, for a site handed over from the
+/// person's own browser (R-42). Stored and matched, so the text never changes.
+pub const HANDOFF_AGENT: &str = "handoff";
+
 /// Agent names: 1–64 ASCII letters, digits, '-', '_' or '.', or `*` for every agent.
 /// The name is chosen by whoever starts the MCP server; it is a label, not an identity.
 pub fn parse_agent(value: &str) -> Result<String, InvalidValue> {
@@ -179,6 +187,12 @@ pub fn normalize_target(resource: Resource, target: &str) -> Result<String, Inva
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stored_agent_names_keep_their_text() {
+        assert_eq!(LOCAL_AGENT, "cli");
+        assert_eq!(SESSION_AGENT, "session");
+        assert_eq!(HANDOFF_AGENT, "handoff");
+    }
     #[test]
     fn a_requester_is_never_every_agent() {
         assert_eq!(AgentName::parse("claude").unwrap().as_str(), "claude");
