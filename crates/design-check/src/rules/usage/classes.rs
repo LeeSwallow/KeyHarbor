@@ -3,10 +3,10 @@
 
 use std::collections::BTreeSet;
 
-use super::Rule;
 use crate::layers::Layer;
 use crate::model::DesignSet;
 use crate::report::Violation;
+use crate::rules::Rule;
 
 pub struct Classes;
 
@@ -22,7 +22,7 @@ impl Rule for Classes {
         let styled: BTreeSet<String> = ds
             .sheets
             .iter()
-            .filter(|f| matches!(f.layer, Layer::Components | Layer::Patterns))
+            .filter(|f| matches!(f.layer(), Layer::Components | Layer::Patterns))
             .flat_map(DesignSet::styled_classes)
             .collect();
         ds.used_kh_names()

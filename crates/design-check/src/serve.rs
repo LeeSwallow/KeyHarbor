@@ -3,7 +3,7 @@
 //! It serves only the folders in `SERVED` (not the rest of the checkout, not .git) and never
 //! follows a symbolic link.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Component, Path, PathBuf};
 use std::{fs, io, thread};
@@ -19,7 +19,11 @@ const TYPES: &[(&str, &str)] = &[
 
 /// The folders under the root that are served: the design system, and the app icon the
 /// showcase header shows (`../docs/design/assets/app-icon.svg`).
-const SERVED: &[&str] = &["design-system", "docs/design/assets"];
+const SERVED: &[&str] = &[crate::DESIGN_ROOT, "docs/design/assets"];
+
+/// The most of a request (request line and headers) read before answering. A GET for a file
+/// needs a few hundred bytes; this only stops a client from feeding headers forever.
+const MAX_REQUEST_HEAD: u64 = 16 * 1024;
 
 /// Serves the `SERVED` folders of `root` on `addr` (use port 0 for any free port) from a background thread.
 /// Returns the base URL, e.g. `http://127.0.0.1:53211`.
@@ -39,7 +43,7 @@ pub fn spawn(root: PathBuf, addr: &str) -> io::Result<String> {
 
 fn respond(root: &Path, mut stream: TcpStream) -> io::Result<()> {
     let mut request = String::new();
-    let mut reader = BufReader::new(&stream);
+    let mut reader = BufReader::new((&stream).take(MAX_REQUEST_HEAD));
     reader.read_line(&mut request)?;
     loop {
         let mut header = String::new();

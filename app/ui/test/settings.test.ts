@@ -41,4 +41,13 @@ describe("the settings screen", () => {
     expect(html).toContain("macOS 인증");
     expect(html).toMatch(/<button[^>]*disabled[^>]*>macOS 인증/);
   });
+
+  it("marks the method the app's authenticator names, and marks none before it is known", () => {
+    const none = settings(all, { ego_lite: false }, "none");
+    expect(none).toMatch(/<button type="button" class="is-on">없음<\/button>/);
+    expect(none).toContain("인증 없음: 이 Mac 사용자 계정으로 접근할 수 있는 누구나 금고를 볼 수 있습니다.");
+    const unknown = settings(all, { ego_lite: false }, null);
+    expect(unknown).not.toContain('class="is-on">없음');
+    expect(unknown).not.toContain("인증 없음:");
+  });
 });

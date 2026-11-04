@@ -1,79 +1,40 @@
-// The popup controller: state, events, and the one call to the background. It never sees a cookie.
+// Mounts the popup: draws each state and sends each event to its handler (controller.ts). It
+// never sees a cookie.
 
-import { TTL_CHOICES } from "../../domain/handoff.js";
-import { hostPatterns, scopeOf } from "../../domain/scope.js";
+import { type PopupController, makePopupController } from "./controller.js";
 import type { PopupDeps } from "./deps.js";
-import { pickLanguage } from "./i18n.js";
+import { type Lang, pickLanguage } from "./i18n.js";
 import { type PopupState, renderPopup } from "./view.js";
 
-const DEFAULT_SESSION = "work";
+const CLICKABLE = "[data-ttl], #ls, #submit, [data-fill], #save-login";
 
 export async function mountPopup(doc: Document, deps: PopupDeps): Promise<void> {
   const root = doc.getElementById("app");
   if (!root) return;
   const lang = pickLanguage(deps.language);
   doc.documentElement.lang = lang;
-  let state: PopupState = { kind: "loading" };
-  // The HTML is built from escaped values only (view.ts); parsed rather than assigned to innerHTML.
-  const draw = () => {
-    const parsed = new DOMParser().parseFromString(renderPopup(state, lang), "text/html");
-    root.replaceChildren(...parsed.body.childNodes);
-  };
-  draw();
-
-  const tab = await deps.activeTab();
-  const scope = tab ? scopeOf(tab.url) : null;
-  if (!tab || !scope?.ok) {
-    state = { kind: "unsupported" };
-    return draw();
-  }
-  state = { kind: "ready", origin: scope.value.origin, session: (await deps.loadSession()) ?? DEFAULT_SESSION, ttlSeconds: TTL_CHOICES[0], includeLocalStorage: false, busy: false };
-  draw();
-  void deps.listLogins(tab.id).then(
-    (r) => update({ logins: r.ok ? r.value : null }),
-    () => update({ logins: null }),
-  );
-
-  const update = (patch: Partial<Extract<PopupState, { kind: "ready" }>>) => {
-    if (state.kind !== "ready") return;
-    const { error: _e, done: _d, login: _l, ...rest } = state;
-    state = { ...rest, ...patch };
-    draw();
-  };
-
+  const popup = makePopupController(deps, drawInto(root, lang));
   root.addEventListener("input", (e) => {
     const target = e.target as HTMLInputElement;
-    if (target.id === "session" && state.kind === "ready") state = { ...state, session: target.value }; // parseSessionName trims, as Rust does
+    if (target.id === "session") popup.onSession(target.value);
   });
-  root.addEventListener("click", async (e) => {
-    const el = (e.target as HTMLElement).closest("[data-ttl], #ls, #submit, [data-fill], #save-login");
-    if (!el || state.kind !== "ready" || state.busy) return;
-    // A fill or a save: the background does it; the popup sees names and codes only.
-    if (el instanceof HTMLElement && el.dataset.fill) {
-      const item = el.dataset.fill;
-      update({ busy: true });
-      const result = await deps.fillLogin(tab.id, item).catch(() => ({ ok: false as const, error: "host_unavailable" as const }));
-      return update(result.ok ? { busy: false, login: { kind: "filled", item } } : { busy: false, error: result.error });
-    }
-    if (el.id === "save-login") {
-      update({ busy: true });
-      const result = await deps.saveLogin(tab.id).catch(() => ({ ok: false as const, error: "host_unavailable" as const }));
-      return update(result.ok ? { busy: false, login: result.value } : { busy: false, error: result.error });
-    }
-    if (el instanceof HTMLElement && el.dataset.ttl) return update({ ttlSeconds: Number(el.dataset.ttl) });
-    if (el.id === "ls") return update({ includeLocalStorage: !state.includeLocalStorage });
-    // The permission prompt must open inside this click.
-    const granted = await deps.requestHostAccess(hostPatterns(scope.value)).catch(() => false);
-    if (!granted) return update({ error: "no_permission" });
-    update({ busy: true });
-    const current = state;
-    if (current.kind !== "ready") return;
-    const result = await deps.handOff({ tabId: tab.id, session: current.session, ttlSeconds: current.ttlSeconds, includeLocalStorage: current.includeLocalStorage });
-    if (result.ok) {
-      await deps.saveSession(result.value.session);
-      update({ busy: false, done: { cookies: result.value.cookies, session: result.value.session } });
-    } else {
-      update({ busy: false, error: result.error });
-    }
+  root.addEventListener("click", (e) => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>(CLICKABLE);
+    if (el) void dispatchClick(popup, el);
   });
+  await popup.start();
+}
+
+/** The HTML is built from escaped values only (view.ts); parsed rather than assigned to innerHTML. */
+const drawInto = (root: HTMLElement, lang: Lang) => (state: PopupState) => {
+  const parsed = new DOMParser().parseFromString(renderPopup(state, lang), "text/html");
+  root.replaceChildren(...parsed.body.childNodes);
+};
+
+function dispatchClick(popup: PopupController, el: HTMLElement): Promise<void> | void {
+  if (el.dataset.fill) return popup.onFill(el.dataset.fill);
+  if (el.id === "save-login") return popup.onSaveLogin();
+  if (el.dataset.ttl) return popup.onToggle({ kind: "ttl", seconds: Number(el.dataset.ttl) });
+  if (el.id === "ls") return popup.onToggle({ kind: "localStorage" });
+  return popup.onHandOff();
 }

@@ -54,7 +54,7 @@ describe("rendering", () => {
   });
 
   it("asks for vault init instead of making a key when there is no vault", () => {
-    const html = render({ ...initial, overview: { vault_ready: false, sessions_open: 0, requests_pending: 0, drafts: 0 } });
+    const html = render({ ...initial, overview: { vault_ready: false, sessions_open: 0, requests_pending: 0, drafts: 0, auth: "none" } });
     expect(html).toContain("keyharbor vault init");
   });
 });

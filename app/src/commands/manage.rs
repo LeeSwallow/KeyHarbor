@@ -4,6 +4,7 @@
 
 use crate::{
     Ctx,
+    auth::AuthScope,
     confirm::{Outcome, confirmed_by_dialog},
 };
 use anyhow::{Result, anyhow, bail};
@@ -82,6 +83,7 @@ fn origins(values: &[String]) -> Result<Vec<Origin>> {
 }
 
 pub fn add_item(ctx: &Ctx, form: NewItemForm) -> Result<String> {
+    ctx.challenge(AuthScope::Edit)?;
     let kind = ItemKind::parse(&form.kind).ok_or_else(|| anyhow!("unknown kind"))?;
     let name = ItemName::parse_new(&form.name).map_err(invalid)?;
     let mut values = fields(kind, form.values)?;
@@ -123,6 +125,7 @@ pub struct ChangeForm {
 }
 
 pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Result<Outcome> {
+    ctx.challenge(AuthScope::Edit)?;
     let name = ItemName::parse(name).map_err(invalid)?;
     let vault = ctx.vault()?;
     let kind = vault
@@ -144,6 +147,7 @@ pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Re
 }
 
 pub fn remove_item(ctx: &Ctx, name: &str) -> Result<()> {
+    ctx.challenge(AuthScope::Edit)?;
     let name = ItemName::parse(name).map_err(invalid)?;
     if !ctx.vault()?.remove(&name)? {
         bail!("item not found");
@@ -154,6 +158,7 @@ pub fn remove_item(ctx: &Ctx, name: &str) -> Result<()> {
 /// Renames or moves an item (its placeholders change; the window warns first). Refused while a
 /// policy rule names it (J-104).
 pub fn rename_item(ctx: &Ctx, from: &str, to: &str) -> Result<String> {
+    ctx.challenge(AuthScope::Edit)?;
     let from = ItemName::parse(from).map_err(invalid)?;
     let to = ItemName::parse_new(to).map_err(invalid)?;
     keyharbor_core::rename::rename_item(&*ctx.store()?, &ctx.vault()?, &from, &to)?;

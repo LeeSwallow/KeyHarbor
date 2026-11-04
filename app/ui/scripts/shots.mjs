@@ -30,7 +30,7 @@ const identityFields = [
   ["emergency_phone", false], ["military_service", true], ["disability", true], ["veterans", true], ["note", true],
 ];
 const answers = {
-  overview: { vault_ready: true, sessions_open: 2, requests_pending: 0, drafts: 0 },
+  overview: { vault_ready: true, sessions_open: 2, requests_pending: 0, drafts: 0, auth: "none" },
   inbox: { requests: [], drafts: [] },
   sessions: [
     session({ id: "s1", name: "jobs", browser: "ego-lite", protection: "shared",
