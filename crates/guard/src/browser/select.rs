@@ -3,7 +3,7 @@
 //! origin, policy, expiry, field kind, navigation), so choosing opens no new way for a value
 //! to leave. The answer names only the chosen index when a placeholder was used.
 
-use crate::GuardedBrowser;
+use super::GuardedBrowser;
 use anyhow::{Result, bail};
 use keyharbor_domain::{
     ports::{
@@ -17,6 +17,8 @@ use zeroize::Zeroizing;
 
 /// The refusal when no option matches; it never repeats what was asked for.
 const NO_MATCH: &str = "no option matches";
+/// The refusal when the target is not a `<select>`.
+const NOT_A_SELECT: &str = "browser_select needs a <select> element";
 
 impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
     /// Chooses the option `choice` names in the `<select>` `target`.
@@ -41,7 +43,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         let page = self.inner.page().await?;
         let node = self.inner.focus_element(&page, target).await?;
         if !self.inner.element(&page, node).await?.is_select() {
-            bail!("browser_select needs a <select> element");
+            bail!(NOT_A_SELECT);
         }
         match self.inner.select_option(&page, node, choice).await? {
             Some(index) => Ok(json!({"selected": {"index": index}})),
@@ -60,7 +62,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         let node = self.inner.focus_element(&page, target).await?;
         let (focus, element, origin) = self.checked_focus(&page, template, Some(node)).await?;
         if !element.is_select() {
-            bail!("browser_select needs a <select> element");
+            bail!(NOT_A_SELECT);
         }
         let prepared = self.guard.prepare_text(
             self.agent,

@@ -25,7 +25,7 @@ pub fn refuse_values(
             field: field.clone(),
         };
         (reference, value.clone())
-    }));
+    }))?;
     let holds_value =
         |text: &&str| stored.redact(text) != **text || unstored.redact(text) != **text;
     if texts.iter().any(holds_value) {
