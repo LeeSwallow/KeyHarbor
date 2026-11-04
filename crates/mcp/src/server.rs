@@ -6,6 +6,7 @@ use keyharbor_domain::{
     browser_choice::BrowserChoice,
     policy::AgentName,
     ports::{Clock, SessionRuntime, Store},
+    vault::InvalidValue,
 };
 use keyharbor_guard::{
     SharedStore, VaultOpener,
@@ -105,6 +106,15 @@ pub(crate) fn outcome(result: Result<Value>) -> CallToolResult {
     }
 }
 
+/// An argument the domain refused, as a tool error.
+pub(crate) fn invalid(error: InvalidValue) -> anyhow::Error {
+    anyhow!("{error}")
+}
+
+/// What a raw CDP tool says on a server started without `--allow-cdp`.
+pub(crate) const RAW_CDP_DISABLED: &str =
+    "raw CDP is disabled; the user must start the MCP server with --allow-cdp";
+
 impl Server {
     pub(crate) fn new(inner: Inner) -> Self {
         let allow_cdp = inner.allow_cdp;
@@ -124,19 +134,40 @@ impl Server {
             .context("task failed")?
     }
 
-    pub(crate) async fn browser(&self, session: &str, request: ControlRequest) -> CallToolResult {
-        let request = ControlEnvelope::from_agent(self.inner.agent(), request);
-        let id = match self.session(session) {
+    /// Runs `work` off the async threads on the session `id` names, if this server may use
+    /// it; `work` checks the policy itself (for an operation known only once it has looked).
+    pub(crate) async fn with_session(
+        &self,
+        id: &str,
+        work: impl FnOnce(&Inner, SessionId) -> Result<Value> + Send + 'static,
+    ) -> CallToolResult {
+        let id = match self.session(id) {
             Ok(id) => id,
             Err(error) => return fail(error.to_string()),
         };
-        outcome(
-            self.blocking(move |inner| {
-                inner.allow(SessionOp::Browser(id))?;
-                client::request(&inner.data, &id, &request)
-            })
-            .await,
-        )
+        outcome(self.blocking(move |inner| work(inner, id)).await)
+    }
+
+    /// [`Self::with_session`] once the policy allows this server's agent `op` on the session.
+    pub(crate) async fn in_session(
+        &self,
+        id: &str,
+        op: fn(SessionId) -> SessionOp,
+        work: impl FnOnce(&Inner, SessionId) -> Result<Value> + Send + 'static,
+    ) -> CallToolResult {
+        self.with_session(id, move |inner, id| {
+            inner.allow(op(id))?;
+            work(inner, id)
+        })
+        .await
+    }
+
+    pub(crate) async fn browser(&self, session: &str, request: ControlRequest) -> CallToolResult {
+        let request = ControlEnvelope::from_agent(self.inner.agent(), request);
+        self.in_session(session, SessionOp::Browser, move |inner, id| {
+            client::request(&inner.data, &id, &request)
+        })
+        .await
     }
 }
 
@@ -153,7 +184,7 @@ pub(crate) fn tool_names(allow_cdp: bool) -> Vec<String> {
 }
 
 /// Every tool; `session_endpoint` only with `--allow-cdp`.
-fn router(allow_cdp: bool) -> ToolRouter<Server> {
+pub(crate) fn router(allow_cdp: bool) -> ToolRouter<Server> {
     let mut router = Server::session_tools()
         + Server::browser_tools()
         + Server::site_tools()

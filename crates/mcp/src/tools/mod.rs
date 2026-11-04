@@ -5,3 +5,6 @@ pub(crate) mod request;
 pub(crate) mod session;
 pub(crate) mod site;
 pub(crate) mod vault;
+
+#[cfg(test)]
+mod documented;

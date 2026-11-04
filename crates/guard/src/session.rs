@@ -2,8 +2,12 @@
 //! operation; this table, not the interface, decides what is checked.
 
 use crate::pdp::{Action, Decision, decide};
-use anyhow::{Result, bail};
-use keyharbor_domain::{SessionId, browser_choice::BrowserKind, ports::PolicyStore};
+use anyhow::{Result, anyhow, bail};
+use keyharbor_domain::{
+    SessionId,
+    browser_choice::{BrowserChoice, BrowserKind},
+    ports::PolicyStore,
+};
 
 /// An agent's operation on sessions. Listing is not one: it shows names, states and
 /// descriptions only, and a scoped server already limits it to its session.
@@ -55,6 +59,16 @@ impl SessionOp {
                 vec![Action::OpenSession(id)]
             }
         }
+    }
+}
+
+/// The browser an agent asks [`SessionOp::Open`] for. Only the person may name an executable
+/// (a path, in the `browser` setting or `--browser`): an agent naming one would choose which
+/// program KeyHarbor starts as its browser.
+pub fn parse_agent_browser(value: &str) -> Result<BrowserChoice> {
+    match BrowserChoice::parse(value).map_err(|e| anyhow!("{e}"))? {
+        BrowserChoice::Path(_) => bail!("only the person may name a browser executable"),
+        choice => Ok(choice),
     }
 }
 
@@ -115,6 +129,22 @@ mod tests {
             vec![Action::OpenSession(id), Action::RawCdp]
         );
         assert_eq!(SessionOp::Create.actions(), vec![Action::CreateSession]);
+    }
+
+    #[test]
+    fn an_agent_names_a_browser_kind_but_never_an_executable() {
+        assert_eq!(
+            parse_agent_browser("chrome").unwrap(),
+            BrowserChoice::Chrome
+        );
+        assert_eq!(parse_agent_browser("auto").unwrap(), BrowserChoice::Auto);
+        assert_eq!(
+            parse_agent_browser("/Applications/Evil.app/evil")
+                .unwrap_err()
+                .to_string(),
+            "only the person may name a browser executable"
+        );
+        assert!(parse_agent_browser("firefox").is_err());
     }
 
     #[test]

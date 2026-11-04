@@ -37,6 +37,14 @@ pub struct GeneratedLogin {
     pub rule: PasswordRule,
 }
 
+/// A generated login draft: the name it got and its fields, in the order an agent types them
+/// (`username` when one was given, then `password`). Never a value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GeneratedDraft {
+    pub name: ItemName,
+    pub fields: Vec<FieldName>,
+}
+
 impl Vault {
     /// Stores `item` as a draft added by `agent` and returns the name it got: `item.name`
     /// if free, else the first free `~draft-N`. Nothing existing is changed.
@@ -61,12 +69,16 @@ impl Vault {
     }
 
     /// A draft login with a new password following `login.rule`; the value never leaves.
-    pub fn generate_login(&self, login: GeneratedLogin, agent: &str) -> Result<ItemName> {
-        let mut fields = vec![(FieldName::parse("password")?, random::password(&login.rule))];
-        if let Some(username) = login.username {
-            fields.push((FieldName::parse("username")?, username));
+    pub fn generate_login(&self, login: GeneratedLogin, agent: &str) -> Result<GeneratedDraft> {
+        let password = FieldName::parse("password")?;
+        let username = FieldName::parse("username")?;
+        let mut fields = vec![(password.clone(), random::password(&login.rule))];
+        let mut typed = vec![password];
+        if let Some(value) = login.username {
+            fields.push((username.clone(), value));
+            typed.insert(0, username);
         }
-        self.add_draft(
+        let name = self.add_draft(
             DraftItem {
                 name: login.name,
                 kind: ItemKind::Login,
@@ -75,7 +87,11 @@ impl Vault {
                 source: ItemSource::Generated,
             },
             agent,
-        )
+        )?;
+        Ok(GeneratedDraft {
+            name,
+            fields: typed,
+        })
     }
 
     fn free_draft_name(&self, name: &ItemName) -> Result<ItemName> {
@@ -178,7 +194,7 @@ mod tests {
     fn a_generated_login_follows_the_rule_and_is_usable_by_placeholder() {
         let e = env();
         let vault = init(&e);
-        let name = vault
+        let draft = vault
             .generate_login(
                 GeneratedLogin {
                     name: ItemName::parse("shop").unwrap(),
@@ -189,7 +205,15 @@ mod tests {
                 "claude",
             )
             .unwrap();
-        let password = vault.resolve(&pref(name.as_str(), "password")).unwrap();
+        let typed: Vec<&str> = draft.fields.iter().map(FieldName::as_str).collect();
+        assert_eq!(
+            typed,
+            ["username", "password"],
+            "the order an agent types them"
+        );
+        let password = vault
+            .resolve(&pref(draft.name.as_str(), "password"))
+            .unwrap();
         assert_eq!(password.len(), 24);
         assert!(password.chars().all(|c| c.is_ascii_alphanumeric()));
         let item = vault.list().unwrap().into_iter().next().unwrap();
@@ -198,5 +222,24 @@ mod tests {
             (ItemStatus::Draft, ItemSource::Generated)
         );
         assert_eq!(item.origins, ["https://shop.example"]);
+    }
+
+    #[test]
+    fn a_generated_login_without_a_username_has_only_a_password_field() {
+        let e = env();
+        let vault = init(&e);
+        let draft = vault
+            .generate_login(
+                GeneratedLogin {
+                    name: ItemName::parse("shop").unwrap(),
+                    origin: Origin::parse("https://shop.example").unwrap(),
+                    username: None,
+                    rule: PasswordRule::default(),
+                },
+                "claude",
+            )
+            .unwrap();
+        let typed: Vec<&str> = draft.fields.iter().map(FieldName::as_str).collect();
+        assert_eq!(typed, ["password"]);
     }
 }

@@ -7,8 +7,9 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::time::Instant;
 
-/// The longest `wait` waits, for a selector or a fixed time.
-const WAIT_TIMEOUT: Duration = Duration::from_secs(15);
+/// The longest `wait` waits, for a selector or a fixed time; the MCP `browser_wait` schema
+/// says so.
+pub const WAIT_TIMEOUT: Duration = Duration::from_secs(15);
 /// How often `wait` asks the page for the selector (each poll is a browser call).
 const WAIT_POLL: Duration = Duration::from_millis(100);
 

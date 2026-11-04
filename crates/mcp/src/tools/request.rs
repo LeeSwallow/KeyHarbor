@@ -2,7 +2,7 @@
 //! (08 §8.2 ③). The answer's values go from the user to the vault; the agent gets the
 //! outcome and placeholders.
 
-use crate::server::{Server, fail, outcome};
+use crate::server::{Server, fail, invalid, outcome};
 use anyhow::Result;
 use keyharbor_core::{
     request::{self, Ask},
@@ -39,7 +39,6 @@ struct WaitArgs {
 }
 
 fn ask(args: RequestArgs) -> Result<Ask> {
-    let invalid = |e: keyharbor_domain::vault::InvalidValue| anyhow::anyhow!("{e}");
     Ok(Ask {
         kind: ItemKind::parse(&args.kind).ok_or_else(|| anyhow::anyhow!("unknown kind"))?,
         name: ItemName::parse_new(&args.name).map_err(invalid)?,
