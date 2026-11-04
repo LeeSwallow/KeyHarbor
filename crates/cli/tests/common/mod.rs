@@ -15,9 +15,11 @@ use std::{
 /// A fake browser: drains the CDP pipe (fd 3) and exits when the pipe closes, when
 /// `$TEST_DIR/close` appears, or when `$TEST_DIR` is gone. Records its arguments and its
 /// parent (the supervisor) pid, and writes `DevToolsActivePort` for `--remote-debugging-port=0`.
+/// `supervisor-pid` and `args` appear whole (written aside, then renamed): tests read them as
+/// soon as they exist, and `>` creates the file before it writes it (an empty pid).
 pub const FAKE_BROWSER: &str = r#"#!/bin/sh
-printf '%s' "$PPID" > "$TEST_DIR/supervisor-pid"
-printf '%s\n' "$@" > "$TEST_DIR/args"
+printf '%s' "$PPID" > "$TEST_DIR/supervisor-pid.part" && mv "$TEST_DIR/supervisor-pid.part" "$TEST_DIR/supervisor-pid"
+printf '%s\n' "$@" > "$TEST_DIR/args.part" && mv "$TEST_DIR/args.part" "$TEST_DIR/args"
 for arg in "$@"; do case "$arg" in --user-data-dir=*) profile=${arg#--user-data-dir=};; --remote-debugging-port=0) cdp=1;; esac; done
 if [ "$cdp" = 1 ]; then printf '12345\n/devtools/browser/11111111-1111-4111-8111-111111111111\n' > "$profile/DevToolsActivePort"; fi
 cat <&3 >/dev/null &
