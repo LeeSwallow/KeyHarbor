@@ -291,7 +291,7 @@ classDiagram
   class Authenticator {
     <<trait>>
     +id() str
-    +challenge(scope) Result~Grant~
+    +challenge(scope) Result
   }
   class NoneAuth {
     +challenge() 항상 Grant
@@ -326,7 +326,35 @@ classDiagram
 - **이번 구현은 `NoneAuth`만** 만들고 기본값으로 쓴다. [사용자 결정 R-21]
 - `scope`는 `OpenApp`, `Reveal`, `Edit`, `Export`, `PolicyChange`로 나눈다. 사용자가 어떤 scope에 인증을 걸지 고르는 설정은 자리만 둔다.
 - 설정 화면은 "현재: 인증 없음 — 이 Mac 사용자 계정으로 접근할 수 있는 누구나 금고를 볼 수 있습니다"를 보여 준다. 막지 않는다(P2).
-- 관리 앱 인증은 **UI 통제**이며 VK를 보호하지 않는다(§3.3). CLI에서 `vault show`도 같은 trait을 거친다.
+- 관리 앱 인증은 **UI 통제**이며 VK를 보호하지 않는다(§3.3). CLI에는 평문 보기가 없으므로(§3.12 (A)) 이 trait을 부르는 쪽은 관리 앱뿐이다.
+
+**구현 위치** [설계자 판단 J-126]: port `Authenticator`·`AuthScope`와 어댑터 `NoneAuth`는 `app/src/auth.rs`에 있다(부르는 쪽이 앱 하나라 domain에 두지 않았다). `app/src/main.rs`가 `NoneAuth`를 `Ctx`에 한 번 넣고, 명령은 다른 일을 하기 전에 `ctx.challenge(scope)`를 부른다. 거절(`Refused`)이면 오류로 끝나고 아무것도 바뀌지 않는다. 시험은 `app/tests/auth.rs`.
+
+| scope | 앱의 호출 지점 (`app/src/commands/`) |
+|---|---|
+| `OpenApp` | `open_app`: 시작할 때(창은 숨긴 채로 뜬다)와 메뉴 막대 "열기" |
+| `Reveal` | `reveal`, 이것을 거치는 `copy_value` |
+| `Edit` | 항목 추가·편집·이름 바꾸기·삭제, draft 확정·폐기, 정보 요청 응답·거절 |
+| `Export` | 앱에 내보내기 명령이 아직 없다. 생기면 같은 자리에서 부른다 |
+| `PolicyChange` | 설정 바꾸기, 규칙 추가·삭제 |
+
+```mermaid
+sequenceDiagram
+  participant 창 as 창 (ui)
+  participant 명령 as 앱 명령
+  participant 인증 as Authenticator
+  participant 처리 as core · guard
+  창->>명령: reveal(item, field)
+  명령->>인증: challenge(Reveal)
+  alt 통과 (NoneAuth는 언제나)
+    명령->>처리: guard reveal
+    처리-->>창: 값 (기록됨)
+  else Refused
+    명령-->>창: 오류, 아무것도 하지 않음
+  end
+```
+
+사이드바와 설정 화면의 "인증 없음"은 overview가 싣는 포트의 `id()`(`none`)에서 그린다.
 
 ## 3.11 알려진 한계 요약
 

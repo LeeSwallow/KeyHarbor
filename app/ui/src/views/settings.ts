@@ -98,7 +98,20 @@ function plain(s: Setting): string {
     <span><input class="kh-input" name="value" value="${esc(s.value)}" autocomplete="off" spellcheck="false"> <button class="kh-btn secondary" type="submit">저장</button></span></form>`;
 }
 
-export function settings(list: Setting[], browsers: Browsers = { ego_lite: false }): string {
+/// What the method in use (`auth`, from the app's authenticator) means for the person. Only
+/// `none` exists (R-21); the others are shown, not chosen.
+const AUTH_HELP: Record<string, string> = {
+  none: "인증 없음: 이 Mac 사용자 계정으로 접근할 수 있는 누구나 금고를 볼 수 있습니다.",
+};
+
+function authSection(auth: string | null): string {
+  const help = auth ? AUTH_HELP[auth] : undefined;
+  return `<section class="settings-group"><h3>인증 방식</h3><div class="setting"><div><div class="title">앱과 값 보기 잠금</div>
+    ${help ? `<div class="kh-help">${esc(help)}</div>` : ""}</div>
+    <div class="kh-seg" role="group"><button type="button"${auth === "none" ? ' class="is-on"' : ""}>없음</button><button type="button" disabled>macOS 인증 · 준비 중</button><button type="button" disabled>마스터 비밀번호 · 준비 중</button></div></div></section>`;
+}
+
+export function settings(list: Setting[], browsers: Browsers = { ego_lite: false }, auth: string | null = null): string {
   const sections = GROUPS.map((group) => {
     // Whether ego lite answers right now goes with the browser choice it changes.
     const status = browsers.ego_lite
@@ -111,10 +124,7 @@ export function settings(list: Setting[], browsers: Browsers = { ego_lite: false
   }).join("");
   const unknown = list.filter((s) => !SHOWN[s.key]).map(plain).join("");
   const others = unknown ? `<section class="settings-group"><h3>기타</h3>${unknown}</section>` : "";
-  const auth = `<section class="settings-group"><h3>인증 방식</h3><div class="setting"><div><div class="title">앱과 값 보기 잠금</div>
-    <div class="kh-help">인증 없음: 이 Mac 사용자 계정으로 접근할 수 있는 누구나 금고를 볼 수 있습니다.</div></div>
-    <div class="kh-seg" role="group"><button type="button" class="is-on">없음</button><button type="button" disabled>macOS 인증 · 준비 중</button><button type="button" disabled>마스터 비밀번호 · 준비 중</button></div></div></section>`;
-  return `${heading("settings")}${sections}${others}${auth}`;
+  return `${heading("settings")}${sections}${others}${authSection(auth)}`;
 }
 
 /// `upload_dirs` as a list: each folder can be taken out, one can be added. The new value is

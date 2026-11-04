@@ -7,6 +7,7 @@ mod shell;
 
 use keyharbor_app::{
     Ctx, SystemClock,
+    auth::NoneAuth,
     commands::{
         self, AuditDto, ChangeForm, HandoffDto, InboxDto, ItemDto, KindForm, NewItemForm,
         OverviewDto, RequestForm, RuleDto, SessionDto, SettingDto, message,
@@ -15,7 +16,7 @@ use keyharbor_app::{
 };
 use keyharbor_keystore::KeychainKeyStore;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use tauri::State;
+use tauri::{Manager, State};
 
 type Reply<T> = Result<T, String>;
 
@@ -223,11 +224,18 @@ fn main() {
         Arc::new(SystemClock),
         cli_binary(),
         clipboard,
+        // The only method for now (R-21); another goes here, in this one place (J-126).
+        Arc::new(NoneAuth),
     );
     tauri::Builder::default()
         .manage(ctx)
         .setup(|app| {
             shell::install(app.handle())?;
+            // The window starts hidden (tauri.conf.json) and shows only past `OpenApp`.
+            commands::open_app(&app.state::<Ctx>())?;
+            if let Some(window) = app.get_webview_window("main") {
+                window.show()?;
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
