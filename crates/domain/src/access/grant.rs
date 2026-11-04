@@ -4,41 +4,35 @@
 //! with the developer secrets channel.
 
 use crate::{
-    SessionId,
+    session::SessionId,
     vault::{Description, InvalidValue, Origin},
 };
-use std::fmt;
-use uuid::Uuid;
 
-/// Identifies one grant; `keyharbor grant revoke` quotes it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct GrantId(Uuid);
-impl GrantId {
-    /// From 16 random bytes in UUID v4 layout; new ids come from
-    /// `keyharbor_crypto::random::id()` (ADR-0016).
-    pub fn from_bytes(bytes: [u8; 16]) -> Self {
-        Self(Uuid::from_bytes(bytes))
-    }
-    pub fn parse(value: &str) -> Result<Self, uuid::Error> {
-        Ok(Self(Uuid::parse_str(value)?))
-    }
+uuid_id!(
+    /// Identifies one grant; `keyharbor grant revoke` quotes it.
+    GrantId
+);
+
+// The bounds are literals behind macros so a message elsewhere can `concat!` them
+// (`handoff_site`; J-171).
+macro_rules! grant_ttl_min_seconds {
+    () => {
+        60
+    };
 }
-impl From<[u8; 16]> for GrantId {
-    fn from(bytes: [u8; 16]) -> Self {
-        Self::from_bytes(bytes)
-    }
+macro_rules! grant_ttl_max_seconds {
+    () => {
+        2_592_000 // 30 days
+    };
 }
-impl fmt::Display for GrantId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
+pub(crate) use {grant_ttl_max_seconds, grant_ttl_min_seconds};
 
 /// How long a grant lasts: `<N>m`, `<N>h` or `<N>d`, from one minute to 30 days.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GrantTtl(u64);
 impl GrantTtl {
-    pub const MAX_SECONDS: u64 = 30 * 86_400;
+    pub const MIN_SECONDS: u64 = grant_ttl_min_seconds!();
+    pub const MAX_SECONDS: u64 = grant_ttl_max_seconds!();
     pub fn parse(value: &str) -> Result<Self, InvalidValue> {
         let invalid = InvalidValue("grant TTL must be <N>m, <N>h or <N>d, at most 30d");
         let (number, unit) = value.split_at(value.len().saturating_sub(1));
@@ -50,7 +44,9 @@ impl GrantTtl {
         };
         let n: u64 = number.parse().map_err(|_| invalid)?;
         match n.checked_mul(unit) {
-            Some(seconds) if seconds > 0 && seconds <= Self::MAX_SECONDS => Ok(Self(seconds)),
+            Some(seconds) if (Self::MIN_SECONDS..=Self::MAX_SECONDS).contains(&seconds) => {
+                Ok(Self(seconds))
+            }
             _ => Err(invalid),
         }
     }

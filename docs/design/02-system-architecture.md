@@ -117,7 +117,7 @@ flowchart TB
 
 | crate | 계층 | 의존 가능 (정상 의존) | 핵심 타입·책임 |
 |---|---|---|---|
-| `keyharbor-domain` | domain + ports | 없음 | `SessionId`·`State`·`Generation`(만들기는 `crypto::random::id`), `vault`(`ItemKind`, `KINDS`, `Origin`, placeholder 문법 `PLACEHOLDER_OPEN`·`Display for PlaceholderRef`), `policy`(`Rule`, 요청자 `AgentName`), `settings`(`SETTINGS`), `audit`, `secret`(`SecretKey`, `VaultError`), `ports`(trait; 브라우저 대상 `Target`·`FillOutcome`, 시계 `Clock`·`ManualClock`, `RotationLock`) |
+| `keyharbor-domain` | domain + ports | 없음 | 컨텍스트마다 폴더 하나(`vault`, `session`, `site`, `access`; J-170). `session`(`SessionId`·`State`·`Generation`, 만들기는 `crypto::random::id`; 시작 URL 검사), `vault`(`ItemKind`, `KINDS`, `Origin`, placeholder 문법 `PLACEHOLDER_OPEN`·`Display for PlaceholderRef`), `access`(`policy`의 `Rule`·요청자 `AgentName`, `grant`, `denial`), `settings`(`SETTINGS`), `audit`, `secret`(`SecretKey`, `VaultError`), `ports`(trait; 저장 port는 `ports/store`, 브라우저 대상 `Target`·`FillOutcome`, 시계 `Clock`·`ManualClock`, `RotationLock`) |
 | `keyharbor-crypto` | crypto | domain | 모든 암호 원시 연산과 난수, v4 id(`random::{uuid_v4, id}`) ([ADR-0016](adr/0016-crypto-crate.md)) |
 | `keyharbor-vault` | 안쪽 (형식) | domain, crypto | 레코드 seal/open, 키 분리, 메타 MAC, 키 ID(I/O 없음) |
 | `keyharbor-keystore` | adapter | domain | `KeyStore` 구현: `KeychainKeyStore`(macOS login keychain, 다른 OS는 오류만 내는 자리), 테스트용 `FileKeyStore`, `test_keystore_dir`(기능 `insecure-test-keystore`일 때만). security-framework는 여기에만(규칙 G) |
