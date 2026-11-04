@@ -1,0 +1,20 @@
+# Not published (developer secrets spec §8 ⑤). Install from this folder:
+#   pip install ./integrations/python-keyring
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keyrings.keyharbor"
+version = "0.1.0"
+description = "Read-only keyring backend for programs run under `keyharbor run`"
+license = "MIT OR Apache-2.0"
+requires-python = ">=3.9"
+dependencies = ["keyring>=23"]
+
+[project.entry-points."keyring.backends"]
+keyharbor = "keyrings.keyharbor.backend"
+
+[tool.setuptools.packages.find]
+include = ["keyrings.keyharbor"]
+namespaces = true

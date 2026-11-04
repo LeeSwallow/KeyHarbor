@@ -10,11 +10,15 @@ keyharbor run --env myapp -- npm test                      # every variable of a
 keyharbor run --env-file .env.keyharbor -- ./serve         # KEY={{secret:item.field}} lines
 keyharbor run --file GOOGLE_APPLICATION_CREDENTIALS=gcp.key -- ./deploy.sh
 keyharbor run --template CONF=app.yml.tmpl -- ./serve --config "$CONF"
+keyharbor run --allow 'myapp/dev/*' -- python app.py      # code asks by name while it runs
 ```
 
 - Find items with `keyharbor vault list --prefix myapp/` or `--tag prod` (or `vault_list`).
 - `--file` and `--template` write a private file, put its path in the variable, and remove
   it when the command ends.
+- Code that asks by name (Python `keyring.get_password("myapp/dev/db", "PASSWORD")` with
+  `integrations/python-keyring`) gets only the items given to the run, or those `--allow`
+  matches; anything else is `denied: <item> (outside-run)`.
 - A placeholder in an argument works but other processes can read arguments; prefer `--env`
   or `--file`.
 - Commit `.env.keyharbor` (placeholders only); never write a plaintext `.env`.

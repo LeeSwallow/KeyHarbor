@@ -31,10 +31,14 @@ pub enum DenialReason {
     RunNotAllowed,
     /// The item's expiry date has passed (R-37).
     Expired,
+    /// A program inside `keyharbor run` asked for an item the run did not cover (channel ④).
+    OutsideRun,
+    /// A request to a run's lookup socket did not carry the run's token (channel ④).
+    BadToken,
 }
 
 impl DenialReason {
-    pub const ALL: [DenialReason; 14] = [
+    pub const ALL: [DenialReason; 16] = [
         Self::NotFound,
         Self::Tampered,
         Self::Discarded,
@@ -49,6 +53,8 @@ impl DenialReason {
         Self::Vault,
         Self::RunNotAllowed,
         Self::Expired,
+        Self::OutsideRun,
+        Self::BadToken,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -67,6 +73,8 @@ impl DenialReason {
             Self::Vault => "vault",
             Self::RunNotAllowed => "run-not-allowed",
             Self::Expired => "expired",
+            Self::OutsideRun => "outside-run",
+            Self::BadToken => "bad-token",
         }
     }
 

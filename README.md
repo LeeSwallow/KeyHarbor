@@ -149,6 +149,7 @@ keyharbor vault import-env myapp ./.env                  # .env 변수 묶음
 keyharbor vault mv github work/github                    # 이름 바꾸기·옮기기
 keyharbor vault export ~/keyharbor-backup.age            # age 형식 암호화 백업
 keyharbor run --env myapp -- npm test                    # 자식에만 변수 주입, 출력의 값은 가려짐
+keyharbor run --allow 'myapp/dev/*' -- python app.py     # 실행 중 keyring.get_password()로 이름으로 묻기
 keyharbor policy deny --agent codex --resource domain --target payment
 keyharbor grant add <세션 id> https://github.com --ttl 8h # 이 세션이 열 수 있는 사이트
 keyharbor receive <세션 id> --origin https://github.com  # 사람이 사이트를 넘길 때까지 기다림
@@ -166,7 +167,7 @@ keyharbor browser install-host                           # 확장과 연결 (평
 - **보호를 약하게 하는 변경은 사람이 확인합니다.** 터미널에서는 `yes`를, 앱에서는 확인 창을 거칩니다. 터미널을 흉내 내는 프로그램은 대신 답할 수 있어 강한 경계는 아닙니다([보안 백서 §3.12](docs/design/03-security-whitepaper.md)).
 - **Mac이나 Keychain 항목을 잃으면 금고도 잃습니다.** 복구 서비스는 없습니다. `vault export` 백업과 그 비밀번호를 따로 보관하세요.
 - 서명하지 않은 빌드라서 업데이트 후 macOS가 Keychain 접근을 다시 물을 수 있습니다. "항상 허용"을 누르면 됩니다.
-- `keyharbor run`의 자식 프로세스는 값을 평문으로 갖습니다. 그 프로세스가 값을 밖으로 보내는 것은 막지 못하고, 출력만 가립니다.
+- `keyharbor run`의 자식 프로세스는 값을 평문으로 갖습니다. 그 프로세스가 값을 밖으로 보내는 것은 막지 못하고, 출력만 가립니다. 실행 중 이름으로 묻는 socket([Python keyring 백엔드](integrations/python-keyring/README.md))은 `run`이 도는 동안 그 토큰을 아는 같은 사용자 프로세스도 쓸 수 있습니다.
 - 항목 이름·사이트 같은 메타데이터는 평문입니다. 이름에 비밀을 넣지 마세요. 데이터 위치는 `--data-dir`이나 `KEYHARBOR_HOME`으로 바꿉니다.
 
 ## 자주 묻는 질문

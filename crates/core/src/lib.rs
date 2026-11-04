@@ -27,6 +27,8 @@ pub mod weaken;
 pub use access::PlaintextAccess;
 pub use dotenv::parse_dotenv;
 pub use keyharbor_crypto::export::Passphrase;
+/// The lookup socket's token for `keyharbor run` (channel ④); the guard checks it.
+pub use keyharbor_crypto::token::AccessToken;
 pub use transfer::ImportReport;
 pub use vault::{
     CatalogEntry, DEFAULT_ITEM_TTL, DraftItem, ExpiryChoice, GeneratedLogin, ItemChange,
