@@ -31,6 +31,7 @@ fn masker(values: usize) -> Masker {
             Zeroizing::new(value(n)),
         )
     }))
+    .unwrap()
 }
 
 /// A synthetic value whose bytes vary like a real secret's, with characters that have

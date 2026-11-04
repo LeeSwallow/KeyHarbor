@@ -3,6 +3,7 @@
 //! never captured (J-80). It never overwrites: a new account or a changed password becomes a
 //! draft, an unchanged one is left alone.
 
+use super::PERSON;
 use crate::Guard;
 use anyhow::{Result, anyhow, bail};
 use keyharbor_core::{DraftItem, ItemSource, ItemStatus, PlaintextAccess, Vault};
@@ -14,9 +15,6 @@ use keyharbor_domain::{
     vault::{FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
 };
 use zeroize::Zeroizing;
-
-/// Who the usage record names for a capture: the person at the browser.
-pub const CAPTURE_AGENT: &str = "user";
 
 /// What became of one captured sign-in.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,7 +56,7 @@ impl Guard {
             _ => return Ok(outcome),
         };
         self.record(
-            &AuditEvent::new(CAPTURE_AGENT, AuditKind::CredentialCaptured, result)
+            &AuditEvent::new(PERSON, AuditKind::CredentialCaptured, result)
                 .session(self.session())
                 .item(item.as_str())
                 .origin(Some(origin.as_str())),
@@ -127,9 +125,7 @@ pub(crate) fn store_login(
         origins: vec![origin.clone()],
         source: ItemSource::Captured,
     };
-    Ok(CaptureOutcome::Draft(
-        vault.add_draft(draft, CAPTURE_AGENT)?,
-    ))
+    Ok(CaptureOutcome::Draft(vault.add_draft(draft, PERSON)?))
 }
 
 /// An item name from the origin's host: `https://accounts.example.com` → `accounts-example-com`.

@@ -3,6 +3,7 @@
 //! must exist and verify (a tampered item shows nothing), and every reveal is recorded.
 //! Agents never reach it: neither the MCP server nor the control socket calls it.
 
+use super::PERSON;
 use crate::audit;
 use anyhow::{Context, Result};
 use keyharbor_core::{PlaintextAccess, Vault};
@@ -12,9 +13,6 @@ use keyharbor_domain::{
     vault::{FieldName, ItemName, PlaceholderRef},
 };
 use zeroize::Zeroizing;
-
-/// Who the usage record names for a reveal: the person at the app.
-pub const REVEALER: &str = "user";
 
 /// The value of `item.field`, for a person to see; records `value_revealed`.
 pub fn reveal(
@@ -34,7 +32,7 @@ pub fn reveal(
     let value = vault.resolve(&PlaintextAccess::issue(), &reference)?;
     audit::record(
         store,
-        &AuditEvent::new(REVEALER, AuditKind::ValueRevealed, "shown").item(item.as_str()),
+        &AuditEvent::new(PERSON, AuditKind::ValueRevealed, "shown").item(item.as_str()),
     );
     Ok(value)
 }

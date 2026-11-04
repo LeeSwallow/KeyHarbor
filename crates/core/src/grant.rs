@@ -6,8 +6,9 @@ use anyhow::{Context, Result};
 use keyharbor_crypto::random;
 use keyharbor_domain::{
     SessionId,
-    audit::{AuditEvent, AuditKind},
+    audit::{AuditEvent, AuditKind, OUT_OF_GRANT, grant_change},
     grant::{Grant, GrantId, GrantTtl, allows_document},
+    policy::{HANDOFF_AGENT, SESSION_AGENT},
     ports::{Clock, Confirm, Store},
     vault::{Description, Origin},
 };
@@ -59,12 +60,18 @@ pub fn add(
         cleared: false,
     };
     store.grant_add(&grant)?;
-    note(store, agent, AuditKind::GrantChanged, &grant, "added");
+    note(
+        store,
+        agent,
+        AuditKind::GrantChanged,
+        &grant,
+        grant_change::ADDED,
+    );
     Ok(grant)
 }
 
 /// Who the record names for a grant made by handing a site over.
-pub const HANDOFF: &str = "handoff";
+pub const HANDOFF: &str = HANDOFF_AGENT;
 
 /// The grant a site handoff makes (R-42): the person handing the site over from their own
 /// browser is the confirmation, so nothing is asked (spec §3). Lasts `ttl_seconds`.
@@ -89,7 +96,13 @@ pub fn add_for_handoff(
         cleared: false,
     };
     store.grant_add(&grant)?;
-    note(store, HANDOFF, AuditKind::GrantChanged, &grant, "added");
+    note(
+        store,
+        HANDOFF,
+        AuditKind::GrantChanged,
+        &grant,
+        grant_change::ADDED,
+    );
     Ok(grant)
 }
 
@@ -120,7 +133,13 @@ pub fn revoke(store: &dyn Store, clock: &dyn Clock, agent: &str, id: GrantId) ->
     if !store.grant_revoke(id, clock.unix_seconds())? {
         anyhow::bail!("grant was already revoked");
     }
-    note(store, agent, AuditKind::GrantChanged, &grant, "revoked");
+    note(
+        store,
+        agent,
+        AuditKind::GrantChanged,
+        &grant,
+        grant_change::REVOKED,
+    );
     Ok(grant)
 }
 
@@ -133,7 +152,7 @@ pub fn allows(store: &dyn Store, clock: &dyn Clock, id: SessionId, url: &str) ->
             .ok()
             .map(|u| u.origin().ascii_serialization());
         let _ = store.record(
-            &AuditEvent::new("session", AuditKind::NavigationDenied, "out-of-grant")
+            &AuditEvent::new(SESSION_AGENT, AuditKind::NavigationDenied, OUT_OF_GRANT)
                 .session(id)
                 .origin(origin.as_deref()),
         );
@@ -154,7 +173,13 @@ pub fn ended_uncleared(store: &dyn Store, clock: &dyn Clock, id: SessionId) -> R
 /// Records that an ended grant's cookies were removed.
 pub fn cleared(store: &dyn Store, grant: &Grant) -> Result<()> {
     store.grant_mark_cleared(grant.id)?;
-    note(store, "session", AuditKind::GrantChanged, grant, "cleared");
+    note(
+        store,
+        SESSION_AGENT,
+        AuditKind::GrantChanged,
+        grant,
+        grant_change::CLEARED,
+    );
     Ok(())
 }
 
@@ -325,5 +350,38 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn grant_records_keep_their_stored_text() {
+        let (_tmp, store, id) = setup();
+        let clock = ManualClock::at_unix_seconds(1_000);
+        let origin = Origin::parse("https://github.com").unwrap();
+        let handed = add_for_handoff(&store, &clock, id, origin, 600).unwrap();
+        assert_eq!(handed.created_by, "handoff");
+        let typed = add(&store, &clock, &Says(Answer::Yes), "cli", github(id, None)).unwrap();
+        revoke(&store, &clock, "cli", typed.id).unwrap();
+        cleared(&store, &typed).unwrap();
+        assert!(!allows(&store, &clock, id, "https://example.com/").unwrap());
+
+        let records: Vec<_> = store
+            .list_audit(None)
+            .unwrap()
+            .into_iter()
+            .map(|r| (r.event.agent, r.event.kind, r.event.result))
+            .collect();
+        let expected = [
+            ("handoff", AuditKind::GrantChanged, "added"),
+            ("cli", AuditKind::GrantChanged, "added"),
+            ("session", AuditKind::GrantChanged, "cleared"),
+            ("cli", AuditKind::GrantChanged, "revoked"),
+            ("session", AuditKind::NavigationDenied, "out-of-grant"),
+        ];
+        for (agent, kind, result) in expected {
+            assert!(
+                records.contains(&(agent.into(), kind, result.into())),
+                "{agent} {kind:?} {result} in {records:?}"
+            );
+        }
     }
 }

@@ -66,11 +66,12 @@ pub fn display_state(runtime: &dyn SessionRuntime, row: &SessionRow) -> DisplayS
     }
 }
 
+/// What the user runs once a session's browser is closed and no supervisor holds it.
+const RECOVER: &str = "run recover --confirm-browser-closed";
+
 fn require_supervisor(runtime: &dyn SessionRuntime, id: SessionId) -> Result<()> {
     if !runtime.is_alive(id) {
-        bail!(
-            "session supervisor is not running; if the browser is closed, run recover --confirm-browser-closed"
-        );
+        bail!("session supervisor is not running; if the browser is closed, {RECOVER}");
     }
     Ok(())
 }
