@@ -46,6 +46,33 @@ const EGO_PROBE_RANGE: RangeInclusive<u64> = 1..=30;
 pub const EGO_POLL_MS: &str = "ego_poll_ms";
 const EGO_POLL_RANGE: RangeInclusive<u64> = 5..=1000;
 
+/// Seconds `open` waits for a new session's supervisor to report the browser running (#201).
+/// A slow machine's first Chrome start needs more than the default (#183). Waiting longer
+/// protects nothing less, so no change is a weakening (J-270).
+pub const SESSION_START_SECONDS: &str = "session_start_seconds";
+const SESSION_START_RANGE: RangeInclusive<u64> = 5..=300;
+/// Seconds `stop` waits for the browser to exit. Above the supervisor's close grace (10 s,
+/// then it kills the browser), or `stop` would report a failure while the supervisor is
+/// still closing on schedule (J-271).
+pub const SESSION_STOP_SECONDS: &str = "session_stop_seconds";
+const SESSION_STOP_RANGE: RangeInclusive<u64> = 15..=300;
+/// Seconds the raw CDP endpoint waits for a `--cdp` browser to write `DevToolsActivePort`.
+pub const BROWSER_ENDPOINT_SECONDS: &str = "browser_endpoint_seconds";
+const BROWSER_ENDPOINT_RANGE: RangeInclusive<u64> = 5..=120;
+/// Seconds one CDP call (and ego lite's relay connection) may take before it fails. The top
+/// stays under the control answer wait (120 s) so a stuck call fails with its own reason
+/// before the caller gives up on the supervisor (J-272).
+pub const BROWSER_CALL_SECONDS: &str = "browser_call_seconds";
+const BROWSER_CALL_RANGE: RangeInclusive<u64> = 5..=90;
+/// Hours an agent's information request stays answerable (08 §8.2 ③). Longer leaves an old
+/// prompt open to a mistaken answer, so above the default weakens (J-273).
+pub const REQUEST_TTL_HOURS: &str = "request_ttl_hours";
+const REQUEST_TTL_RANGE: RangeInclusive<u64> = 1..=168;
+/// Drafts of one name an agent may pile up before a person sorts them out (08 §8.3). More
+/// lets an agent leave more for a person to review, so above the default weakens (J-273).
+pub const MAX_DRAFTS: &str = "max_drafts";
+const MAX_DRAFTS_RANGE: RangeInclusive<u64> = 1..=100;
+
 /// The `default_item_ttl` value meaning "never expire".
 pub const NO_TTL: &str = "none";
 
@@ -73,6 +100,7 @@ pub enum RangeUnit {
     Count,
     Seconds,
     Millis,
+    Hours,
 }
 impl RangeUnit {
     fn words(self) -> &'static str {
@@ -80,6 +108,7 @@ impl RangeUnit {
             Self::Count => "a whole number",
             Self::Seconds => "whole seconds",
             Self::Millis => "whole milliseconds",
+            Self::Hours => "whole hours",
         }
     }
 }
@@ -103,6 +132,21 @@ pub struct SettingSpec {
     pub default: &'static str,
     pub format: SettingFormat,
     pub weakening: SettingWeakening,
+}
+
+/// A whole number of `unit` within `range`.
+const fn number(
+    key: &'static str,
+    default: &'static str,
+    (range, unit): (&'static RangeInclusive<u64>, RangeUnit),
+    weakening: SettingWeakening,
+) -> SettingSpec {
+    SettingSpec {
+        key,
+        default,
+        format: SettingFormat::Range { range, unit },
+        weakening,
+    }
 }
 
 /// A notice switch: on by default, and off is a preference, not a weakening.
@@ -189,6 +233,42 @@ pub const SETTINGS: &[SettingSpec] = &[
         },
         weakening: SettingWeakening::Never,
     },
+    number(
+        SESSION_START_SECONDS,
+        "15",
+        (&SESSION_START_RANGE, RangeUnit::Seconds),
+        SettingWeakening::Never,
+    ),
+    number(
+        SESSION_STOP_SECONDS,
+        "15",
+        (&SESSION_STOP_RANGE, RangeUnit::Seconds),
+        SettingWeakening::Never,
+    ),
+    number(
+        BROWSER_ENDPOINT_SECONDS,
+        "15",
+        (&BROWSER_ENDPOINT_RANGE, RangeUnit::Seconds),
+        SettingWeakening::Never,
+    ),
+    number(
+        BROWSER_CALL_SECONDS,
+        "30",
+        (&BROWSER_CALL_RANGE, RangeUnit::Seconds),
+        SettingWeakening::Never,
+    ),
+    number(
+        REQUEST_TTL_HOURS,
+        "24",
+        (&REQUEST_TTL_RANGE, RangeUnit::Hours),
+        SettingWeakening::AboveDefault,
+    ),
+    number(
+        MAX_DRAFTS,
+        "20",
+        (&MAX_DRAFTS_RANGE, RangeUnit::Count),
+        SettingWeakening::AboveDefault,
+    ),
     notice(NOTIFY_REQUESTS),
     notice(NOTIFY_HANDOFFS),
     notice(NOTIFY_DRAFTS),
@@ -236,6 +316,27 @@ impl SettingSpec {
                 ))),
             },
         }
+    }
+
+    /// The range a [`SettingFormat::Range`] setting takes, for checks that relate a setting to
+    /// a fixed wait elsewhere (`ANSWER_TIMEOUT`, `CLOSE_GRACE`).
+    pub fn range(&self) -> Option<&'static RangeInclusive<u64>> {
+        match self.format {
+            SettingFormat::Range { range, .. } => Some(range),
+            _ => None,
+        }
+    }
+
+    /// The number a [`SettingFormat::Range`] setting holds: `stored`, or the default when it
+    /// was never set. A stored value it does not take (only a tampered store holds one) is an
+    /// error, never used.
+    pub fn number(&self, stored: Option<&str>) -> Result<u64, InvalidSetting> {
+        let range = self
+            .range()
+            .ok_or_else(|| InvalidSetting("is not a number".into()))?;
+        let value = stored.unwrap_or(self.default);
+        self.check(value)?;
+        in_range(value, range).ok_or_else(|| InvalidSetting("is out of range".into()))
     }
 
     /// Whether setting `value` turns this protection down.
@@ -329,6 +430,74 @@ mod tests {
         assert_eq!(clipboard_clear_after(None).as_secs(), 30);
         assert_eq!(clipboard_clear_after(Some("10")).as_secs(), 10);
         assert_eq!(clipboard_clear_after(Some("9999")).as_secs(), 30);
+    }
+
+    /// The waits and limits #201 moved out of constants: default (the old constant), range and
+    /// its message, and whether raising it asks a person.
+    #[test]
+    fn the_moved_waits_and_limits_keep_their_old_values_as_defaults() {
+        let cases = [
+            (
+                SESSION_START_SECONDS,
+                "15",
+                "whole seconds from 5 to 300",
+                false,
+            ),
+            (
+                SESSION_STOP_SECONDS,
+                "15",
+                "whole seconds from 15 to 300",
+                false,
+            ),
+            (
+                BROWSER_ENDPOINT_SECONDS,
+                "15",
+                "whole seconds from 5 to 120",
+                false,
+            ),
+            (
+                BROWSER_CALL_SECONDS,
+                "30",
+                "whole seconds from 5 to 90",
+                false,
+            ),
+            (REQUEST_TTL_HOURS, "24", "whole hours from 1 to 168", true),
+            (MAX_DRAFTS, "20", "a whole number from 1 to 100", true),
+        ];
+        for (key, default, words, raising_weakens) in cases {
+            let spec = SettingSpec::find(key).unwrap();
+            assert_eq!(spec.default, default, "{key}");
+            let range = spec.range().unwrap();
+            assert!(range.contains(&default.parse().unwrap()), "{key}");
+            for ok in [range.start(), range.end()] {
+                assert!(spec.check(&ok.to_string()).is_ok(), "{key} {ok}");
+            }
+            for bad in [range.start() - 1, range.end() + 1] {
+                assert_eq!(
+                    spec.check(&bad.to_string()).unwrap_err().to_string(),
+                    format!("must be {words}"),
+                    "{key} {bad}"
+                );
+            }
+            let above = (range.end()).to_string();
+            assert_eq!(spec.weakens(&above), raising_weakens, "{key}");
+            assert!(!spec.weakens(range.start().to_string().as_str()), "{key}");
+        }
+    }
+
+    #[test]
+    fn a_number_setting_reads_its_default_or_refuses_an_odd_stored_value() {
+        let start = SettingSpec::find(SESSION_START_SECONDS).unwrap();
+        assert_eq!(start.number(None), Ok(15));
+        assert_eq!(start.number(Some("60")), Ok(60));
+        assert!(start.number(Some("1")).is_err());
+        assert!(start.number(Some("soon")).is_err());
+        assert!(
+            SettingSpec::find(AUDIT_ENABLED)
+                .unwrap()
+                .number(None)
+                .is_err()
+        );
     }
 
     #[test]

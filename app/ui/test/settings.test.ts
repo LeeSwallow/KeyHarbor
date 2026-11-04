@@ -52,6 +52,26 @@ describe("the settings screen", () => {
     expect(files).toContain("10개보다 많게 하면 확인합니다.");
   });
 
+  it("gathers the waits and limits under 고급, in words, with Rust's weakening limit (J-274)", () => {
+    const advanced = settings([
+      { key: "session_start_seconds", value: "15", default: "15", weakening: never },
+      { key: "session_stop_seconds", value: "15", default: "15", weakening: never },
+      { key: "browser_endpoint_seconds", value: "15", default: "15", weakening: never },
+      { key: "browser_call_seconds", value: "45", default: "30", weakening: never },
+      { key: "request_ttl_hours", value: "24", default: "24", weakening: { when: "above", than: "24" } },
+      { key: "max_drafts", value: "20", default: "20", weakening: { when: "above", than: "20" } },
+    ]);
+    expect(advanced).toContain("<h3>고급</h3>");
+    expect(advanced).not.toContain("<h3>기타</h3>");
+    expect(advanced).toContain("세션 시작을 기다리는 시간");
+    expect(advanced).toMatch(/class="is-on"[^>]*data-key="session_start_seconds" data-value="15">15초<\/button>/);
+    expect(advanced).toContain('data-key="session_start_seconds" data-value="120">2분</button>');
+    expect(advanced).toMatch(/class="is-on"[^>]*data-key="browser_call_seconds" data-value="45">45<\/button>/);
+    expect(advanced).toContain("24시간보다 길게 하면 확인합니다.");
+    expect(advanced).toContain("20개보다 많게 하면 확인합니다.");
+    expect(advanced).not.toMatch(/>\s*(session_start_seconds|max_drafts|request_ttl_hours)\s*</);
+  });
+
   it("marks the method the app's authenticator names, and marks none before it is known", () => {
     const none = settings(all, { ego_lite: false }, "none");
     expect(none).toMatch(/<button type="button" class="is-on">없음<\/button>/);

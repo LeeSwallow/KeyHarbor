@@ -8,7 +8,9 @@ use crate::{
 };
 use zeroize::Zeroizing;
 
-/// More cookies than a real site sets; a message beyond this is refused.
+/// More cookies than a real site sets; a message beyond this is refused. Fixed, not a setting
+/// (J-274): it bounds what an untrusted extension message may make the supervisor parse and
+/// hold, and no real site comes near it.
 pub const MAX_COOKIES: usize = 500;
 /// The same bounds as a grant TTL ([`GrantTtl`]).
 pub const TTL_SECONDS: std::ops::RangeInclusive<u64> =

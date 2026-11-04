@@ -14,7 +14,7 @@ use keyharbor_keystore::{
     presence::FixedConfirm, test_keystore_dir, test_presence,
 };
 use keyharbor_sqlite::{SqliteStore, SqliteStores};
-use keyharbor_supervisor::{Adapters, ProcessRuntime};
+use keyharbor_supervisor::{Adapters, BrowserWaits, ProcessRuntime};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -104,11 +104,14 @@ impl App {
         )
     }
 
-    /// Supervisors are this same binary, run as `__supervise`.
+    /// Supervisors are this same binary, run as `__supervise`, with the browser waits the
+    /// settings hold now (#201).
     pub fn runtime(&self) -> Result<Box<dyn SessionRuntime>> {
+        let waits = BrowserWaits::load(&SqliteStore::open(&self.root)?)?;
         Ok(Box::new(ProcessRuntime::new(
             &self.root,
             &std::env::current_exe()?,
+            waits,
         )))
     }
 

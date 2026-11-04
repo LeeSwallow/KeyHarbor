@@ -649,6 +649,13 @@ fn settings_say_which_change_asks_first() {
     );
     assert_eq!(weakening("upload_dirs"), &WeakeningDto::AnyChange);
     assert_eq!(weakening("notify_denials"), &WeakeningDto::Never);
+    assert_eq!(
+        weakening("request_ttl_hours"),
+        &WeakeningDto::Above { than: "24" }
+    );
+    assert_eq!(weakening("max_drafts"), &WeakeningDto::Above { than: "20" });
+    assert_eq!(weakening("session_start_seconds"), &WeakeningDto::Never);
+    assert_eq!(weakening("browser_call_seconds"), &WeakeningDto::Never);
     let json = serde_json::to_string(weakening("clipboard_clear_seconds")).unwrap();
     assert_eq!(json, r#"{"when":"above","than":"30"}"#);
 }

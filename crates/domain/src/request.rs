@@ -13,7 +13,7 @@ pub enum VaultRequestStatus {
     /// The user stored new values or chose an existing item.
     Fulfilled,
     Declined,
-    /// Nobody answered within [`VaultRequest::TTL_SECONDS`].
+    /// Nobody answered within the `request_ttl_hours` setting.
     Expired,
 }
 
@@ -59,14 +59,11 @@ pub struct VaultRequest {
 }
 
 impl VaultRequest {
-    /// A day: long enough for a person to come back to the machine, short enough that an old
-    /// prompt is not answered by mistake. Fixed: an agent that still needs it asks again.
-    pub const TTL_SECONDS: u64 = 24 * 60 * 60;
-
-    /// The status as of `now` (Unix seconds): a pending request past its TTL is expired.
-    pub fn status_at(&self, now: u64) -> VaultRequestStatus {
+    /// The status as of `now` (Unix seconds): a pending request older than `ttl` (the
+    /// `request_ttl_hours` setting, a day by default) is expired.
+    pub fn status_at(&self, now: u64, ttl: std::time::Duration) -> VaultRequestStatus {
         match self.status {
-            VaultRequestStatus::Pending if now >= self.created_at + Self::TTL_SECONDS => {
+            VaultRequestStatus::Pending if now >= self.created_at + ttl.as_secs() => {
                 VaultRequestStatus::Expired
             }
             status => status,
@@ -99,13 +96,20 @@ mod tests {
             created_at: 1_000,
             item: None,
         };
-        let day = VaultRequest::TTL_SECONDS;
+        let ttl = std::time::Duration::from_secs(24 * 60 * 60);
+        let day = ttl.as_secs();
         assert_eq!(
-            request.status_at(1_000 + day - 1),
+            request.status_at(1_000 + day - 1, ttl),
             VaultRequestStatus::Pending
         );
-        assert_eq!(request.status_at(1_000 + day), VaultRequestStatus::Expired);
+        assert_eq!(
+            request.status_at(1_000 + day, ttl),
+            VaultRequestStatus::Expired
+        );
         request.status = VaultRequestStatus::Declined;
-        assert_eq!(request.status_at(1_000 + day), VaultRequestStatus::Declined);
+        assert_eq!(
+            request.status_at(1_000 + day, ttl),
+            VaultRequestStatus::Declined
+        );
     }
 }
