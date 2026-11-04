@@ -1,11 +1,11 @@
 //! Tabs: listing, opening and switching the active tab.
 
-use super::CdpBrowser;
+use crate::browser::CdpBrowser;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 
 impl CdpBrowser {
-    pub(super) async fn list_tabs(&mut self) -> Result<Value> {
+    pub(crate) async fn list_tabs(&mut self) -> Result<Value> {
         let tabs = self.page_tabs().await?;
         let active = match &self.active {
             Some(id) if tabs.iter().any(|t| &t.id == id) => Some(id.clone()),
@@ -21,7 +21,7 @@ impl CdpBrowser {
         ))
     }
 
-    pub(super) async fn open_tab(&mut self, url: Option<&str>) -> Result<Value> {
+    pub(crate) async fn open_tab(&mut self, url: Option<&str>) -> Result<Value> {
         let url = match url {
             Some(url) => {
                 keyharbor_domain::validate_navigation_url(url).map_err(|e| anyhow!("{e}"))?
@@ -40,7 +40,7 @@ impl CdpBrowser {
         Ok(json!({"id": id}))
     }
 
-    pub(super) async fn switch_to(&mut self, id: &str) -> Result<Value> {
+    pub(crate) async fn switch_to(&mut self, id: &str) -> Result<Value> {
         if !self.page_tabs().await?.iter().any(|t| t.id == id) {
             bail!("no such tab");
         }

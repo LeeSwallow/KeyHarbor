@@ -172,6 +172,8 @@ flowchart TB
 
 **규칙 미리보기**: 에이전트·동작·대상을 고르면 [02 §2.8](02-system-architecture.md#28-정책-판정)의 판정 결과와 그 결과를 만든 규칙을 즉시 보여 준다.
 
+**대상 종류**: 규칙 추가 폼은 항목·도메인·세션·세션 만들기·raw CDP·브라우저(`chrome`·`ego-lite`)를 고르게 한다. 이 목록과 사용 기록 종류의 낱말은 domain `Resource::ALL`·`AuditKind::ALL`과 같아야 하고, `app/ui/test/vocabulary.json`을 사이에 둔 Rust·UI 테스트가 대조한다(J-175).
+
 ### 9.4.5 보안 입력 창 (`vault_request`)
 
 ```text
