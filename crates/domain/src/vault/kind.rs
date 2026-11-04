@@ -108,6 +108,9 @@ pub struct FieldSpec {
     pub input: InputKind,
     /// What the field holds, for agents choosing a placeholder; an item may override it.
     pub description: &'static str,
+    /// Shorter than `MIN_MASKED_CHARS` by nature (a card's security code): never masked, and
+    /// storing one does not warn that it is too short to mask, since every value would (J-232).
+    pub short: bool,
 }
 
 /// One item kind: its stored name, domain, fields and defaults (02 §2.7.2). Adding a kind is
@@ -140,6 +143,7 @@ pub const CUSTOM_FIELD: FieldSpec = FieldSpec {
     maskable: true,
     input: InputKind::Text,
     description: "Custom field",
+    short: false,
 };
 
 /// How a free-form field (an `env` variable) is treated: secret and masked.
@@ -149,6 +153,7 @@ pub const FREE_FIELD: FieldSpec = FieldSpec {
     maskable: true,
     input: InputKind::Text,
     description: "Environment variable",
+    short: false,
 };
 
 const fn plain(name: &'static str, description: &'static str) -> FieldSpec {
@@ -158,6 +163,13 @@ const fn plain(name: &'static str, description: &'static str) -> FieldSpec {
         maskable: true,
         input: InputKind::Text,
         description,
+        short: false,
+    }
+}
+const fn short(spec: FieldSpec) -> FieldSpec {
+    FieldSpec {
+        short: true,
+        ..spec
     }
 }
 const fn secret(name: &'static str, description: &'static str) -> FieldSpec {
@@ -226,7 +238,7 @@ pub static KINDS: &[KindSpec] = &[
             secret("number", "Card number"),
             plain("exp_month", "Expiry month"),
             plain("exp_year", "Expiry year"),
-            secret("cvc", "Security code"),
+            short(secret("cvc", "Security code")),
             plain("billing_address", "Billing address item"),
             secret("note", "Free-form note"),
         ],
