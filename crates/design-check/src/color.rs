@@ -73,34 +73,26 @@ pub fn parse_colour(value: &str) -> Option<Rgba> {
 }
 
 fn parse_hex(hex: &str) -> Option<Rgba> {
-    let byte = |s: &str| u8::from_str_radix(s, 16).ok().map(f64::from);
-    let nibble = |c: char| c.to_digit(16).map(|d| f64::from(d * 17));
-    let chars: Vec<char> = hex.chars().collect();
-    match chars.len() {
-        3 | 4 => {
-            let a = chars.get(3).map_or(Some(255.0), |&c| nibble(c))?;
-            Some(Rgba {
-                r: nibble(chars[0])?,
-                g: nibble(chars[1])?,
-                b: nibble(chars[2])?,
-                a: a / 255.0,
-            })
-        }
-        6 | 8 => {
-            let a = if hex.len() == 8 {
-                byte(&hex[6..8])?
-            } else {
-                255.0
-            };
-            Some(Rgba {
-                r: byte(&hex[0..2])?,
-                g: byte(&hex[2..4])?,
-                b: byte(&hex[4..6])?,
-                a: a / 255.0,
-            })
-        }
-        _ => None,
+    // Checked first: every digit is then one byte, so the slices below fall on char boundaries.
+    if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
     }
+    let digits = |at: usize, len: usize| u8::from_str_radix(&hex[at..at + len], 16).ok();
+    let nibble = |at: usize| digits(at, 1).map(|d| f64::from(d) * 17.0);
+    let byte = |at: usize| digits(at, 2).map(f64::from);
+    let (r, g, b, a) = match hex.len() {
+        3 => (nibble(0)?, nibble(1)?, nibble(2)?, 255.0),
+        4 => (nibble(0)?, nibble(1)?, nibble(2)?, nibble(3)?),
+        6 => (byte(0)?, byte(2)?, byte(4)?, 255.0),
+        8 => (byte(0)?, byte(2)?, byte(4)?, byte(6)?),
+        _ => return None,
+    };
+    Some(Rgba {
+        r,
+        g,
+        b,
+        a: a / 255.0,
+    })
 }
 
 #[cfg(test)]
@@ -132,6 +124,14 @@ mod tests {
         assert!((half.a - 0.5).abs() < 1e-9);
         assert!(parse_colour("#ff80").is_some_and(|c| c.a < 0.01));
         assert_eq!(parse_colour("tomato"), None);
+    }
+
+    #[test]
+    fn non_ascii_hex_is_refused_without_panicking() {
+        // Six and eight characters, but more bytes: slicing by byte would split the 'é'.
+        assert_eq!(parse_colour("#aaaaaé"), None);
+        assert_eq!(parse_colour("#aaaaaaaé"), None);
+        assert_eq!(parse_colour("#ééé"), None);
     }
 
     #[test]

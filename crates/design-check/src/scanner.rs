@@ -32,6 +32,18 @@ pub struct Sheet {
     pub imports: Vec<String>,
 }
 
+impl Sheet {
+    /// Every declaration of every block, in order.
+    pub fn decls(&self) -> impl Iterator<Item = &Decl> {
+        self.blocks.iter().flat_map(|b| &b.decls)
+    }
+
+    /// Every custom property the sheet defines, in order.
+    pub fn custom_properties(&self) -> impl Iterator<Item = &Decl> {
+        self.blocks.iter().flat_map(Block::custom_properties)
+    }
+}
+
 /// Reads a stylesheet. Unbalanced input is read as far as it goes.
 pub fn parse_sheet(src: &str) -> Sheet {
     let text = strip_comments(src);

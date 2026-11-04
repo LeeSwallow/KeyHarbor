@@ -1,7 +1,11 @@
-//! The app's composition root: the data folder, key store, clock and the CLI binary that
-//! runs session supervisors (`Contents/Helpers/keyharbor` in the bundle, R-45).
+//! What every command runs on: the data folder, key store, clock, the CLI binary that runs
+//! session supervisors (`Contents/Helpers/keyharbor` in the bundle, R-45) and the
+//! authenticator. Each binary's `main` builds it (the composition root).
 
-use crate::clipboard::Clipboard;
+use crate::{
+    auth::{AuthScope, Authenticator},
+    clipboard::Clipboard,
+};
 use anyhow::Result;
 use keyharbor_core::Vault;
 use keyharbor_domain::ports::{Clock, KeyStore, SessionRuntime, Store};
@@ -38,6 +42,7 @@ pub struct Ctx {
     /// The `keyharbor` binary that supervisors are started from.
     cli: PathBuf,
     clipboard: Arc<dyn Clipboard>,
+    auth: Arc<dyn Authenticator>,
 }
 
 impl Ctx {
@@ -47,6 +52,7 @@ impl Ctx {
         clock: Arc<dyn Clock>,
         cli: PathBuf,
         clipboard: Arc<dyn Clipboard>,
+        auth: Arc<dyn Authenticator>,
     ) -> Self {
         Self {
             root,
@@ -54,7 +60,16 @@ impl Ctx {
             clock,
             cli,
             clipboard,
+            auth,
         }
+    }
+    /// The authentication method's name, for the screens.
+    pub fn auth_id(&self) -> &'static str {
+        self.auth.id()
+    }
+    /// Asks the authenticator before a command does anything for `scope` (03 §3.10).
+    pub fn challenge(&self, scope: AuthScope) -> Result<()> {
+        Ok(self.auth.challenge(scope)?)
     }
     pub fn clipboard(&self) -> Arc<dyn Clipboard> {
         self.clipboard.clone()

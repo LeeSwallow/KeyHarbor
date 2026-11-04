@@ -2,10 +2,10 @@
 //! after its file (and may set another component's hooks); patterns and pages only set hooks a
 //! component opened; the entry file defines nothing.
 
-use super::Rule;
 use crate::layers::{self, Defines, Layer};
 use crate::model::DesignSet;
 use crate::report::Violation;
+use crate::rules::Rule;
 
 pub struct TokenDefinitions;
 
@@ -23,11 +23,9 @@ impl Rule for TokenDefinitions {
         };
         let mut out = Vec::new();
         for file in &ds.sheets {
-            let Some(spec) = layers::layer_of(&file.path) else {
-                continue;
-            };
+            let spec = file.spec;
             let prefix = layers::hook_prefix(&file.path);
-            for decl in file.sheet.blocks.iter().flat_map(|b| b.custom_properties()) {
+            for decl in file.sheet.custom_properties() {
                 let allowed = match spec.defines {
                     Defines::Tokens => true,
                     Defines::OwnHooks => {

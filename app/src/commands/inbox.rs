@@ -1,6 +1,6 @@
 //! "확인 대기" (09 §9.3): agents' requests for information and drafts to settle.
 
-use crate::Ctx;
+use crate::{Ctx, auth::AuthScope};
 use anyhow::{Context, Result, anyhow};
 use keyharbor_core::{ItemStatus, request};
 use keyharbor_domain::{RequestId, policy::LOCAL_AGENT, vault::ItemName};
@@ -70,10 +70,12 @@ fn item(name: &str) -> Result<ItemName> {
 }
 
 pub fn decline_request(ctx: &Ctx, id: &str) -> Result<()> {
+    ctx.challenge(AuthScope::Edit)?;
     request::decline(&*ctx.store()?, ctx.clock(), request_id(id)?)
 }
 
 pub fn confirm_draft(ctx: &Ctx, name: &str) -> Result<String> {
+    ctx.challenge(AuthScope::Edit)?;
     Ok(ctx
         .vault()?
         .confirm(&item(name)?, LOCAL_AGENT)?
@@ -82,5 +84,6 @@ pub fn confirm_draft(ctx: &Ctx, name: &str) -> Result<String> {
 }
 
 pub fn discard_draft(ctx: &Ctx, name: &str) -> Result<()> {
+    ctx.challenge(AuthScope::Edit)?;
     ctx.vault()?.discard(&item(name)?)
 }

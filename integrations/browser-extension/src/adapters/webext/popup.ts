@@ -1,7 +1,15 @@
-// The popup's dependencies, from one browser namespace.
+// The popup's dependencies, from one browser namespace. Messages are built and answers read
+// in adapters/wire/command.ts only.
 
 import type { PopupDeps } from "../../ui/popup/deps.js";
-import { type LoginCommandWire, toHandOffCommandWire } from "../wire/command.js";
+import {
+  type CommandWire,
+  parseCommandAnswer,
+  toFillLoginWire,
+  toHandOffCommandWire,
+  toListLoginsWire,
+  toSaveLoginWire,
+} from "../wire/command.js";
 import type { WebExtApi } from "./api.js";
 import { webextTabInfo } from "./tabs.js";
 
@@ -9,14 +17,15 @@ const LAST_SESSION = "lastSession";
 
 export function webextPopupDeps(api: WebExtApi, language: string): PopupDeps {
   const tabs = webextTabInfo(api);
+  const send = async <W extends CommandWire>(wire: W) => parseCommandAnswer<W["type"]>(wire.type, await api.runtime.sendMessage(wire));
   return {
     language,
     activeTab: () => tabs.active(),
     requestHostAccess: (origins) => api.permissions.request({ origins }),
-    handOff: (ask) => api.runtime.sendMessage(toHandOffCommandWire(ask)) as ReturnType<PopupDeps["handOff"]>,
-    listLogins: (tabId) => api.runtime.sendMessage({ type: "list_logins", tabId } satisfies LoginCommandWire) as ReturnType<PopupDeps["listLogins"]>,
-    fillLogin: (tabId, item) => api.runtime.sendMessage({ type: "fill_login", tabId, item } satisfies LoginCommandWire) as ReturnType<PopupDeps["fillLogin"]>,
-    saveLogin: (tabId) => api.runtime.sendMessage({ type: "save_login", tabId } satisfies LoginCommandWire) as ReturnType<PopupDeps["saveLogin"]>,
+    handOff: (ask) => send(toHandOffCommandWire(ask)),
+    listLogins: (tabId) => send(toListLoginsWire(tabId)),
+    fillLogin: (tabId, item) => send(toFillLoginWire(tabId, item)),
+    saveLogin: (tabId) => send(toSaveLoginWire(tabId)),
     loadSession: async () => {
       const v = (await api.storage.local.get(LAST_SESSION))[LAST_SESSION];
       return typeof v === "string" ? v : null;

@@ -99,4 +99,4 @@ cargo run -q -p keyharbor-design-check --bin design-serve   # http://127.0.0.1:8
 
 ## 검사
 
-`cargo test --workspace`(또는 `sh scripts/check-design.sh`)가 `crates/design-check`로 위 계층 규칙, 테마 짝, WCAG 대비, 아이콘, 클래스를 검사한다. 규칙 표는 [ADR-0015](../docs/design/adr/0015-design-system-layers.md)에 있다. 규칙을 더하려면 `src/rules/<규칙>.rs`에 `Rule`을 구현하고 `rules::RULES`에 한 줄, `tests/rules.rs`에 테스트 하나를 더한다. 대비를 볼 색 쌍은 `rules/contrast.rs`의 `CONTRAST_PAIRS` 표에 한 줄씩 있다. `KEYHARBOR_TEST_CHROME`을 주면 쇼케이스를 headless Chrome으로 라이트·다크 렌더링해 본다.
+`cargo test --workspace`(또는 `sh scripts/check-design.sh`)가 `crates/design-check`로 위 계층 규칙, 테마 짝, WCAG 대비, 아이콘, 클래스를 검사한다. 규칙 표는 [ADR-0015](../docs/design/adr/0015-design-system-layers.md)에 있다. 규칙은 보는 대상에 따라 `src/rules/tokens/`(계층·커스텀 속성), `src/rules/theme/`(다크 블록·대비), `src/rules/usage/`(페이지가 쓰는 클래스·아이콘·스타일시트)에 나뉘어 있다. 규칙을 더하려면 알맞은 묶음에 `<규칙>.rs`를 만들어 `Rule`을 구현하고, 묶음의 `mod.rs`에 `use` 한 줄, `rules/mod.rs`의 `RULES`에 한 줄, `tests/rules.rs`에 테스트 하나를 더한다. 대비를 볼 색 쌍은 `rules/theme/contrast.rs`의 `CONTRAST_PAIRS` 표에 한 줄씩 있다. `KEYHARBOR_TEST_CHROME`을 주면 쇼케이스를 headless Chrome으로 라이트·다크 렌더링해 본다.

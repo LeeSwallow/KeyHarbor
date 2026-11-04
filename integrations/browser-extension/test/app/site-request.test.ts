@@ -37,4 +37,9 @@ describe("an ask from the app to hand a site over", () => {
     const ports = fakePorts({ reply: { v: 1, type: "error", code: "no_session" } });
     expect(await makeAnswerSiteRequest(ports)("https://github.com", "nope")).toEqual({ outcome: "no_session" });
   });
+
+  it("reads unreadable cookies as no access and other failures as failed", async () => {
+    expect(await makeAnswerSiteRequest(fakePorts({ cookies: "throws" }))("https://github.com", "work")).toEqual({ outcome: "no_permission" });
+    expect(await makeAnswerSiteRequest(fakePorts({ reply: "throws" }))("https://github.com", "work")).toEqual({ outcome: "failed" });
+  });
 });

@@ -4,10 +4,10 @@
 //! nothing a person must read to act is drawn in ink-3 alone. `--c-ink-4` (placeholder, disabled)
 //! makes no promise: WCAG exempts disabled controls and placeholder text is never the label.
 
-use super::Rule;
 use crate::color::{self, Rgba};
 use crate::model::DesignSet;
 use crate::report::Violation;
+use crate::rules::Rule;
 use crate::theme::{self, SEMANTIC, Theme};
 
 /// A text colour on a surface, the minimum ratio, and where the pair is used.
@@ -32,6 +32,10 @@ const fn pair(
         used_for,
     }
 }
+
+/// A translucent surface is measured over the window background; white if it does not resolve.
+const BACKDROP: &str = "--c-bg";
+const FALLBACK_BACKDROP: Rgba = Rgba::opaque(255.0, 255.0, 255.0);
 
 const TEXT: f64 = 4.5;
 const SECONDARY: f64 = 3.0;
@@ -120,11 +124,10 @@ pub fn measure(ds: &DesignSet) -> Vec<Measured> {
         let tokens = theme::tokens_for(ds, theme);
         let colour =
             |name: &str| theme::resolve(&tokens, name).and_then(|v| color::parse_colour(&v));
+        let backdrop = colour(BACKDROP).unwrap_or(FALLBACK_BACKDROP);
         for &pair in CONTRAST_PAIRS {
             let ratio = match (colour(pair.fg), colour(pair.bg)) {
-                // A translucent surface is measured over the window background.
                 (Some(fg), Some(bg)) => {
-                    let backdrop = colour("--c-bg").unwrap_or(Rgba::opaque(255.0, 255.0, 255.0));
                     let bg = bg.over(backdrop);
                     Some(color::contrast(fg.over(bg), bg))
                 }
