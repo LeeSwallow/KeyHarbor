@@ -270,7 +270,8 @@ impl<B: BrowserPort + PageInput + FrameInspector> BrowserPort for GuardedBrowser
         self.guard.redact_outcome(outcome)
     }
     async fn screenshot(&mut self) -> Result<Value> {
-        let outcome = self.inner.screenshot().await;
+        let hidden = self.guard.tainted();
+        let outcome = self.inner.redacted_screenshot(&hidden).await;
         self.guard.redact_outcome(outcome)
     }
     async fn click(&mut self, target: &Target) -> Result<Value> {
@@ -373,6 +374,9 @@ mod tests {
         asked: Vec<Choice>,
         /// What `set_files` put into the page.
         uploaded: Vec<std::path::PathBuf>,
+        /// What the last screenshot was asked to hide, and whether hiding fails.
+        shot_hidden: Option<BTreeSet<u64>>,
+        conceal_fails: bool,
     }
     impl Default for Fake {
         fn default() -> Self {
@@ -398,6 +402,8 @@ mod tests {
                 options: Vec::new(),
                 asked: Vec::new(),
                 uploaded: Vec::new(),
+                shot_hidden: None,
+                conceal_fails: false,
             }
         }
     }
@@ -463,6 +469,13 @@ mod tests {
         async fn redacted_snapshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
             self.hidden = hidden.clone();
             self.snapshot().await
+        }
+        async fn redacted_screenshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
+            self.shot_hidden = Some(hidden.clone());
+            if self.conceal_fails && !hidden.is_empty() {
+                anyhow::bail!("filled inputs could not be hidden; no screenshot taken");
+            }
+            self.screenshot().await
         }
         async fn login_fields(&mut self, _: &Page) -> Result<LoginFields> {
             Ok(self.login.clone())
@@ -973,6 +986,43 @@ mod tests {
         .unwrap();
         block(guard.browser(&mut fake, "codex").snapshot()).unwrap();
         assert_eq!(fake.hidden, BTreeSet::from([7]));
+    }
+
+    #[test]
+    fn screenshots_hide_the_elements_that_received_a_value() {
+        let e = env();
+        init(&e).add(login("github", "KH-SYNTH-pw-82")).unwrap();
+        let (guard, _) = guard(&e);
+        let mut fake = Fake::default();
+        block(guard.browser(&mut fake, "claude").screenshot()).unwrap();
+        assert_eq!(fake.shot_hidden, Some(BTreeSet::new()));
+        block(
+            guard
+                .browser(&mut fake, "claude")
+                .fill(&Target::Ref(7), "{{secret:github.password}}"),
+        )
+        .unwrap();
+        block(guard.browser(&mut fake, "codex").screenshot()).unwrap();
+        assert_eq!(fake.shot_hidden, Some(BTreeSet::from([7])));
+    }
+
+    #[test]
+    fn no_screenshot_when_filled_elements_cannot_be_hidden() {
+        let e = env();
+        init(&e).add(login("github", "KH-SYNTH-pw-83")).unwrap();
+        let (guard, _) = guard(&e);
+        let mut fake = Fake {
+            conceal_fails: true,
+            ..Fake::default()
+        };
+        block(
+            guard
+                .browser(&mut fake, "claude")
+                .fill(&Target::Ref(7), "{{secret:github.password}}"),
+        )
+        .unwrap();
+        let err = block(guard.browser(&mut fake, "claude").screenshot()).unwrap_err();
+        assert!(err.to_string().contains("no screenshot taken"), "{err}");
     }
 
     #[test]
