@@ -91,6 +91,18 @@ planted "the-uuid-v4-feature" domain/Cargo.toml 'uuid = { workspace = true, feat
 planted "clap-outside-the-cli" mcp/Cargo.toml 'clap = "4"' \
 	"mcp depends on clap; it belongs to one adapter crate only"
 
+# Test modules are not production code: a tests.rs file or a tests/ folder
+# inside src/ may do what an inner crate may not (#165, #199).
+# $1 = name, $2 = file to append to (relative to the copy), $3 = line.
+allowed_in_tests() {
+	fx="$tmp/layers-$1"
+	cp -R crates "$fx"
+	printf '%s\n' "$3" >> "$fx/$2"
+	CHECK_LAYERS_ROOT="$fx" sh scripts/check-layers.sh >/dev/null 2>&1 && ok "check-layers allows $1" || no "check-layers rejected $1"
+	rm -rf "$fx"
+}
+allowed_in_tests "the-clock-read-in-a-guard-test-folder" guard/src/browser/tests/mod.rs 'fn x() { let _ = std::time::SystemTime::now(); }'
+
 # The design-system rules hold for design-system/ (ADR-0015).
 sh scripts/check-design.sh >/dev/null 2>&1 && ok "design rules hold" || no "check-design failed"
 
