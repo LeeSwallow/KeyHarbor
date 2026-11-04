@@ -109,7 +109,7 @@ pub enum ControlRequest {
         origin: String,
         cookies: Vec<CookieWire>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        local_storage: Option<BTreeMap<String, String>>,
+        local_storage: Option<LocalStorageWire>,
         ttl_seconds: u64,
     },
     Close,
@@ -290,6 +290,24 @@ mod tests {
     }
 
     #[test]
+    fn debug_never_shows_handed_over_values() {
+        let sent = json!({
+            "op": "receive_site",
+            "origin": "https://example.com",
+            "cookies": [{"name": "sid", "value": "cookie-secret", "url": "https://example.com"}],
+            "local_storage": {"token": "storage-secret"},
+            "ttl_seconds": 60
+        });
+        let envelope: ControlEnvelope = serde_json::from_value(sent.clone()).unwrap();
+        let shown = format!("{envelope:?}");
+        assert!(!shown.contains("cookie-secret"), "{shown}");
+        assert!(!shown.contains("storage-secret"), "{shown}");
+        assert!(shown.contains("token"), "{shown}");
+        let resent = serde_json::to_value(&envelope).unwrap();
+        assert_eq!(resent["local_storage"], sent["local_storage"]);
+    }
+
+    #[test]
     fn guard_outcomes_keep_their_result_shape() {
         let fill = |changed| {
             serde_json::to_value(FillResultWire::from(FillOutcome {
@@ -343,6 +361,26 @@ pub struct CookieWire {
     pub same_site: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires: Option<i64>,
+}
+
+/// The page's localStorage handed over with a site: key → value, as JSON sends it. `Debug`
+/// shows the keys only, so a `{:?}` of a request never prints a value (#157, J-160).
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct LocalStorageWire(pub BTreeMap<String, String>);
+
+impl std::fmt::Debug for LocalStorageWire {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_set().entries(self.0.keys()).finish()
+    }
+}
+
+impl IntoIterator for LocalStorageWire {
+    type Item = (String, String);
+    type IntoIter = std::collections::btree_map::IntoIter<String, String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
 }
 
 impl std::fmt::Debug for CookieWire {

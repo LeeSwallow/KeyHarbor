@@ -427,6 +427,8 @@ sequenceDiagram
 
 목록(`autofill_list`)은 이름만, 저장(`save_login`)은 값을 받아 draft로 두기만 하므로 Touch ID를 묻지 않는다. 저장한 draft는 사람이 앱에서 확정하기 전에는 채우기 후보가 되지 않는다.
 
+host 메모리에서 `filled` 답은 `serde_json::Value`를 거치지 않고 미리 길이를 잰 `Zeroizing` 버퍼에 바로 직렬화한다. `Value`의 문자열은 해제될 때 지워지지 않고, 버퍼가 자라며 재할당되면 옛 바이트가 남기 때문이다(J-160).
+
 ## 3.13 ego lite 세션 (ADR-0018)
 
 ego lite 세션은 감독자가 CDP를 혼자 쥐지 않는다. ego 서비스는 SDK를 쓰는 다른 스크립트에게도 같은 브라우저를 준다. 셸이 있는 에이전트는 `ego-browser nodejs`로 KeyHarbor가 채운 입력칸 값을 읽을 수 있다.

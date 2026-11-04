@@ -10,10 +10,9 @@ use keyharbor_domain::{
 };
 use keyharbor_supervisor::control::{
     client,
-    wire::{ControlEnvelope, ControlRequest, CookieWire},
+    wire::{ControlEnvelope, ControlRequest, CookieWire, LocalStorageWire},
 };
 use serde::Deserialize;
-use std::collections::BTreeMap;
 
 /// `receive_site` as the extension sends it (`ReceiveSiteWire` in protocol.ts).
 #[derive(Deserialize)]
@@ -23,7 +22,7 @@ struct ReceiveSiteWire {
     origin: String,
     cookies: Vec<CookieWire>,
     #[serde(default)]
-    local_storage: Option<BTreeMap<String, String>>,
+    local_storage: Option<LocalStorageWire>,
     ttl_seconds: u64,
     session: String,
 }
