@@ -132,7 +132,7 @@ flowchart TB
 | 필드 암호화 | **XChaCha20-Poly1305** (AEAD) | `chacha20poly1305` (RustCrypto) | 192-bit nonce → 무작위 nonce 충돌 걱정이 없음. AES-NI 의존 없이 일정한 성능. OpenKeylet 선례 |
 | 난수 | OS CSPRNG | `rand_core::OsRng` / `getrandom` | |
 | 내보내기 키 유도 | **Argon2id** | `argon2` (RustCrypto) | 메모리 하드. RFC 9106 권고 |
-| 비밀 메모리 정리 | — | `zeroize`, `secrecy` | 평문·키의 drop 시 덮어쓰기 |
+| 비밀 메모리 정리 | — | `zeroize`, `secrecy` | 평문·키의 drop 시 덮어쓰기. age 가져오기는 필드 값을 역직렬화하자마자 `Zeroizing`에 담고, 내보내기 JSON은 지우는 버퍼에 쓴다. serde_json이 이스케이프된 문자열을 풀 때 쓰는 내부 작업 버퍼는 지우지 못한다(J-190) |
 | 비밀번호 생성 (관리 앱) | 균등 무작위 선택 | `rand` + `OsRng` | |
 
 알고리즘은 **직접 구현하지 않는다**(P7).
