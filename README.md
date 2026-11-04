@@ -39,7 +39,7 @@ flowchart LR
 
 외부 금고도, 클라우드 계정도 필요 없는 무료 오픈소스입니다.
 
-> **상태: v0.2.0 (macOS).** 금고 CLI, 브라우저 세션 MCP 도구, 치환·마스킹·정책·사용 기록, `keyharbor run`, Claude Code·Codex 플러그인, 관리 앱, 사람용 자동 완성(확장), ego lite 브라우저 지원이 들어 있습니다([로드맵](ROADMAP.md)).
+> **상태: v0.3.0 (macOS).** 금고 CLI, 브라우저 세션 MCP 도구, 치환·마스킹·정책·사용 기록, `keyharbor run`, Claude Code·Codex 플러그인, 관리 앱, 사람용 자동 완성(확장), ego lite 브라우저 지원이 들어 있습니다([로드맵](ROADMAP.md)).
 
 ## 설치
 
