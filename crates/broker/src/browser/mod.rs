@@ -157,7 +157,7 @@ impl BrowserPort for CdpBrowser {
         self.take_snapshot(&BTreeSet::new()).await
     }
     async fn screenshot(&mut self) -> Result<Value> {
-        self.save_screenshot().await
+        self.save_screenshot(&BTreeSet::new()).await
     }
     async fn click(&mut self, target: &Target) -> Result<Value> {
         self.click_target(target).await
@@ -210,6 +210,9 @@ impl PageInput for CdpBrowser {
     }
     async fn redacted_snapshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
         self.take_snapshot(hidden).await
+    }
+    async fn redacted_screenshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
+        self.save_screenshot(hidden).await
     }
     async fn select_option(
         &mut self,

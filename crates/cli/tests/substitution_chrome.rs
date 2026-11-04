@@ -362,3 +362,41 @@ fn upload_puts_only_allowed_files_into_a_file_input() {
         "{outside_refused}"
     );
 }
+
+#[test]
+fn screenshots_draw_filled_values_as_discs() {
+    let Some(browser) = chrome() else { return };
+    let shop = serve_pages();
+    let mut h = Harness::new();
+    let (first, second) = (
+        card_number(&h.synth("shot-a")),
+        card_number(&h.synth("shot-b")),
+    );
+    assert_ne!(first, second);
+    h.add("visa", "card", &[&shop.base], json!({"number": first}));
+    h.add("amex", "card", &[&shop.base], json!({"number": second}));
+    h.open(&browser);
+
+    // Same length, different digits: if the pixels held the digits, the shots would differ.
+    let shot = |text: &str| -> Vec<u8> {
+        h.ok_call(json!({"op": "navigate", "url": format!("{}/", shop.base)}));
+        h.fill("#user", text).unwrap();
+        // Focus leaves the input so no caret is drawn.
+        h.ok_call(json!({"op": "press", "key": "Tab"}));
+        h.ok_call(json!({"op": "press", "key": "Tab"}));
+        let path = h.ok_call(json!({"op": "screenshot"}))["path"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        std::fs::read(path).unwrap()
+    };
+    let visa = shot("{{secret:visa.number}}");
+    let amex = shot("{{secret:amex.number}}");
+    let plain = shot("4000000000000002");
+    assert!(visa == amex, "filled card numbers show in the screenshot");
+    assert!(
+        visa != plain,
+        "the comparison cannot tell digits from discs"
+    );
+    h.assert_absent(&[&first, &second]);
+}
