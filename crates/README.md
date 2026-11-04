@@ -1,6 +1,6 @@
 # KeyHarbor: 재구현
 
-저장소 루트의 Rust 워크스페이스(`Cargo.toml`, 이 `crates/`)는 프로토타입(`prototype/`)과 별도의 데이터 경로를 쓰는 재구현이다. 아직 재구현 중이다. 지금 동작하는 것은 브라우저 세션과 조작 도구(1단계), 로컬 금고(2단계), placeholder 치환 입력·응답 마스킹·정책·사용 기록·`keyharbor run`(3단계), 이를 제공하는 CLI와 MCP 서버다. 기존 데이터를 자동으로 가져오거나 변경하지 않는다. 설계는 [`../docs/design/`](../docs/design/README.md)에 있다.
+저장소 루트의 Rust 워크스페이스(`Cargo.toml`, 이 `crates/`)가 릴리스되는 `keyharbor` CLI다. 프로토타입(`prototype/`)과는 데이터 경로가 다르고, 프로토타입 데이터를 자동으로 가져오거나 바꾸지 않는다. 브라우저 세션과 조작 도구(1단계), 로컬 금고(2단계), placeholder 치환 입력·응답 마스킹·정책·사용 기록·`keyharbor run`(3단계, 실행 중 이름 조회 포함), 사이트 로그인 상태·넘기기·grant(4단계), 관리 앱(5단계, `app/`), Claude Code·Codex 플러그인(6단계, `plugin/`), 사람용 자동 완성 확장(7단계, `integrations/browser-extension/`)이 들어 있다. 설계는 [`../docs/design/`](../docs/design/README.md)에 있다.
 
 ```sh
 cargo test --workspace
