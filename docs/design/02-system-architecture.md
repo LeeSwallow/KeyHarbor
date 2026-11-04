@@ -140,7 +140,7 @@ CLI와 MCP는 같은 유스케이스를 부르는 두 얼굴이다. 바이너리
 | 세션 만들기(설명까지 한 번에 쓰기)·설명 바꾸기·목록 | `core::session::{create, describe, list}` |
 | 사람의 재개 기다리기(한 번 보기, 폴링, 1–300초 한도) | `core::session::{resume_check, wait_for_resume, ResumeWait}` |
 | 정책 목록·설정·제거(약화 확인, `policy_changed` 기록) | `core::policy::{list, set, remove}` |
-| 사용 기록 읽기 | `core::audit::list` |
+| 사용 기록 읽기, 멈춘 이유 묶기(거부·잠금·기다리는 인계를 사유별로 세고 정렬, J-240) | `core::audit::{list, stops}` |
 | 설정 읽기·쓰기(목록, 기본값, 검증, 약화 확인) | `core::settings::{get, set}` |
 | 항목 add/edit(설명 값 검사 → 약화 확인 → 저장) | `guard::items::{add, edit}` |
 | 세션 작업마다 필요한 정책 Action | `guard::session::{SessionOp, authorize}` |

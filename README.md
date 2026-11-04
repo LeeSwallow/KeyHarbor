@@ -156,6 +156,7 @@ keyharbor receive <세션 id> --origin https://github.com  # 사람이 사이트
 keyharbor open work --browser ego-lite                  # 사람이 쓰는 ego lite로 (없으면 auto가 Chrome을 고른다)
 keyharbor rm old-session                                 # 멈춘 세션과 프로필 지우기 (--force면 먼저 닫음)
 keyharbor audit --limit 20                               # 사용 기록 (값 없음)
+keyharbor audit --denials --since 24h                    # 어디서 왜 멈췄나: 사유별 수와 푸는 방법
 keyharbor browser install-host                           # 확장과 연결 (평소 Chrome의 로그인 넘기기)
 ```
 

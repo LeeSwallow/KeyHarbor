@@ -65,6 +65,19 @@ impl Date {
     }
 }
 
+/// A Unix time as RFC 3339 UTC with seconds, e.g. `2026-10-28T12:34:56Z`: the form the
+/// usage record keeps, so two of them compare as text in time order.
+pub fn rfc3339(unix_seconds: u64) -> String {
+    let rem = unix_seconds % 86_400;
+    format!(
+        "{}T{:02}:{:02}:{:02}Z",
+        Date::from_unix_seconds(unix_seconds),
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
+}
+
 impl fmt::Display for Date {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (y, m, d) = self.parts();
@@ -141,6 +154,7 @@ mod tests {
         let day = Date::from_unix_seconds(1_793_203_129);
         assert_eq!(day.to_string(), "2026-10-28");
         assert_eq!(day.plus_days(4).to_string(), "2026-11-01");
+        assert_eq!(rfc3339(1_793_203_129), "2026-10-28T15:58:49Z");
     }
 
     #[test]

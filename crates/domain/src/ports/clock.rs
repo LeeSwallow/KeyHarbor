@@ -20,15 +20,7 @@ pub trait Clock: Send + Sync {
     }
     /// Now as RFC 3339 UTC with seconds, e.g. `2026-10-28T12:34:56Z`.
     fn now_rfc3339(&self) -> String {
-        let secs = self.unix_seconds();
-        let rem = secs % 86_400;
-        format!(
-            "{}T{:02}:{:02}:{:02}Z",
-            Date::from_unix_seconds(secs),
-            rem / 3600,
-            rem % 3600 / 60,
-            rem % 60
-        )
+        crate::date::rfc3339(self.unix_seconds())
     }
 }
 
