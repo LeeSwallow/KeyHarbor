@@ -6,5 +6,6 @@ pub mod clipboard;
 pub mod commands;
 pub mod confirm;
 mod context;
+pub mod window;
 
 pub use context::{Ctx, KeyStores, SystemClock, data_dir};

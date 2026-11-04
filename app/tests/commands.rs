@@ -515,7 +515,10 @@ fn a_browser_rule_is_added_from_the_window() {
     let tmp = tempfile::tempdir().unwrap();
     let c = ctx(tmp.path());
     let deny = ("codex", "browser", "ego-lite", "deny");
-    assert_eq!(commands::set_policy(&c, deny, false).unwrap(), Outcome::Done);
+    assert_eq!(
+        commands::set_policy(&c, deny, false).unwrap(),
+        Outcome::Done
+    );
     let rules: Vec<(&str, String)> = commands::policies(&c)
         .unwrap()
         .into_iter()

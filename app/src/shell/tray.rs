@@ -46,17 +46,6 @@ fn current(app: &AppHandle) -> Option<MenuText> {
         .map(|o| commands::menu_text(&o))
 }
 
-/// Shows the main window, past the `OpenApp` challenge.
-fn show_window(app: &AppHandle) {
-    if commands::open_app(&app.state::<Ctx>()).is_err() {
-        return;
-    }
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-}
-
 /// Puts the icon in the menu bar and keeps its counts fresh every [`REFRESH`].
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let text = current(app).unwrap_or(MenuText {
@@ -72,7 +61,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .tooltip("KeyHarbor")
         .menu(&menu(app, &text)?)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            OPEN => show_window(app),
+            OPEN => super::show_window(app),
             ANSWER => answer(app),
             QUIT => app.exit(0),
             _ => {}

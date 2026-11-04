@@ -16,7 +16,7 @@ use keyharbor_app::{
 };
 use keyharbor_keystore::KeychainKeyStore;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use tauri::{Manager, State};
+use tauri::State;
 
 type Reply<T> = Result<T, String>;
 
@@ -220,11 +220,9 @@ fn main() -> anyhow::Result<()> {
         .manage(ctx)
         .setup(|app| {
             shell::install(app.handle())?;
-            // The window starts hidden (tauri.conf.json) and shows only past `OpenApp`.
-            commands::open_app(&app.state::<Ctx>())?;
-            if let Some(window) = app.get_webview_window("main") {
-                window.show()?;
-            }
+            // The window starts hidden (tauri.conf.json) and shows only past `OpenApp`. Refused,
+            // it stays hidden and the menu bar's "열기" asks again; the app does not stop (J-177).
+            shell::show_window(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {

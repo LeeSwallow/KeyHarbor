@@ -11,7 +11,7 @@ flowchart LR
   C -- "처리 전에 challenge(scope)" --> A["src/auth.rs<br/>Authenticator · NoneAuth"]
 ```
 
-앱 열기·값 보기·편집·정책 변경 명령은 처리 전에 `Authenticator::challenge`를 부르고, 거절되면 아무것도 하지 않습니다. 지금 방식은 `NoneAuth`(언제나 통과) 하나이고 `src/main.rs`에서 한 번 주입합니다([03 §3.10](../docs/design/03-security-whitepaper.md#310-관리-앱-인증), [J-126](../docs/design/06-requirements-log.md)). 사이드바와 설정 화면의 "인증 없음"은 그 포트의 `id()`에서 옵니다. 창은 숨긴 채로 뜨고 `OpenApp`을 통과해야 보입니다.
+앱 열기·값 보기·편집·정책 변경 명령은 처리 전에 `Authenticator::challenge`를 부르고, 거절되면 아무것도 하지 않습니다. 지금 방식은 `NoneAuth`(언제나 통과) 하나이고 `src/main.rs`에서 한 번 주입합니다([03 §3.10](../docs/design/03-security-whitepaper.md#310-관리-앱-인증), [J-126](../docs/design/06-requirements-log.md)). 사이드바와 설정 화면의 "인증 없음"은 그 포트의 `id()`에서 옵니다. 창은 숨긴 채로 뜨고 `OpenApp`을 통과해야 보입니다. 시작할 때 거절되어도 앱은 끝나지 않고 메뉴 막대에 남으며, 메뉴 막대의 "KeyHarbor 열기"가 같은 길(`window::open_main_window`)로 다시 묻습니다([J-177](../docs/design/06-requirements-log.md)).
 
 ## 만들기와 실행
 
