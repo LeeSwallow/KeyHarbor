@@ -6,12 +6,13 @@ use crate::{
     auth::{AuthScope, Authenticator},
     clipboard::Clipboard,
 };
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use keyharbor_core::Vault;
 use keyharbor_domain::ports::{Clock, KeyStore, SessionRuntime, Store};
 use keyharbor_sqlite::SqliteStore;
 use keyharbor_supervisor::ProcessRuntime;
 use std::{
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -29,6 +30,22 @@ impl Clock for SystemClock {
     fn sleep(&self, duration: Duration) {
         std::thread::sleep(duration);
     }
+}
+
+/// The data folder the CLI uses: `KEYHARBOR_HOME`, else the macOS application data folder
+/// under `HOME`. `var` reads the environment (`std::env::var_os` in `main`). Without an
+/// absolute `HOME` it is an error, never a folder relative to wherever the app started (J-176).
+pub fn data_dir(var: impl Fn(&str) -> Option<OsString>) -> Result<PathBuf> {
+    if let Some(dir) = var("KEYHARBOR_HOME") {
+        return Ok(PathBuf::from(dir));
+    }
+    let home = var("HOME")
+        .map(PathBuf::from)
+        .filter(|home| home.is_absolute())
+        .ok_or_else(|| {
+            anyhow!("HOME is not set to an absolute path; set HOME or KEYHARBOR_HOME")
+        })?;
+    Ok(home.join("Library/Application Support/KeyHarbor"))
 }
 
 /// Makes the key store each vault opening reads the root key from.
@@ -92,5 +109,44 @@ impl Ctx {
     }
     pub fn runtime(&self) -> Box<dyn SessionRuntime> {
         Box::new(ProcessRuntime::new(&self.root, &self.cli))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {
+        move |key| {
+            pairs
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| OsString::from(v))
+        }
+    }
+
+    #[test]
+    fn the_data_folder_is_keyharbor_home_when_set() {
+        let dir = data_dir(env(&[("KEYHARBOR_HOME", "/tmp/kh"), ("HOME", "/Users/me")]));
+        assert_eq!(dir.unwrap(), PathBuf::from("/tmp/kh"));
+    }
+
+    #[test]
+    fn the_data_folder_is_under_home_otherwise() {
+        let dir = data_dir(env(&[("HOME", "/Users/me")]));
+        assert_eq!(
+            dir.unwrap(),
+            PathBuf::from("/Users/me/Library/Application Support/KeyHarbor")
+        );
+    }
+
+    #[test]
+    fn without_a_usable_home_there_is_no_data_folder() {
+        for home in [&[][..], &[("HOME", "")], &[("HOME", "relative")]] {
+            assert!(
+                data_dir(env(home)).is_err(),
+                "a vault is never opened at a relative path ({home:?})"
+            );
+        }
     }
 }

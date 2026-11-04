@@ -60,13 +60,20 @@ fn invalid(e: keyharbor_domain::vault::InvalidValue) -> anyhow::Error {
     anyhow!("{e}")
 }
 
-fn fields(
-    kind: ItemKind,
-    values: BTreeMap<String, String>,
-) -> Result<Vec<(FieldName, Zeroizing<String>)>> {
+/// The form's values as they arrive, each wiped when dropped. Done first, before any check
+/// can return early and drop a plain `String` (J-178).
+type Typed = Vec<(String, Zeroizing<String>)>;
+
+fn wiped(values: BTreeMap<String, String>) -> Typed {
+    values
+        .into_iter()
+        .map(|(name, value)| (name, Zeroizing::new(value)))
+        .collect()
+}
+
+fn fields(kind: ItemKind, values: Typed) -> Result<Vec<(FieldName, Zeroizing<String>)>> {
     let mut out = Vec::new();
     for (name, value) in values {
-        let value = Zeroizing::new(value);
         if !value.is_empty() {
             out.push((kind.field_name(&name).map_err(invalid)?, value));
         }
@@ -83,10 +90,11 @@ fn origins(values: &[String]) -> Result<Vec<Origin>> {
 }
 
 pub fn add_item(ctx: &Ctx, form: NewItemForm) -> Result<String> {
+    let typed = wiped(form.values);
     ctx.challenge(AuthScope::Edit)?;
     let kind = ItemKind::parse(&form.kind).ok_or_else(|| anyhow!("unknown kind"))?;
     let name = ItemName::parse_new(&form.name).map_err(invalid)?;
-    let mut values = fields(kind, form.values)?;
+    let mut values = fields(kind, typed)?;
     if form.generate_password {
         if kind != ItemKind::Login {
             bail!("only a login gets a generated password");
@@ -125,6 +133,7 @@ pub struct ChangeForm {
 }
 
 pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Result<Outcome> {
+    let typed = wiped(form.values);
     ctx.challenge(AuthScope::Edit)?;
     let name = ItemName::parse(name).map_err(invalid)?;
     let vault = ctx.vault()?;
@@ -134,9 +143,10 @@ pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Re
         .find(|i| i.name == name.as_str())
         .ok_or_else(|| anyhow!("item not found"))?
         .kind;
-    let change = || -> Result<ItemChange> {
+    // Moved, not cloned: `confirmed_by_dialog` runs the change once.
+    let change = move || -> Result<ItemChange> {
         Ok(ItemChange {
-            set_fields: fields(kind, form.values.clone())?,
+            set_fields: fields(kind, typed)?,
             origins: form.origins.as_deref().map(origins).transpose()?,
             ..Default::default()
         })

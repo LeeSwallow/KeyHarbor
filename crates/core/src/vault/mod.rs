@@ -1,185 +1,42 @@
-//! The vault: items sealed under per-domain keys, with signed metadata (07). Opening
-//! ([`open`]), changing items ([`items`]), describing them without values ([`summary`]) and the
-//! plaintext paths ([`resolve`]) are split by use case; key rotation and export live in
-//! `rotate` and `transfer`.
+//! The vault: items sealed under per-domain keys, with signed metadata (07). The words it
+//! speaks are in [`item`], sealing and signing in [`signing`]. Opening, key rotation and the
+//! R-40 developer-domain move are in [`keys`]; changing items ([`items`]), drafts ([`drafts`]),
+//! describing items without values ([`summary`]) and the plaintext paths ([`resolve`]) are
+//! split by use case. Export and import live in `crate::transfer`.
 
-mod developer;
 mod drafts;
 mod history;
+mod item;
 mod items;
-mod open;
+mod keys;
 mod plain;
-mod register;
 mod resolve;
+mod signing;
 mod summary;
 
-pub use register::{DraftItem, GeneratedLogin, MAX_DRAFTS, generate_password};
+pub use drafts::{DraftItem, GeneratedLogin, MAX_DRAFTS, generate_password};
+pub use item::{
+    ExpiryChoice, ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary, NewItem,
+};
 pub use resolve::fill_template;
 pub use summary::{CatalogEntry, ItemFilter, ItemUse, catalog, effective_descriptions};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
-    date::Expiry,
     ports::{
-        AuditStore, Clock, FieldRow, ItemRow, KeyGuard, KeyStore, RotationLock, SettingsStore,
-        VaultStore,
+        AuditStore, Clock, FieldRow, ItemRow, KeyStore, RotationLock, SettingsStore, VaultStore,
     },
-    tag::Tag,
-    vault::{Description, Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
+    vault::{Domain, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
 };
 use keyharbor_vault::{
     VaultError,
     keys::{KeyId, KeySet, SecretKey, VaultId},
-    meta::{ItemMeta, meta_mac, verify_meta_mac},
-    record::{FieldAd, seal_field, unwrap_domain_key},
 };
 use std::{collections::BTreeMap, sync::Arc};
 use zeroize::Zeroizing;
 
 pub const MAX_FIELD_BYTES: usize = 64 * 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ItemStatus {
-    Draft,
-    Active,
-    Discarded,
-}
-impl ItemStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Draft => "draft",
-            Self::Active => "active",
-            Self::Discarded => "discarded",
-        }
-    }
-    pub fn parse(value: &str) -> Option<Self> {
-        [Self::Draft, Self::Active, Self::Discarded]
-            .into_iter()
-            .find(|s| s.as_str() == value)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ItemSource {
-    User,
-    Import,
-    Generated,
-    Captured,
-    Requested,
-    Agent,
-}
-impl ItemSource {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::User => "user",
-            Self::Import => "import",
-            Self::Generated => "generated",
-            Self::Captured => "captured",
-            Self::Requested => "requested",
-            Self::Agent => "agent",
-        }
-    }
-    pub fn parse(value: &str) -> Option<Self> {
-        [
-            Self::User,
-            Self::Import,
-            Self::Generated,
-            Self::Captured,
-            Self::Requested,
-            Self::Agent,
-        ]
-        .into_iter()
-        .find(|s| s.as_str() == value)
-    }
-}
-
-pub struct NewItem {
-    pub name: ItemName,
-    pub kind: ItemKind,
-    pub fields: Vec<(FieldName, Zeroizing<String>)>,
-    pub origins: Vec<Origin>,
-    /// `None` uses the kind's default (on for login and card).
-    pub origin_binding: Option<bool>,
-    pub status: ItemStatus,
-    pub source: ItemSource,
-    pub details: ItemDetails,
-}
-
-/// Attributes a new item may set beyond its fields and origins; each defaults sensibly.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ItemDetails {
-    /// `None` uses the kind's default (secret and env items yes, the others no; R-36).
-    pub run_allowed: Option<bool>,
-    pub expiry: ExpiryChoice,
-    pub description: Option<Description>,
-    /// Overrides of the kind's field descriptions; each names a field the item has.
-    pub field_descriptions: Vec<(FieldName, Description)>,
-    /// Labels to find the item by (developer secrets spec §2).
-    pub tags: Vec<Tag>,
-    /// Fields that are not secret: shown in listings, not masked (developer secrets spec §2).
-    pub plain_fields: Vec<FieldName>,
-}
-
-/// The expiry a new item gets (R-37).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ExpiryChoice {
-    /// Today plus `default_item_ttl` if that is set, otherwise never.
-    #[default]
-    Default,
-    Never,
-    On(Expiry),
-}
-
-#[derive(Default)]
-pub struct ItemChange {
-    pub set_fields: Vec<(FieldName, Zeroizing<String>)>,
-    pub remove_fields: Vec<FieldName>,
-    pub origins: Option<Vec<Origin>>,
-    pub origin_binding: Option<bool>,
-    pub run_allowed: Option<bool>,
-    /// `Some(None)` removes the expiry.
-    pub expiry: Option<Option<Expiry>>,
-    /// `Some(None)` removes the description.
-    pub description: Option<Option<Description>>,
-    /// Sets (`Some`) or removes (`None`, back to the kind's default) a field's description.
-    pub field_descriptions: Vec<(FieldName, Option<Description>)>,
-    pub status: Option<ItemStatus>,
-    pub add_tags: Vec<Tag>,
-    pub remove_tags: Vec<Tag>,
-    /// Mark fields not secret (weakens: a person confirms).
-    pub make_plain: Vec<FieldName>,
-    /// Mark fields secret again.
-    pub make_secret: Vec<FieldName>,
-}
-
-/// What callers may show: never a value.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ItemSummary {
-    pub name: String,
-    pub kind: ItemKind,
-    pub domain: Domain,
-    pub fields: Vec<String>,
-    pub origins: Vec<String>,
-    pub origin_binding: bool,
-    pub run_allowed: bool,
-    pub expires_at: Option<Expiry>,
-    /// The expiry date has passed: agents may not use the item.
-    pub expired: bool,
-    pub description: Option<String>,
-    /// Every field's description: the item's own or the kind's default.
-    pub field_descriptions: BTreeMap<String, String>,
-    /// Sorted.
-    pub tags: Vec<String>,
-    /// The values of fields marked not secret (empty for a tampered item).
-    pub plain_values: BTreeMap<String, String>,
-    pub status: ItemStatus,
-    pub source: ItemSource,
-    pub updated_at: String,
-    /// Metadata MAC failed: the item is not used for input until re-signed.
-    pub tampered: bool,
-}
-
-/// What a vault needs from storage: its tables and the usage record.
 /// What a vault needs from storage: its tables, the usage record and the settings
 /// (`default_item_ttl`).
 pub trait VaultBackend: VaultStore + RotationLock + AuditStore + SettingsStore {}
@@ -204,8 +61,9 @@ pub struct Vault {
     pub(crate) domain_keys: BTreeMap<Domain, (KeyId, SecretKey)>,
 }
 
+/// Keeps the `VaultError` as the error itself (not only its text), so callers can downcast it.
 pub(crate) fn vault_err(e: VaultError) -> anyhow::Error {
-    anyhow!(e.to_string())
+    anyhow::Error::new(e)
 }
 
 pub(crate) fn account(vault_id: &VaultId) -> String {
@@ -226,7 +84,7 @@ pub(super) fn check_fields(
             )
         }
         if kind.spec().free_fields {
-            FieldName::parse_env(name.as_str()).map_err(|e| anyhow!(e.to_string()))?;
+            FieldName::parse_env(name.as_str())?;
         }
         if value.len() > MAX_FIELD_BYTES {
             bail!("field {} exceeds {} bytes", name.as_str(), MAX_FIELD_BYTES);
@@ -246,147 +104,24 @@ pub(super) fn sorted_origins(origins: &[Origin]) -> Vec<String> {
 }
 
 impl Vault {
-    /// The key generation this handle seals and signs with; stale handles are refused on write.
-    pub(super) fn guard(&self, domain: Domain) -> KeyGuard {
-        KeyGuard {
-            kek_id: *self.kek_id.as_bytes(),
-            domain: domain.as_byte(),
-            dk_id: *self.domain_keys[&domain].0.as_bytes(),
-        }
-    }
-
-    pub(crate) fn unwrap_all(
-        store: &dyn VaultBackend,
-        keys: &KeySet,
-        vault_id: &VaultId,
-    ) -> Result<BTreeMap<Domain, (KeyId, SecretKey)>> {
-        let mut out = BTreeMap::new();
-        for row in store.domain_keys()? {
-            let domain = Domain::from_byte(row.domain).context("unknown domain in database")?;
-            let dk_id = KeyId::from_bytes(row.dk_id);
-            let dk = unwrap_domain_key(keys.kek(), vault_id, domain, &dk_id, &row.wrapped)
-                .map_err(vault_err)
-                .context("could not unwrap domain key")?;
-            out.insert(domain, (dk_id, dk));
-        }
-        // A vault from before R-40 has no developer key yet; `open` adds it.
-        if Domain::ALL
-            .iter()
-            .any(|d| *d != Domain::Developer && !out.contains_key(d))
-        {
-            bail!("domain keys are missing");
-        }
-        Ok(out)
-    }
-
     pub fn vault_id(&self) -> &VaultId {
         &self.vault_id
     }
 
-    /// The signed view of a stored row: its metadata in the domain the row is stored in.
-    fn meta<'a>(
-        &'a self,
-        row: &'a ItemRow,
-        domain: Domain,
-        kind: ItemKind,
-        name: &'a ItemName,
-        origins: &'a [Origin],
-    ) -> ItemMeta<'a> {
-        ItemMeta {
-            vault: &self.vault_id,
-            item: &row.id,
-            domain,
-            kind,
-            name,
-            origin_binding: row.origin_binding,
-            origins,
-            status: &row.status,
-            updated_at: &row.updated_at,
-            run_allowed: row.run_allowed,
-            expires_at: row.expires_at.as_deref(),
-            description: row.description.as_deref(),
-            field_descriptions: &row.field_descriptions,
-            tags: &row.tags,
-            plain_fields: &row.plain_fields,
-        }
+    /// The key of `domain`. Every domain has one once the vault is open: `init` makes all of
+    /// them and `open` adds the developer key a vault from before R-40 lacks
+    /// (`ensure_developer_domain`). An error here means that invariant broke, not bad input.
+    pub(crate) fn domain_key(&self, domain: Domain) -> Result<&(KeyId, SecretKey)> {
+        self.domain_keys
+            .get(&domain)
+            .with_context(|| format!("no key for the {} domain", domain.as_str()))
     }
 
-    /// Signs `row` for the domain it is stored in (`row.domain`).
-    pub(crate) fn mac_for(
-        &self,
-        row: &ItemRow,
-        kind: ItemKind,
-        name: &ItemName,
-        origins: &[Origin],
-    ) -> Vec<u8> {
-        let domain = Domain::from_byte(row.domain).unwrap_or_else(|| kind.domain());
-        meta_mac(
-            self.keys.mac(),
-            &self.meta(row, domain, kind, name, origins),
-        )
-        .to_vec()
-    }
-
-    pub(super) fn seal(
-        &self,
-        item: &[u8; 16],
-        domain: Domain,
-        field: &FieldName,
-        value: &str,
-    ) -> FieldRow {
-        let (dk_id, dk) = &self.domain_keys[&domain];
-        let ad = FieldAd {
-            vault: &self.vault_id,
-            domain,
-            item,
-            field: field.as_str(),
-        };
-        FieldRow {
-            field: field.as_str().to_owned(),
-            sealed: seal_field(dk, dk_id, &ad, value.as_bytes()),
-            previous: None,
-        }
-    }
-
-    /// Decodes a stored row and checks its metadata MAC.
-    pub(crate) fn verified(&self, row: &ItemRow) -> Result<(ItemKind, ItemName, Vec<Origin>)> {
-        self.verified_with(&self.keys, row)
-    }
-
-    pub(crate) fn verified_with(
-        &self,
-        keys: &KeySet,
-        row: &ItemRow,
-    ) -> Result<(ItemKind, ItemName, Vec<Origin>)> {
-        let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
-        if kind.domain().as_byte() != row.domain {
-            return Err(vault_err(VaultError::Tampered));
-        }
-        self.verified_as_stored(keys, row)
-    }
-
-    /// Checks the MAC of `row` for the domain it is stored in, even if its kind now belongs
-    /// to another one (an item written before R-40 moved secret and env items).
-    pub(crate) fn verified_as_stored(
-        &self,
-        keys: &KeySet,
-        row: &ItemRow,
-    ) -> Result<(ItemKind, ItemName, Vec<Origin>)> {
-        let kind = ItemKind::parse(&row.kind).context("unknown item kind in database")?;
-        let domain = Domain::from_byte(row.domain).context("unknown domain in database")?;
-        let name = ItemName::parse(&row.name).map_err(|e| anyhow!(e.to_string()))?;
-        let origins = row
-            .origins
-            .iter()
-            .map(|o| Origin::parse(o).map_err(|e| anyhow!(e.to_string())))
-            .collect::<Result<Vec<_>>>()?;
-        verify_meta_mac(
-            keys.mac(),
-            &self.meta(row, domain, kind, &name, &origins),
-            &row.meta_mac,
-        )
-        .map_err(vault_err)?;
-        Ok((kind, name, origins))
+    /// The stored row and sealed fields of the item `name`; "item not found" if there is none.
+    pub(super) fn load_item_row(&self, name: &ItemName) -> Result<(ItemRow, Vec<FieldRow>)> {
+        self.store
+            .item_get(name.as_str())?
+            .context("item not found")
     }
 }
 

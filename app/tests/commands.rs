@@ -508,3 +508,59 @@ fn a_site_dropped_on_a_session_is_asked_of_the_extension() {
     );
     assert!(bridge.join().unwrap().contains("\"session\":\"work\""));
 }
+
+#[test]
+fn a_browser_rule_is_added_from_the_window() {
+    use keyharbor_app::confirm::Outcome;
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    let deny = ("codex", "browser", "ego-lite", "deny");
+    assert_eq!(
+        commands::set_policy(&c, deny, false).unwrap(),
+        Outcome::Done
+    );
+    let rules: Vec<(&str, String)> = commands::policies(&c)
+        .unwrap()
+        .into_iter()
+        .map(|r| (r.resource, r.target))
+        .collect();
+    assert_eq!(rules, [("browser", "ego-lite".to_owned())]);
+}
+
+#[test]
+fn a_form_with_an_unknown_field_is_refused_and_stores_nothing() {
+    use keyharbor_app::commands::{ChangeForm, NewItemForm};
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    init_vault(tmp.path())
+        .add(login("github", ItemStatus::Active))
+        .unwrap();
+    // "nope" sorts before "password": the refusal comes with a value still unread.
+    let values = || {
+        [
+            ("nope".to_owned(), "n-SECRET".to_owned()),
+            ("password".to_owned(), "changed-SECRET".to_owned()),
+        ]
+        .into()
+    };
+    let change = ChangeForm {
+        values: values(),
+        origins: None,
+    };
+    let error = commands::edit_item(&c, "github", change, true).unwrap_err();
+    assert!(!format!("{error:#}").contains("SECRET"), "{error:#}");
+    let new = NewItemForm {
+        name: "shop".into(),
+        kind: "login".into(),
+        origins: vec![],
+        values: values(),
+        generate_password: false,
+    };
+    let error = commands::add_item(&c, new).unwrap_err();
+    assert!(!format!("{error:#}").contains("SECRET"), "{error:#}");
+    assert_eq!(
+        commands::reveal(&c, "github", "password").unwrap(),
+        "pw-SECRET-1"
+    );
+    assert_eq!(commands::items(&c).unwrap().len(), 1, "no shop");
+}

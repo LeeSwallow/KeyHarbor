@@ -5,10 +5,7 @@
 //! adapter) and commit only if the vault version is unchanged since they read it, so
 //! concurrent writers make them abort, not corrupt.
 
-use crate::{
-    Vault,
-    vault::{account, vault_err},
-};
+use crate::vault::{Vault, account, vault_err};
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::ports::{DomainKeyRow, FieldRow};
 use keyharbor_domain::vault::{Domain, FieldName};
@@ -122,7 +119,7 @@ impl Vault {
         if vault.kek_id != *self.kek_id.as_bytes() {
             bail!("vault changed (keys were rotated); reopen it and retry");
         }
-        let old_dk = self.domain_keys[&domain].1.clone();
+        let old_dk = self.domain_key(domain)?.1.clone();
         let (new_id, new_dk) = (KeyId::new(), keyharbor_crypto::random::key());
         let mut fields = Vec::new();
         for row in self.store.item_list()? {
@@ -135,8 +132,7 @@ impl Vault {
                 .item_get(&row.name)?
                 .context("item vanished during rotation")?;
             for field in stored {
-                let name =
-                    FieldName::parse(&field.field).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                let name = FieldName::parse(&field.field)?;
                 let ad = FieldAd {
                     vault: &self.vault_id,
                     domain,

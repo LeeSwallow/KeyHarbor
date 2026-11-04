@@ -5,7 +5,7 @@
 //! moved and the key exists, or nothing changed. The key's existence is what makes it run
 //! once.
 
-use super::{Vault, vault_err};
+use crate::vault::{Vault, vault_err};
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
     ports::{DomainKeyRow, FieldRow, ItemRow},
@@ -80,7 +80,7 @@ impl Vault {
                 };
                 let reseal = |record: &[u8]| -> Result<Vec<u8>> {
                     let plain =
-                        open_field(&self.domain_keys[&old].1, &from, record).map_err(vault_err)?;
+                        open_field(&self.domain_key(old)?.1, &from, record).map_err(vault_err)?;
                     Ok(seal_field(&dk, &dk_id, &to, &plain))
                 };
                 sealed.push(FieldRow {
