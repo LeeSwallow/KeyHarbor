@@ -215,7 +215,7 @@ $hits"
 
 # --- 9. (H) placeholder syntax in one place ------------------------------------------
 hits="$(outside_tests '[{][{]secret:' |
-	grep -v '^\./domain/src/vault\.rs:' |
+	grep -v '^\./domain/src/vault/placeholder\.rs:' |
 	grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' |
 	grep -vE 'description = "' || true)"
 [ -n "$hits" ] && no "placeholder syntax outside keyharbor-domain (use PlaceholderRef or vault::placeholder):

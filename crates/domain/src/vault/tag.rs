@@ -3,25 +3,32 @@
 
 use crate::vault::InvalidValue;
 
-/// At most this many tags per item.
-pub const MAX_TAGS: usize = 16;
+number_text!(
+    /// At most this many tags per item.
+    pub MAX_TAGS: usize = 16,
+    TOO_MANY_TAGS = "an item has at most ", " tags"
+);
 
 /// `env:prod`, `team-a`: 1–32 of lowercase ASCII letters, digits, `-`, `_`, `:` and `.`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct Tag(String);
 
 impl Tag {
+    number_text!(
+        /// The longest tag, in bytes (always ASCII).
+        pub MAX_BYTES: usize = 32,
+        RULE = "a tag is 1–", " lowercase letters, digits, '-', '_', ':' or '.'"
+    );
+
     pub fn parse(value: &str) -> Result<Self, InvalidValue> {
-        let ok = (1..=32).contains(&value.len())
+        let ok = (1..=Self::MAX_BYTES).contains(&value.len())
             && value.bytes().all(|b| {
                 b.is_ascii_lowercase()
                     || b.is_ascii_digit()
                     || matches!(b, b'-' | b'_' | b':' | b'.')
             });
         if !ok {
-            return Err(InvalidValue(
-                "a tag is 1–32 lowercase letters, digits, '-', '_', ':' or '.'",
-            ));
+            return Err(InvalidValue(Self::RULE));
         }
         Ok(Self(value.to_owned()))
     }
@@ -35,7 +42,7 @@ pub fn tag_set(mut tags: Vec<Tag>) -> Result<Vec<Tag>, InvalidValue> {
     tags.sort();
     tags.dedup();
     if tags.len() > MAX_TAGS {
-        return Err(InvalidValue("an item has at most 16 tags"));
+        return Err(InvalidValue(TOO_MANY_TAGS));
     }
     Ok(tags)
 }

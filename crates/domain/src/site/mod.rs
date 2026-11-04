@@ -1,5 +1,8 @@
 //! Whether a session is signed in to a site (02 §2.7 `SITE_STATE`). The agent records what it
-//! saw; KeyHarbor does not check it, so a state is a note, not proof.
+//! saw; KeyHarbor does not check it, so a state is a note, not proof. A site's login can also
+//! be handed over from the user's own browser ([`handoff_site`]).
+
+pub mod handoff_site;
 
 use crate::{
     SessionId,
