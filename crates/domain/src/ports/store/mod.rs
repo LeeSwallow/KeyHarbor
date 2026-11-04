@@ -1,0 +1,53 @@
+//! Storage ports, one per persistence context (vault, session, site, request, access, audit,
+//! settings), and the [`Store`] that bundles them. `keyharbor-sqlite` implements them.
+
+pub mod access;
+pub mod audit;
+pub mod request;
+pub mod session;
+pub mod settings;
+pub mod site;
+pub mod vault;
+
+pub use access::{GrantStore, PolicyStore};
+pub use audit::AuditStore;
+pub use request::VaultRequestStore;
+pub use session::{SessionRow, SessionStore};
+pub use settings::{AUDIT_ENABLED, SettingsStore};
+pub use site::SiteStore;
+pub use vault::{
+    DomainKeyRow, FieldRow, ItemRow, KeyGuard, RotationGuard, RotationLock, VaultRow, VaultStore,
+};
+
+/// Everything the local database provides, as one object.
+pub trait Store:
+    VaultStore
+    + RotationLock
+    + SessionStore
+    + SiteStore
+    + VaultRequestStore
+    + PolicyStore
+    + GrantStore
+    + AuditStore
+    + SettingsStore
+{
+}
+impl<
+    T: VaultStore
+        + RotationLock
+        + SessionStore
+        + SiteStore
+        + VaultRequestStore
+        + PolicyStore
+        + GrantStore
+        + AuditStore
+        + SettingsStore,
+> Store for T
+{
+}
+
+/// Opens the local database. Interfaces hand the adapter's factory to the layers that need a
+/// store of their own (e.g. a session supervisor), so those layers never name the adapter.
+pub trait StoreFactory: Send + Sync {
+    fn open(&self) -> anyhow::Result<Box<dyn Store>>;
+}

@@ -19,7 +19,7 @@ impl ItemPattern {
         let name_chars = prefix
             .chars()
             .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '/'));
-        if !name_chars || prefix.chars().count() > 64 {
+        if !name_chars || prefix.chars().count() > ItemName::MAX_CHARS {
             return Err(InvalidValue(
                 "a pattern is an item name, or the start of one followed by '*'",
             ));

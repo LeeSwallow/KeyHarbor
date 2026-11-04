@@ -2,13 +2,23 @@
 //! cookies may come along. The extension picks them; the host and the supervisor check them
 //! again here, so a message cannot slip another site's cookies into the session.
 
-use crate::vault::{InvalidValue, Origin};
+use crate::{
+    access::grant::{GrantTtl, grant_ttl_max_seconds, grant_ttl_min_seconds},
+    vault::{InvalidValue, Origin},
+};
 use zeroize::Zeroizing;
 
 /// More cookies than a real site sets; a message beyond this is refused.
 pub const MAX_COOKIES: usize = 500;
-/// Same bound as a grant TTL (`GrantTtl::MAX_SECONDS`), and at least a minute.
-pub const TTL_SECONDS: std::ops::RangeInclusive<u64> = 60..=30 * 86_400;
+/// The same bounds as a grant TTL ([`GrantTtl`]).
+pub const TTL_SECONDS: std::ops::RangeInclusive<u64> =
+    GrantTtl::MIN_SECONDS..=GrantTtl::MAX_SECONDS;
+const TTL_RULE: &str = concat!(
+    "ttl_seconds must be ",
+    grant_ttl_min_seconds!(),
+    " to ",
+    grant_ttl_max_seconds!()
+);
 
 /// A cookie for the session's profile, in our words (the CDP shape is the broker's).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,7 +77,7 @@ pub fn check(
     ttl_seconds: u64,
 ) -> Result<(), InvalidValue> {
     if !TTL_SECONDS.contains(&ttl_seconds) {
-        return Err(InvalidValue("ttl_seconds must be 60 to 2592000"));
+        return Err(InvalidValue(TTL_RULE));
     }
     if cookies.len() > MAX_COOKIES {
         return Err(InvalidValue("too many cookies"));
