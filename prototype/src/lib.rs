@@ -366,6 +366,21 @@ impl Store {
         Ok(file)
     }
 
+    /// Like [`Self::lock_session`], but keeps trying for `within`. The supervisor takes its
+    /// lock this way: `open` holds the lock only while it reserves the session, and a second
+    /// `open` may briefly hold it to find the session already starting. Without the retry both
+    /// opens fail. The rebuilt supervisor does the same (`acquire_lock_within`, #28).
+    pub fn lock_session_within(&self, id: &str, within: std::time::Duration) -> Result<File> {
+        let deadline = std::time::Instant::now() + within;
+        loop {
+            match self.lock_session(id) {
+                Ok(file) => return Ok(file),
+                Err(error) if std::time::Instant::now() >= deadline => return Err(error),
+                Err(_) => std::thread::sleep(LOCK_RETRY),
+            }
+        }
+    }
+
     pub fn lock_mcp_session(&self, id: &str) -> Result<File> {
         let id = Uuid::parse_str(id).context("invalid session id")?;
         let locks = self.root.join("mcp-sessions");
@@ -466,6 +481,9 @@ impl Store {
         Ok(())
     }
 }
+
+/// How often [`Store::lock_session_within`] tries again.
+const LOCK_RETRY: std::time::Duration = std::time::Duration::from_millis(20);
 
 #[cfg(test)]
 mod tests {
