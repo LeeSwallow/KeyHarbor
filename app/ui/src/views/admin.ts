@@ -7,7 +7,8 @@ import { esc } from "../html.js";
 import { domainWord, effectWord, resourceWord } from "../words.js";
 import { badge, btn, card, empty, heading } from "./parts.js";
 
-const RESOURCES = ["item", "domain", "session", "create_session", "raw_cdp"];
+/// What a rule can be about: every Rust `Resource` (test/vocabulary.test.ts, J-175).
+export const RESOURCES = ["item", "domain", "session", "create_session", "raw_cdp", "browser"];
 
 /// `* → 모든 …`, a domain in words, anything else as typed.
 const target = (r: Rule) => (r.target === "*" ? "모두" : r.resource === "domain" ? domainWord(r.target) : r.target);
@@ -29,7 +30,7 @@ export function policies(rules: Rule[]): string {
     <form class="rule-form" data-rule>
       <label class="kh-field"><span class="kh-label">에이전트</span><input class="kh-input" name="agent" placeholder="* 모두" autocomplete="off" spellcheck="false"></label>
       <label class="kh-field"><span class="kh-label">대상 종류</span><select class="kh-input" name="resource">${options(RESOURCES, resourceWord)}</select></label>
-      <label class="kh-field"><span class="kh-label">대상</span><input class="kh-input" name="target" placeholder="* 모두 · 항목 이름 · payment" autocomplete="off" spellcheck="false"></label>
+      <label class="kh-field"><span class="kh-label">대상</span><input class="kh-input" name="target" placeholder="* 모두 · 항목 이름 · payment · chrome" autocomplete="off" spellcheck="false"></label>
       <label class="kh-field"><span class="kh-label">효과</span><select class="kh-input" name="effect">${options(["deny", "allow"], effectWord)}</select></label>
       <button class="kh-btn primary" type="submit">규칙 추가</button>
     </form>`;

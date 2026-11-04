@@ -5,6 +5,7 @@ use keyharbor_app::{
     Ctx, KeyStores, SystemClock,
     auth::{AuthScope, Authenticator, NoneAuth, Refused},
     commands::{self, ChangeForm, NewItemForm},
+    window::{MainWindow, open_main_window},
 };
 use keyharbor_core::{ItemSource, ItemStatus, NewItem, Vault, request};
 use keyharbor_domain::{
@@ -202,6 +203,72 @@ fn a_refused_challenge_stops_every_protected_command_before_it_does_anything() {
         .find(|s| s.key == "audit_enabled")
         .unwrap();
     assert_eq!(audit.value, "true");
+}
+
+/// Refuses the first challenge, then lets the person through.
+#[derive(Default)]
+struct RefuseFirst(Mutex<usize>);
+impl Authenticator for RefuseFirst {
+    fn id(&self) -> &'static str {
+        "refuse-first"
+    }
+    fn challenge(&self, scope: AuthScope) -> Result<(), Refused> {
+        let mut asked = self.0.lock().unwrap();
+        *asked += 1;
+        if *asked == 1 {
+            Err(Refused(scope))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// A main window that remembers what was done to it.
+#[derive(Default)]
+struct Window(Mutex<Vec<&'static str>>);
+impl MainWindow for Window {
+    fn show(&self) -> anyhow::Result<()> {
+        self.0.lock().unwrap().push("show");
+        Ok(())
+    }
+    fn focus(&self) -> anyhow::Result<()> {
+        self.0.lock().unwrap().push("focus");
+        Ok(())
+    }
+}
+
+#[test]
+fn a_refused_open_at_launch_leaves_the_window_hidden_and_the_menu_bar_can_ask_again() {
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path(), Arc::new(RefuseFirst::default()), Arc::default());
+    let window = Window::default();
+
+    // At launch: refused, so the window stays hidden and nothing fails the app.
+    refused_for(open_main_window(&c, &window), AuthScope::OpenApp);
+    assert!(
+        window.0.lock().unwrap().is_empty(),
+        "the window stays hidden"
+    );
+
+    // The menu bar's "열기" takes the same path and asks again.
+    open_main_window(&c, &window).unwrap();
+    assert_eq!(*window.0.lock().unwrap(), ["show", "focus"]);
+}
+
+#[test]
+fn a_window_never_shows_while_every_open_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let auth = Arc::new(RefuseAll::default());
+    let c = ctx(tmp.path(), auth.clone(), Arc::default());
+    let window = Window::default();
+    for _ in 0..2 {
+        refused_for(open_main_window(&c, &window), AuthScope::OpenApp);
+    }
+    assert!(window.0.lock().unwrap().is_empty());
+    assert_eq!(
+        *auth.0.lock().unwrap(),
+        [AuthScope::OpenApp, AuthScope::OpenApp]
+    );
 }
 
 #[test]
