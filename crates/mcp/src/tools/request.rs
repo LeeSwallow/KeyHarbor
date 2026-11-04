@@ -21,11 +21,12 @@ use serde_json::{Value, json};
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct RequestArgs {
-    /// login, secret, env, card, identity or address.
+    /// login, secret, env, card, identity, address or credential.
     kind: String,
     /// Name for the new item (1–64 letters, digits, - or _).
     name: String,
     /// Why you need it, shown to the user (at most 500 characters). Never put a secret here.
+    /// For a credential (fields the user names, e.g. a bank's second password) say which.
     reason: String,
     /// Site origin it is for, without a path, e.g. https://shop.example.
     origin: Option<String>,

@@ -98,6 +98,18 @@ pub(super) fn check_fields(
     Ok(())
 }
 
+/// The vault, opened with `open`, or `None` while none has been made. Tells from the store
+/// alone, so the key store is not touched (no keychain prompt) when there is no vault.
+pub fn open_existing(
+    store: &dyn VaultStore,
+    open: impl FnOnce() -> Result<Vault>,
+) -> Result<Option<Vault>> {
+    if store.vault_get()?.is_none() {
+        return Ok(None);
+    }
+    open().map(Some)
+}
+
 pub(super) fn sorted_origins(origins: &[Origin]) -> Vec<String> {
     let mut out: Vec<String> = origins.iter().map(|o| o.as_str().to_owned()).collect();
     out.sort();
@@ -124,6 +136,22 @@ impl Vault {
         self.store
             .item_get(name.as_str())?
             .context("item not found")
+    }
+}
+
+#[cfg(test)]
+mod open_existing_tests {
+    use super::open_existing;
+    use crate::tests::{env, init, open_store, reopen};
+
+    #[test]
+    fn no_vault_is_none_without_opening_and_a_made_one_opens() {
+        let e = env();
+        let none = open_existing(&open_store(&e.data), || unreachable!()).unwrap();
+        assert!(none.is_none());
+        init(&e);
+        let some = open_existing(&open_store(&e.data), || reopen(&e).map(|v| v.0)).unwrap();
+        assert!(some.is_some());
     }
 }
 
@@ -181,19 +209,26 @@ mod custom_field_tests {
     }
 
     #[test]
-    fn login_still_rejects_an_unknown_field() {
+    fn a_login_takes_a_custom_field_and_env_still_takes_only_variable_names() {
         let e = env();
         let vault = init(&e);
-        let err = vault
+        vault
             .add(item(
                 ItemKind::Login,
-                &[("password", "pw-1234"), ("school", "x")],
+                &[
+                    ("password", "pw-1234-long"),
+                    ("second_password", "2nd-pw-9876"),
+                ],
             ))
-            .unwrap_err();
+            .unwrap();
         assert!(
-            err.to_string()
-                .contains("field school is not part of a login item"),
-            "{err}"
+            vault.list().unwrap()[0]
+                .fields
+                .contains(&"second_password".to_owned())
         );
+        let err = vault
+            .add(item(ItemKind::Env, &[("school", "x")]))
+            .unwrap_err();
+        assert!(err.to_string().contains("environment variable"), "{err}");
     }
 }

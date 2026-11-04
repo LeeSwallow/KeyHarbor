@@ -4,6 +4,7 @@
 import { closePalette, edit, fail, go, openPalette, query, search } from "../state.js";
 import { droppedUrl } from "../drop.js";
 import { handOffWord } from "../words.js";
+import { TEMPLATE_KIND } from "../views/editor.js";
 import { type Actions, dispatch } from "./actions.js";
 import { type Forms, formKind } from "./forms.js";
 import { type Win, load, matches, runCommand } from "./window.js";
@@ -78,12 +79,15 @@ export function listenKeys(w: Win): void {
   });
 }
 
-/// The new item form's kind picker.
+/// The new item form's kind picker, and a credential's template picker (R-48).
 export function listenPicks(w: Win): void {
   w.root.addEventListener("change", (event) => {
     const picker = event.target;
-    if (picker instanceof HTMLSelectElement && picker.dataset.action === "pick-kind") {
-      w.set(edit(w.state, { mode: "new", kind: picker.value }));
+    if (!(picker instanceof HTMLSelectElement)) return;
+    if (picker.dataset.action === "pick-kind") w.set(edit(w.state, { mode: "new", kind: picker.value }));
+    if (picker.dataset.action === "pick-template") {
+      const picked = picker.value ? { template: picker.value } : {};
+      w.set(edit(w.state, { mode: "new", kind: TEMPLATE_KIND, ...picked }));
     }
   });
 }

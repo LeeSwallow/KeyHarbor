@@ -4,6 +4,14 @@
 //! (ADR-0017, 03 §3.12.2). A weak boundary like the terminal check: a process of the same
 //! user that runs a real browser with a look-alike extension is not stopped (N1).
 
+use crate::compose::App;
+
+/// Whether the host may give what only a browser gets: the bridge and `filled`. Test builds
+/// with a fixed Touch ID answer trust any caller ([`App::trusts_any_caller`]).
+pub(super) fn is_trusted(app: &App) -> bool {
+    app.trusts_any_caller() || parent_path().is_some_and(|path| is_browser(&path))
+}
+
 /// The browsers whose app bundles may start the host, by bundle name.
 const BROWSERS: &[&str] = &[
     "Google Chrome.app",
@@ -21,7 +29,7 @@ const BROWSERS: &[&str] = &[
 
 /// Whether `path` is the executable inside one of [`BROWSERS`]
 /// (`…/<Browser>.app/Contents/MacOS/<file>`).
-pub(super) fn is_browser(path: &str) -> bool {
+fn is_browser(path: &str) -> bool {
     let mut parts = path.rsplit('/');
     let (Some(file), Some("MacOS"), Some("Contents"), Some(bundle)) =
         (parts.next(), parts.next(), parts.next(), parts.next())
@@ -33,7 +41,7 @@ pub(super) fn is_browser(path: &str) -> bool {
 
 /// The executable path of this process's parent.
 #[cfg(target_os = "macos")]
-pub(super) fn parent_path() -> Option<String> {
+fn parent_path() -> Option<String> {
     let mut buffer = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
     // SAFETY: getppid has no preconditions; proc_pidpath writes at most `buffer.len()` bytes
     // into the buffer we own and returns how many it wrote.
@@ -50,7 +58,7 @@ pub(super) fn parent_path() -> Option<String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub(super) fn parent_path() -> Option<String> {
+fn parent_path() -> Option<String> {
     None
 }
 

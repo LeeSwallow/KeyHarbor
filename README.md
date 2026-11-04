@@ -161,6 +161,10 @@ sequenceDiagram
 ```sh
 keyharbor vault list --prefix myapp/ --tag prod          # 이름·종류·사이트만 (값은 보이지 않음)
 keyharbor vault import-env myapp ./.env                  # .env 변수 묶음
+keyharbor vault template add bank --field second_password --field member_no --plain member_no
+keyharbor vault add hana --kind credential --template bank --origin https://bank.example
+                                                         # 틀의 비밀 필드는 숨은 입력으로, 일반 필드는 목록에 보임
+keyharbor vault edit github --field recovery_code        # 어떤 항목에든 필드를 직접 붙임 (숨은 입력)
 keyharbor vault mv github work/github                    # 이름 바꾸기·옮기기
 keyharbor vault export ~/keyharbor-backup.age            # age 형식 암호화 백업
 keyharbor run --env myapp -- npm test                    # 자식에만 변수 주입, 출력의 값은 가려짐

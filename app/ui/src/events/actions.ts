@@ -89,6 +89,9 @@ export function windowActions(w: Win): Actions {
       const rows = button.closest("fieldset")?.querySelector(".custom-rows");
       rows?.insertAdjacentHTML("beforeend", customRow(rows.children.length));
     },
+    "remove-template": ({ name }) => {
+      if (name) void guard(() => api.removeTemplate(name).then(reload));
+    },
     "remove-item": ({ name }) => {
       if (name) items.start((s) => removing(s, name));
     },

@@ -1,7 +1,8 @@
 //! `keyharbor vault …`. Never prints secret values; secrets arrive only by hidden prompt or stdin JSON.
 //! The commands are here and each goes to one handler: adding and changing items in [`items`],
-//! export and import files in [`files`], key rotation in [`keys`]; reading input is in
-//! [`input`], printing in [`output`].
+//! export and import files in [`files`], key rotation in [`keys`], credential templates in
+//! [`templates`]; reading input is in [`input`], printing in [`output`]. Nine files, one past
+//! the folder line: each is one command group and none groups with another.
 
 mod drafts;
 mod files;
@@ -10,6 +11,7 @@ mod items;
 mod keys;
 mod output;
 mod requests;
+mod templates;
 
 use crate::{args, compose::App};
 use anyhow::Result;
@@ -77,6 +79,9 @@ pub enum VaultCmd {
     Request(requests::RequestCmd),
     #[command(flatten)]
     Draft(drafts::DraftCmd),
+    /// Credential templates: the fields a new credential item starts with
+    #[command(subcommand)]
+    Template(templates::TemplateCmd),
 }
 
 /// `--kind`: the names in the kind registry (`KINDS`).
@@ -116,6 +121,7 @@ pub fn run(app: &App, command: VaultCmd) -> Result<()> {
         VaultCmd::List { json, prefix, tag } => list(app, json, prefix, tag.as_deref()),
         VaultCmd::Request(command) => requests::run(app, command),
         VaultCmd::Draft(command) => drafts::run(app, command),
+        VaultCmd::Template(command) => templates::run(app, command),
         VaultCmd::ImportEnv { name, path } => files::import_env(app, &name, &path),
         VaultCmd::ImportChrome { path } => files::import_chrome(app, &path),
         VaultCmd::Export {

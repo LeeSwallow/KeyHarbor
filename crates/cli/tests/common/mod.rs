@@ -353,6 +353,17 @@ pub fn on_terminal(
     args: &[&str],
     answer: &str,
 ) -> Terminal {
+    on_terminal_answering(data, keys, args, &[("Type yes", answer)])
+}
+
+/// [`on_terminal`], typing each answer once the output shows its prompt, in order (a hidden
+/// prompt for a field, `second_password (empty to skip): `, then a confirmation).
+pub fn on_terminal_answering(
+    data: &std::path::Path,
+    keys: &std::path::Path,
+    args: &[&str],
+    answers: &[(&str, &str)],
+) -> Terminal {
     use std::{
         io::Read,
         process::{Command, Stdio},
@@ -388,11 +399,15 @@ pub fn on_terminal(
     });
     let mut stdin = child.stdin.take().unwrap();
     let deadline = Instant::now() + Duration::from_secs(20);
-    loop {
-        let asked = String::from_utf8_lossy(&output.lock().unwrap()).contains("Type yes");
-        if asked {
+    let (mut next, mut seen) = (0, 0);
+    while next < answers.len() {
+        let (prompt, answer) = answers[next];
+        let shown = String::from_utf8_lossy(&output.lock().unwrap()).into_owned();
+        if let Some(at) = shown.get(seen..).and_then(|rest| rest.find(prompt)) {
+            seen += at + prompt.len();
             stdin.write_all(format!("{answer}\n").as_bytes()).unwrap();
-            break;
+            next += 1;
+            continue;
         }
         if child.try_wait().unwrap().is_some() || Instant::now() > deadline {
             break;

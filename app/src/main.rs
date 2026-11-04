@@ -10,7 +10,8 @@ use keyharbor_app::{
     auth::NoneAuth,
     commands::{
         self, AuditDto, ChangeForm, HandoffDto, InboxDto, ItemDto, KindForm, NewItemForm,
-        OverviewDto, RequestForm, RuleDto, RuleForm, SessionDto, SettingDto, SiteHandOff, message,
+        OverviewDto, RequestForm, RuleDto, RuleForm, SessionDto, SettingDto, SiteHandOff,
+        TemplateDto, message,
     },
     confirm::Outcome,
 };
@@ -160,6 +161,18 @@ fn recover_session(ctx: State<'_, Ctx>, id: String, browser_closed: bool) -> Rep
 }
 
 #[tauri::command]
+fn templates(ctx: State<'_, Ctx>) -> Reply<Vec<TemplateDto>> {
+    commands::templates(&ctx).map_err(message)
+}
+#[tauri::command]
+fn add_template(ctx: State<'_, Ctx>, form: TemplateDto) -> Reply<()> {
+    commands::add_template(&ctx, form).map_err(message)
+}
+#[tauri::command]
+fn remove_template(ctx: State<'_, Ctx>, name: String) -> Reply<()> {
+    commands::remove_template(&ctx, &name).map_err(message)
+}
+#[tauri::command]
 fn kinds() -> Vec<KindForm> {
     commands::kinds()
 }
@@ -264,7 +277,10 @@ fn main() -> anyhow::Result<()> {
             add_item,
             edit_item,
             remove_item,
-            rename_item
+            rename_item,
+            templates,
+            add_template,
+            remove_template
         ])
         .run(tauri::generate_context!())?;
     Ok(())

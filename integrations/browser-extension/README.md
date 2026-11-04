@@ -68,7 +68,15 @@ flowchart LR
 
 ## 프로토콜 v1 (Native Messaging)
 
-host 이름은 `dev.keyharbor.host`. 요청 하나에 응답 하나.
+host 이름은 `dev.keyharbor.host`. 요청 하나에 응답 하나. 확장 쪽 정본은 `adapters/wire/protocol.ts`, host 쪽 정본은 `crates/cli/src/browser_cmd/host/wire.rs`(`HostRequestWire`·`HostReplyWire`·`ExtensionMessageWire`, `type`으로 고른다)다. 두 파일 밖에서는 메시지를 손으로 만들거나 읽지 않는다.
+
+| 방향 | `type` |
+|---|---|
+| 확장 → host (요청) | `receive_site` · `autofill_list` · `autofill_fill` · `save_login` · `bridge` |
+| host → 확장 (응답) | `received` · `logins` · `filled` · `known` · `saved` · `error {code}` · `bridge_ready` |
+| bridge가 열려 있는 동안 | host → 확장 `request_site {id, session, origin}`, 확장 → host `request_answer {id, outcome, cookies?}` (다른 `type`은 무시) |
+
+응답 JSON의 키는 알파벳 순서로 나간다(`{"code":…,"type":"error","v":1}`). 예전에 `serde_json::Value`로 만들던 바이트를 그대로 지키려는 것이고(J-250), 확장은 키 순서에 기대지 않는다. 오류 코드는 `bad_request`·`no_session`·`not_running`·`refused`·`not_confirmed`·`not_browser`·`no_vault`·`failed`다.
 
 ```json
 { "v": 1, "type": "receive_site", "origin": "https://github.com",
@@ -84,7 +92,7 @@ host 이름은 `dev.keyharbor.host`. 요청 하나에 응답 하나.
 | 요청 | 응답 | 값 |
 |---|---|---|
 | `{"v":1,"type":"autofill_list","origin":"https://github.com"}` | `{"type":"logins","items":["github"]}` | 없음 |
-| `{"v":1,"type":"autofill_fill","origin":…,"item":"github"}` | Touch ID 뒤 `{"type":"filled","username":…,"password":…}` | **있음**: 평문이 나가는 유일한 답. 부모가 브라우저가 아니면 `not_browser`, 확인하지 않으면 `not_confirmed`, 그 origin의 로그인이 아니면 `refused` |
+| `{"v":1,"type":"autofill_fill","origin":…,"item":"github"}` | Touch ID 뒤 `{"type":"filled","username":…,"password":…}` | **있음**: 평문이 나가는 유일한 답. 부모가 브라우저가 아니면 `not_browser`, 확인하지 않거나 확인할 방법이 없으면 `not_confirmed`, 그 origin의 로그인이 아니면 `refused`(Touch ID를 묻기 전에). 어느 거부인지는 guard `autofill::fill`이 `AutofillRefusal`로 정하고 host는 코드로 옮기기만 한다 |
 | `{"v":1,"type":"save_login","origin":…,"username":…,"password":…}` | `{"type":"saved","item":"github~draft-1"}` 또는 `{"type":"known","item":"github"}` | 응답에는 없음 |
 
 `session`은 Rust `SessionName::parse`(`crates/domain`)와 같은 규칙이다: 앞뒤 Unicode 공백을 지우고, 1–120 UTF-8 바이트, 제어 문자(Cc) 없음. 판정 기준은 Rust이고 확장은 같은 규칙으로 미리 검사한다(`domain/session-name.ts`). 두 쪽 테스트가 저장소 루트의 [`contracts/session-names.json`](../../contracts/session-names.json)을 함께 읽는다(`contracts/`: 언어 사이의 계약 fixture). `autofill_fill`의 `item`도 같은 방식이다: Rust `ItemName::parse_new`가 판정하고, 확장은 같은 규칙으로 미리 검사하며(`domain/item-name.ts`), 두 쪽 테스트가 [`contracts/item-names.json`](../../contracts/item-names.json)을 읽는다.
