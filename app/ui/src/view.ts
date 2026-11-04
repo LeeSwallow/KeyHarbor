@@ -1,7 +1,7 @@
 // State → HTML. Every text goes through `esc`; a value appears only for the field in
 // `state.revealed`. Buttons carry `data-action` for the one click handler in main.ts.
 
-import type { AuditEvent, Browsers, Item, Session } from "./api.js";
+import type { AuditEvent, Browsers, Item, Session, ValueWarning } from "./api.js";
 import { SCREENS, type State, type View, filterItems } from "./state.js";
 import { dialog, policies } from "./views/admin.js";
 import { settings } from "./views/settings.js";
@@ -9,7 +9,9 @@ import { editor } from "./views/editor.js";
 import { form } from "./views/form.js";
 import { palette, paletteCommands } from "./views/palette.js";
 import { badge, btn, card, empty, glyph, heading, icon, screenIcon } from "./views/parts.js";
-import { auditWord, authWord, fieldWord, kindWord, lockWord, sessionWord, siteWord, sourceWord } from "./words.js";
+import {
+  PLAIN_HINT, auditWord, authWord, fieldWord, kindWord, lockWord, sessionWord, siteWord, sourceWord, valueWarningWord,
+} from "./words.js";
 
 import { esc } from "./html.js";
 
@@ -222,9 +224,19 @@ function audit(s: State): string {
   return `${heading("audit", `최근 ${AUDIT_SHOWN}개. 값은 기록하지 않습니다.`)}${s.audit.map(event).join("") || empty("기록이 없습니다")}`;
 }
 
+/// The warnings for values just saved: item, field and reason only (J-230).
+function valueWarnings(warnings: ValueWarning[]): string {
+  if (warnings.length === 0) return "";
+  const lines = warnings
+    .map((w) => `<li><strong>${esc(w.item)} · ${esc(fieldWord(w.field))}</strong> ${esc(valueWarningWord(w.reason))}</li>`)
+    .join("");
+  return `<div class="kh-toast warn" role="status"><span class="lead">${icon("triangle-alert")}</span><div class="msg"><ul>${lines}</ul><p class="kh-help">${esc(PLAIN_HINT)}</p></div></div>`;
+}
+
 export function render(s: State): string {
   const error = s.error ? `<div class="kh-toast" role="alert">${esc(s.error)}</div>` : "";
   const notice = s.notice ? `<div class="kh-toast ok" role="status">${esc(s.notice)}</div>` : "";
+  const warnings = valueWarnings(s.warnings);
   const undoBar = (what: string, action: string) =>
     `<div class="kh-toast undo" role="status"><span class="msg">${esc(what)}을(를) 지웠습니다</span><button type="button" class="act" data-action="${action}">실행 취소</button></div>`;
   const undo = s.removing
@@ -233,7 +245,11 @@ export function render(s: State): string {
       ? undoBar(`${s.removingSession.name} 세션`, "undo-remove-session")
       : "";
   if (s.alone) {
-    const body = s.form ? form(s.form) : `<div class="kh-empty">이 요청은 이미 끝났습니다</div>`;
+    const body = s.form
+      ? form(s.form)
+      : warnings
+        ? `${warnings}${btn("닫기", 'data-action="close-window"', "primary")}`
+        : `<div class="kh-empty">이 요청은 이미 끝났습니다</div>`;
     return `<section class="detail alone">${error}${body}</section>`;
   }
   const [list, main] =
@@ -244,5 +260,5 @@ export function render(s: State): string {
           policies: (x: State) => policies(x.policies),
           settings: (x: State) => settings(x.settings, x.browsers, x.overview?.auth ?? null),
         }[s.view](s)];
-  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${notice}${main}</section>${undo}${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
+  return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${notice}${warnings}${main}</section>${undo}${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
 }

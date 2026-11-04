@@ -1,5 +1,6 @@
 //! The window's lists of stored names come from Rust (J-175): `ui/test/vocabulary.json` is what
-//! `Resource::ALL`, `AuditKind::ALL` and `policy::ANY` say, and the UI tests check the window
+//! `Resource::ALL`, `AuditKind::ALL`, `CommonValueReason::ALL` and `policy::ANY` say, and the UI
+//! tests check the window
 //! against it. A
 //! name added in Rust fails here until the file has it, and then fails the UI tests until the
 //! window offers it and has a word for it.
@@ -7,6 +8,7 @@
 use keyharbor_domain::{
     audit::AuditKind,
     policy::{ANY, Resource},
+    vault::CommonValueReason,
 };
 use serde_json::{Value, json};
 use std::path::Path;
@@ -18,6 +20,7 @@ fn expected() -> Value {
         "any": ANY,
         "resources": Resource::ALL.map(Resource::as_str),
         "audit_kinds": AuditKind::ALL.map(AuditKind::as_str),
+        "value_warnings": CommonValueReason::ALL.map(CommonValueReason::as_str),
     })
 }
 

@@ -212,7 +212,8 @@ fn the_secure_form_shows_the_request_and_stores_what_the_person_typed() {
     let bad = std::collections::BTreeMap::from([("nope".to_owned(), "x".to_owned())]);
     assert!(commands::fulfill_request(&c, &id, bad).is_err());
     let typed = std::collections::BTreeMap::from([("number".to_owned(), "4111-SECRET".to_owned())]);
-    assert_eq!(commands::fulfill_request(&c, &id, typed).unwrap(), "visa");
+    let saved = commands::fulfill_request(&c, &id, typed).unwrap();
+    assert_eq!((saved.name.as_str(), saved.warnings.len()), ("visa", 0));
     let items = serde_json::to_string(&commands::items(&c).unwrap()).unwrap();
     assert!(items.contains("\"visa\"") && !items.contains("4111-SECRET"));
     assert!(commands::inbox(&c).unwrap().requests.is_empty());
@@ -359,7 +360,7 @@ fn items_are_added_changed_and_removed_through_the_guard() {
         values: [("username".to_owned(), "me".to_owned())].into(),
         generate_password: true,
     };
-    assert_eq!(commands::add_item(&c, form).unwrap(), "shop");
+    assert_eq!(commands::add_item(&c, form).unwrap().name, "shop");
     let generated = commands::reveal(&c, "shop", "password").unwrap();
     assert_eq!(generated.chars().count(), 20);
     let bad = NewItemForm {
@@ -379,7 +380,9 @@ fn items_are_added_changed_and_removed_through_the_guard() {
         origins: None,
     };
     assert_eq!(
-        commands::edit_item(&c, "shop", new_value, false).unwrap(),
+        commands::edit_item(&c, "shop", new_value, false)
+            .unwrap()
+            .outcome,
         Outcome::Done
     );
     assert_eq!(
@@ -394,7 +397,9 @@ fn items_are_added_changed_and_removed_through_the_guard() {
         ]),
     };
     assert!(matches!(
-        commands::edit_item(&c, "shop", more_sites(), false).unwrap(),
+        commands::edit_item(&c, "shop", more_sites(), false)
+            .unwrap()
+            .outcome,
         Outcome::Ask { .. }
     ));
     let item = commands::items(&c)
@@ -408,7 +413,9 @@ fn items_are_added_changed_and_removed_through_the_guard() {
         "nothing changed before the person confirmed"
     );
     assert_eq!(
-        commands::edit_item(&c, "shop", more_sites(), true).unwrap(),
+        commands::edit_item(&c, "shop", more_sites(), true)
+            .unwrap()
+            .outcome,
         Outcome::Done
     );
 
@@ -644,4 +651,74 @@ fn settings_say_which_change_asks_first() {
     assert_eq!(weakening("notify_denials"), &WeakeningDto::Never);
     let json = serde_json::to_string(weakening("clipboard_clear_seconds")).unwrap();
     assert_eq!(json, r#"{"when":"above","than":"30"}"#);
+}
+
+#[test]
+fn a_common_secret_value_comes_back_as_a_warning_without_the_value() {
+    use keyharbor_app::commands::{ChangeForm, NewItemForm, ValueWarningDto};
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    init_vault(tmp.path());
+    let form = NewItemForm {
+        name: "me".into(),
+        kind: "identity".into(),
+        origins: vec![],
+        values: [
+            ("full_name".to_owned(), "Hong".to_owned()),
+            ("military_service".to_owned(), "해당없음".to_owned()),
+            (
+                "veterans".to_owned(),
+                "보훈 대상 아님 (확인서 2024)".to_owned(),
+            ),
+        ]
+        .into(),
+        generate_password: false,
+    };
+    let saved = commands::add_item(&c, form).unwrap();
+    assert_eq!(
+        saved.warnings,
+        [ValueWarningDto {
+            item: "me".into(),
+            field: "military_service".into(),
+            reason: "common_word",
+        }]
+    );
+    let shown = serde_json::to_string(&saved).unwrap();
+    assert!(
+        !shown.contains("해당없음") && !shown.contains("Hong"),
+        "{shown}"
+    );
+
+    let change = ChangeForm {
+        values: [("note".to_owned(), "N/A".to_owned())].into(),
+        origins: None,
+    };
+    let edited = commands::edit_item(&c, "me", change, false).unwrap();
+    let shown = serde_json::to_string(&edited).unwrap();
+    assert!(shown.contains(r#""outcome":"done""#), "{shown}");
+    assert!(shown.contains(r#""reason":"too_short_to_mask""#), "{shown}");
+    assert!(!shown.contains("N/A"), "{shown}");
+}
+
+#[test]
+fn an_answer_with_a_common_secret_value_warns_without_the_value() {
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    init_vault(tmp.path());
+    let id = ask_card(tmp.path());
+    let typed = std::collections::BTreeMap::from([
+        ("number".to_owned(), "4111-SECRET".to_owned()),
+        ("cvc".to_owned(), "0000".to_owned()),
+    ]);
+    let saved = commands::fulfill_request(&c, &id, typed).unwrap();
+    let shown = serde_json::to_string(&saved).unwrap();
+    assert_eq!(saved.warnings.len(), 1, "{shown}");
+    assert!(
+        shown.contains(r#""field":"cvc""#) && shown.contains("too_simple"),
+        "{shown}"
+    );
+    assert!(
+        !shown.contains("0000") && !shown.contains("4111-SECRET"),
+        "{shown}"
+    );
 }

@@ -66,12 +66,15 @@ fn the_user_answers_a_request_and_the_agent_gets_placeholders_only() {
     );
 
     let answer = r#"{"number":"4111111111111111","cvc":"987"}"#;
-    let fulfilled = ok(cli(
-        &data,
-        &keys,
-        &["vault", "fulfill", &id, "--stdin"],
-        answer,
-    ));
+    let out = cli(&data, &keys, &["vault", "fulfill", &id, "--stdin"], answer);
+    // A three-digit code is never masked: the answer warns, naming the field only (J-230).
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        stderr.contains("my-visa.cvc") && !stderr.contains("987"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("my-visa.number"), "{stderr}");
+    let fulfilled = ok(out);
     assert_eq!(fulfilled.trim_end(), format!("{id}\tfulfilled\tmy-visa"));
     let (error, text) = mcp.call(
         "vault_wait",
