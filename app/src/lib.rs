@@ -7,4 +7,4 @@ pub mod commands;
 pub mod confirm;
 mod context;
 
-pub use context::{Ctx, KeyStores, SystemClock};
+pub use context::{Ctx, KeyStores, SystemClock, data_dir};

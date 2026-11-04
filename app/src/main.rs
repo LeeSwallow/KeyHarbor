@@ -189,17 +189,6 @@ fn rename_item(ctx: State<'_, Ctx>, from: String, to: String) -> Reply<String> {
     commands::rename_item(&ctx, &from, &to).map_err(message)
 }
 
-/// The data folder the CLI uses: `KEYHARBOR_HOME`, else the macOS application data folder.
-fn data_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("KEYHARBOR_HOME") {
-        return PathBuf::from(dir);
-    }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    home.join("Library/Application Support/KeyHarbor")
-}
-
 /// The CLI that runs supervisors: `KEYHARBOR_CLI`, else `Contents/Helpers/keyharbor` beside
 /// this binary in the bundle (R-45), else `keyharbor` on PATH.
 fn cli_binary() -> PathBuf {
@@ -215,11 +204,11 @@ fn cli_binary() -> PathBuf {
     }
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let keys: keyharbor_app::KeyStores = Arc::new(|| Box::new(KeychainKeyStore));
     let clipboard = Arc::new(keyharbor_app::clipboard::MacClipboard);
     let ctx = Ctx::new(
-        data_dir(),
+        keyharbor_app::data_dir(|key| std::env::var_os(key))?,
         keys,
         Arc::new(SystemClock),
         cli_binary(),
@@ -281,6 +270,6 @@ fn main() {
             remove_item,
             rename_item
         ])
-        .run(tauri::generate_context!())
-        .expect("KeyHarbor app failed to start");
+        .run(tauri::generate_context!())?;
+    Ok(())
 }

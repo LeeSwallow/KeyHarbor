@@ -22,6 +22,8 @@ cargo test                                         # 명령 계층, 창 없이
 KEYHARBOR_HOME=/tmp/kh cargo run                   # 개발용 창 (기본은 ~/Library/Application Support/KeyHarbor)
 ```
 
+데이터 폴더는 `KEYHARBOR_HOME`, 없으면 `$HOME/Library/Application Support/KeyHarbor`입니다. 둘 다 없거나 `HOME`이 절대 경로가 아니면 앱은 상대 경로에 금고를 만들지 않고 오류로 끝납니다([J-176](../docs/design/06-requirements-log.md)).
+
 세션을 열고 닫는 감독자는 CLI 바이너리가 띄웁니다: `KEYHARBOR_CLI`, 번들 안 `Contents/Helpers/keyharbor`, PATH 순으로 찾습니다.
 
 `cargo tauri build`는 UI와 CLI 릴리스 빌드를 먼저 하고(`beforeBuildCommand`), CLI를 `KeyHarbor.app/Contents/Helpers/keyharbor`에 넣습니다(R-45). DMG는 `KeyHarbor.app`과 `Applications` 바로가기를 담아 끌어다 놓아 설치합니다. 지금 빌드는 서명·공증하지 않으므로 처음 열 때 macOS가 확인을 묻습니다. 태그를 push하면 릴리스 워크플로의 `app` job이 같은 빌드로 `keyharbor-app-<버전>-arm64.dmg`를 만들어 Release에 올립니다(Apple silicon 전용).
