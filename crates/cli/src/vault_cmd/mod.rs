@@ -89,10 +89,9 @@ fn domain_parser() -> impl TypedValueParser<Value = Domain> {
     args::choice(Domain::ALL.map(Domain::as_str), Domain::parse)
 }
 
-/// `--status`. Core keeps no list of statuses yet, so the order shown is written here (J-185).
+/// `--status`: the statuses in the order `ItemStatus::ALL` shows them (J-185, J-260).
 fn status_parser() -> impl TypedValueParser<Value = ItemStatus> {
-    let shown = [ItemStatus::Active, ItemStatus::Draft, ItemStatus::Discarded];
-    args::choice(shown.map(ItemStatus::as_str), ItemStatus::parse)
+    args::choice(ItemStatus::ALL.map(ItemStatus::as_str), ItemStatus::parse)
 }
 
 #[derive(Clone, Copy, ValueEnum)]

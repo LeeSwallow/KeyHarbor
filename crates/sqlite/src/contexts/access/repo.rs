@@ -6,12 +6,13 @@ use super::{
     schema::{origin_uses, policy_rules},
 };
 use crate::SqliteStore;
-use anyhow::Result;
 use diesel::{prelude::*, upsert::excluded};
 use keyharbor_domain::{
     policy::{Resource, Rule},
-    ports::PolicyStore,
+    ports::{PolicyStore, StoreError},
 };
+
+type Result<T, E = StoreError> = std::result::Result<T, E>;
 
 impl PolicyStore for SqliteStore {
     fn policy_rules(&self) -> Result<Vec<Rule>> {

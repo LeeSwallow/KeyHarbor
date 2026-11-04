@@ -21,6 +21,6 @@ pub use keys::KeyStore;
 pub use runtime::SessionRuntime;
 pub use store::{
     AUDIT_ENABLED, AuditStore, DomainKeyRow, FieldRow, GrantStore, ItemRow, KeyGuard, PolicyStore,
-    RotationGuard, RotationLock, SessionRow, SessionStore, SettingsStore, SiteStore, Store,
-    StoreFactory, VaultRequestStore, VaultRow, VaultStore,
+    RotationGuard, RotationLock, SessionRow, SessionStore, SettingsStore, SiteStore, Staleness,
+    Store, StoreError, StoreFactory, VaultRequestStore, VaultRow, VaultStore,
 };

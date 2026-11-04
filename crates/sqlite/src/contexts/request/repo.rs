@@ -1,19 +1,20 @@
 //! `VaultRequestStore` for the request context.
 
 use super::{mappers, models::RequestModel, schema::vault_requests};
-use crate::SqliteStore;
-use anyhow::Result;
+use crate::{SqliteStore, error::store_error};
 use diesel::prelude::*;
 use keyharbor_domain::{
     RequestId,
-    ports::VaultRequestStore,
+    ports::{StoreError, VaultRequestStore},
     request::{VaultRequest, VaultRequestStatus},
     vault::ItemName,
 };
 
+type Result<T, E = StoreError> = std::result::Result<T, E>;
+
 impl VaultRequestStore for SqliteStore {
     fn vault_request_add(&self, request: &VaultRequest) -> Result<()> {
-        let model = mappers::model(request)?;
+        let model = mappers::model(request).map_err(store_error)?;
         self.read(|conn| {
             diesel::insert_into(vault_requests::table)
                 .values(&model)

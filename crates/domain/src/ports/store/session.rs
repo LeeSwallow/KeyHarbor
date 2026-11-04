@@ -3,11 +3,14 @@
 //! Every state change is conditional on the session's current generation (compare-and-swap),
 //! so a writer from an older run cannot move a newer one.
 
+use super::StoreError;
 use crate::{
     Generation, HandoffStatus, RequestId, Session, SessionId, SessionName, State,
-    browser_choice::BrowserKind, vault::Description,
+    browser_choice::BrowserKind,
+    vault::{Description, Origin},
 };
-use anyhow::Result;
+
+type Result<T> = std::result::Result<T, StoreError>;
 
 /// A session as stored, with the generation of its current run (if any).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,7 +30,8 @@ pub struct SessionRow {
 }
 
 pub trait SessionStore {
-    /// A stopped session with its description, in one write. Fails on a duplicate name.
+    /// A stopped session with its description, in one write. Fails on a duplicate name
+    /// (`Backend`, with the database's words).
     fn create_described(
         &self,
         name: SessionName,
@@ -68,15 +72,17 @@ pub trait SessionStore {
     fn fail(&self, id: SessionId, generation: Generation, reason: &str) -> Result<bool>;
     fn force_stopped(&self, id: SessionId) -> Result<bool>;
     /// running|awaiting_user → awaiting_user with a new request; an older pending one is superseded.
+    /// `Conflict` if the session is not running under `generation`.
     fn request_handoff(
         &self,
         id: SessionId,
         generation: Generation,
-        origin: Option<&str>,
+        origin: Option<&Origin>,
     ) -> Result<RequestId>;
     /// The request the user is asked to finish, with the claimed origin.
     fn pending_handoff(&self, id: SessionId) -> Result<Option<(RequestId, Option<String>)>>;
-    /// awaiting_user → running, only for the pending request of the current generation.
+    /// awaiting_user → running, only for the pending request of the current generation;
+    /// `Conflict` otherwise.
     fn resume_handoff(
         &self,
         id: SessionId,

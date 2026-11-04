@@ -1,7 +1,9 @@
 //! The usage record. Events never carry a value (02 §2.7.2).
 
+use super::StoreError;
 use crate::audit::{AuditEvent, AuditRecord};
-use anyhow::Result;
+
+type Result<T> = std::result::Result<T, StoreError>;
 
 pub trait AuditStore {
     /// Appends the event unless `audit_enabled` is `false` (`settings::audit_enabled`; then

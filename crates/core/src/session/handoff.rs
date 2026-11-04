@@ -21,8 +21,8 @@ pub fn wait_auth(
     let row = session(store, id)?;
     require_supervisor(runtime, id)?;
     let generation = row.generation.context("session is not running")?;
-    let request = store.request_handoff(id, generation, origin)?;
-    let origin = origin.and_then(|o| Origin::parse(o).ok());
+    let origin = origin.map(Origin::parse).transpose()?;
+    let request = store.request_handoff(id, generation, origin.as_ref())?;
     note_event(
         store,
         AuditEvent::new(
@@ -61,7 +61,7 @@ pub fn find_handoff(
     if !runtime.is_alive(id) {
         return Ok(None);
     }
-    store.pending_handoff(id)
+    Ok(store.pending_handoff(id)?)
 }
 
 pub fn resume(

@@ -2510,13 +2510,13 @@ name = "keyharbor-crypto"
 version = "0.3.1"
 dependencies = [
  "age",
- "anyhow",
  "chacha20poly1305 0.11.0",
  "getrandom 0.4.3",
  "hkdf 0.13.0",
  "hmac 0.13.0",
  "keyharbor-domain",
  "sha2 0.11.1",
+ "thiserror 2.0.21",
  "uuid",
  "zeroize",
 ]
@@ -2527,6 +2527,7 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "serde_json",
+ "thiserror 2.0.21",
  "url",
  "uuid",
  "zeroize",

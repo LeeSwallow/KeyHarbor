@@ -46,7 +46,7 @@ flowchart LR
 
 - CLI와 MCP는 같은 유스케이스를 부르는 두 얼굴이다. 같은 규칙이 CLI와 MCP에 따로 있으면 하나가 틀린 것이다. 둘 다 core·guard를 부르고, 자기 일은 인자 파싱과 출력 모양뿐이다.
 - 네트워크·IPC(MCP stdio, control socket, CDP 파이프, Native Messaging)의 메시지 형식은 어댑터의 wire 타입(`*Wire`, `*Request`, `*Response`)이다. 안쪽 타입에 wire 필드 이름이 보이면 누수다.
-- 어댑터는 이름을 번역만 한다. 판정하지 않고, 오류를 우리 말(`VaultError`, `DenialReason`)로 옮긴다.
+- 어댑터는 이름을 번역만 한다. 판정하지 않고, 오류를 우리 말(`VaultError`, `StoreError`, `DenialReason`)로 옮긴다.
 - 유스케이스는 결과 값을 돌려주고, 출력·로그·사용 기록 그리기는 바깥이 한다.
 
 ## 새 코드를 어디에 둘지
@@ -104,7 +104,7 @@ flowchart TD
 - 매직 넘버에는 이름을 붙인다. **바꿀 여지가 있는 값은 상수로 박지 않고 설정(`settings`)으로 뺀다**: 만료 기본값, 대기 시간, 상한. 고정이면 왜 고정인지 한 줄 남긴다.
 - `if`/`match` 사슬이 종류마다 늘어나면 레지스트리나 trait로 바꾼다.
 - 직접 가진 것만 부른다(Law of Demeter). `a.b().c().d()`는 냄새다.
-- 오류는 `thiserror` enum(안쪽)과 `anyhow`(바이너리 경계)로 나눈다. 오류 메시지에 평문을 넣지 않는다.
+- 오류는 `thiserror` enum(안쪽)과 `anyhow`(바이너리 경계)로 나눈다. 오류 메시지에 평문을 넣지 않는다. 부르는 쪽은 변형으로 판정하고 문구로 판정하지 않는다(`StoreError::Stale`, `ExportError`; `e.to_string().contains(..)` 금지, J-260).
 - `unsafe`는 이유를 `// SAFETY:` 한 줄로 쓰고 가장 바깥(프로세스 시작부)에만 둔다.
 
 ## 폴더와 파일

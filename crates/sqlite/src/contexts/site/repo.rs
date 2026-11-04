@@ -2,9 +2,15 @@
 
 use super::{mappers, models::SiteModel, schema::site_states};
 use crate::SqliteStore;
-use anyhow::Result;
 use diesel::prelude::*;
-use keyharbor_domain::{SessionId, ports::SiteStore, site::SiteRecord, vault::Origin};
+use keyharbor_domain::{
+    SessionId,
+    ports::{SiteStore, StoreError},
+    site::SiteRecord,
+    vault::Origin,
+};
+
+type Result<T, E = StoreError> = std::result::Result<T, E>;
 
 impl SiteStore for SqliteStore {
     fn site_get(&self, session: SessionId, origin: &Origin) -> Result<Option<SiteRecord>> {

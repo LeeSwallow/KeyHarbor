@@ -7,6 +7,7 @@
 
 mod connection;
 mod contexts;
+mod error;
 mod rotation_lock;
 
 use anyhow::Result;
@@ -17,7 +18,7 @@ use std::{
 };
 
 pub use keyharbor_domain::ports::AUDIT_ENABLED;
-use keyharbor_domain::ports::{Store, StoreFactory};
+use keyharbor_domain::ports::{Store, StoreError, StoreFactory};
 
 /// One connection to `<root>/keyharbor.sqlite3`. Not shared between threads; open one per thread.
 pub struct SqliteStore {
@@ -39,12 +40,13 @@ impl SqliteStore {
     pub fn root(&self) -> &Path {
         &self.root
     }
-    /// Runs `work` on the connection (one statement or a read).
+    /// Runs `work` on the connection (one statement or a read), translating its error for
+    /// the port (`error::store_error`).
     pub(crate) fn read<T>(
         &self,
         work: impl FnOnce(&mut SqliteConnection) -> Result<T>,
-    ) -> Result<T> {
-        work(&mut self.conn.borrow_mut())
+    ) -> Result<T, StoreError> {
+        work(&mut self.conn.borrow_mut()).map_err(error::store_error)
     }
     /// Runs `work` in a `BEGIN IMMEDIATE` transaction: the write lock is taken up front, so
     /// concurrent writers wait (busy timeout) instead of failing on lock upgrade. An error
@@ -52,8 +54,11 @@ impl SqliteStore {
     pub(crate) fn write<T>(
         &self,
         work: impl FnOnce(&mut SqliteConnection) -> Result<T>,
-    ) -> Result<T> {
-        self.conn.borrow_mut().immediate_transaction(work)
+    ) -> Result<T, StoreError> {
+        self.conn
+            .borrow_mut()
+            .immediate_transaction(work)
+            .map_err(error::store_error)
     }
 }
 
@@ -70,8 +75,9 @@ impl SqliteStores {
     }
 }
 impl StoreFactory for SqliteStores {
-    fn open(&self) -> Result<Box<dyn Store>> {
-        Ok(Box::new(SqliteStore::open(&self.root)?))
+    fn open(&self) -> Result<Box<dyn Store>, StoreError> {
+        let store = SqliteStore::open(&self.root).map_err(error::store_error)?;
+        Ok(Box::new(store))
     }
 }
 

@@ -52,7 +52,7 @@ pub fn mark_running(
     id: SessionId,
     generation: Generation,
 ) -> Result<bool> {
-    store.transition(id, generation, State::Starting, State::Running)
+    Ok(store.transition(id, generation, State::Starting, State::Running)?)
 }
 
 /// Records `stopped` (clean exit, requested close, or `stop` in progress) or `failed`.
