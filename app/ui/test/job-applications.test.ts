@@ -38,6 +38,17 @@ describe("the sessions screen", () => {
     expect(sessionsScreen([failed])).toContain('data-action="recover"');
   });
 
+  it("a locked session says why and offers to allow it again", () => {
+    const locked = sessionsScreen([session({ locked: "mask_probe" })]);
+    expect(locked).toContain('data-action="unlock-session" data-id="s1"');
+    expect(shown(locked)).toContain("치환 잠김");
+    expect(shown(locked)).toContain("금고 값이 든 요청이 세 번 와서");
+    const moved = shown(sessionsScreen([session({ locked: "focus_moved" })]));
+    expect(moved).toContain("포커스를 옮겨");
+    expect(sessionsScreen([session({ locked: null })])).not.toContain('data-action="unlock-session"');
+    expect(sessionsScreen([session({})])).not.toContain("치환 잠김");
+  });
+
   it("offers a browser to open in only when ego lite is here", () => {
     const stopped = [session({ state: "stopped", live: false })];
     expect(sessionsScreen(stopped, false)).not.toContain('data-browser="ego-lite"');

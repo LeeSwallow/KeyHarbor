@@ -8,8 +8,9 @@ use keyharbor_domain::vault::Origin;
 use keyharbor_domain::{
     SessionId,
     audit::AuditKind,
-    policy::{Effect, Resource, Rule},
+    policy::{Effect, LOCAL_AGENT, Resource, Rule},
     ports::{PolicyStore, Store},
+    session::substitution_lock::{LockReason, UNLOCKED},
 };
 use keyharbor_domain::{
     ports::GrantStore,
@@ -814,6 +815,91 @@ fn requests_carrying_vault_values_are_refused_and_lock_the_session() {
         3
     );
     assert!(kinds.contains(&(AuditKind::SubstitutionLocked, "mask_probe".into())));
+}
+
+#[test]
+fn a_person_lifting_a_probe_lock_lets_the_session_take_text_and_substitute_again() {
+    let e = env();
+    init(&e).add(login("github", "KH-SYNTH-pw-87")).unwrap();
+    let (guard, probe) = guard(&e);
+    let mut fake = Fake::default();
+    for _ in 0..crate::guard::MAX_PROBES {
+        let err = block(
+            guard
+                .browser(&mut fake, "claude")
+                .type_text("KH-SYNTH-pw-87"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("vault value"), "{err}");
+    }
+    assert_eq!(guard.lock_reason(), Some(LockReason::MaskProbe));
+    assert_eq!(guard.unlock(LOCAL_AGENT), Some(LockReason::MaskProbe));
+    assert_eq!(guard.lock_reason(), None);
+    // The count starts over: plain text goes through and placeholders resolve again.
+    block(
+        guard
+            .browser(&mut fake, "claude")
+            .navigate("https://x.example/"),
+    )
+    .unwrap();
+    block(
+        guard
+            .browser(&mut fake, "claude")
+            .type_text("{{secret:github.password}}"),
+    )
+    .unwrap();
+    assert_eq!(fake.typed, vec!["KH-SYNTH-pw-87"]);
+    // Lifting it again changes nothing and records nothing.
+    assert_eq!(guard.unlock(LOCAL_AGENT), None);
+    let kinds = probe.kinds();
+    let locks: Vec<&(AuditKind, String)> = kinds
+        .iter()
+        .filter(|(k, _)| *k == AuditKind::SubstitutionLocked)
+        .collect();
+    assert_eq!(
+        locks,
+        [
+            &(AuditKind::SubstitutionLocked, "mask_probe".into()),
+            &(AuditKind::SubstitutionLocked, UNLOCKED.into()),
+        ]
+    );
+    // The record names who lifted it and holds no value.
+    let store = guard.store().lock().unwrap();
+    let lifted = store
+        .list_audit(None)
+        .unwrap()
+        .into_iter()
+        .find(|r| r.event.result == UNLOCKED)
+        .unwrap();
+    assert_eq!(lifted.event.agent, LOCAL_AGENT);
+    assert_eq!(lifted.event.item_name, None);
+}
+
+#[test]
+fn a_person_lifting_a_focus_lock_lets_placeholders_resolve_again() {
+    let e = env();
+    init(&e).add(login("github", "KH-SYNTH-pw-88")).unwrap();
+    let (guard, _probe) = guard(&e);
+    let mut fake = Fake {
+        focus_after_insert: Some(8),
+        ..Fake::default()
+    };
+    block(
+        guard
+            .browser(&mut fake, "claude")
+            .type_text("{{secret:github.password}}"),
+    )
+    .unwrap_err();
+    assert_eq!(guard.lock_reason(), Some(LockReason::FocusMoved));
+    assert_eq!(guard.unlock(LOCAL_AGENT), Some(LockReason::FocusMoved));
+    fake.focus_after_insert = None;
+    fake.focused = 7;
+    block(
+        guard
+            .browser(&mut fake, "claude")
+            .fill(&Target::Ref(7), "{{secret:github.username}}"),
+    )
+    .unwrap();
 }
 
 #[test]

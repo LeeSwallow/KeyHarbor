@@ -198,3 +198,24 @@ pub(crate) fn router(allow_cdp: bool) -> ToolRouter<Server> {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for Server {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Lifting a session's substitution lock is a person's call (#190, J-220): no tool
+    /// offers it, whatever the server's flags.
+    #[test]
+    fn no_tool_lifts_a_session_lock() {
+        for allow_cdp in [false, true] {
+            let names = tool_names(allow_cdp);
+            assert!(names.iter().any(|n| n == "session_stop"), "{names:?}");
+            assert!(
+                !names
+                    .iter()
+                    .any(|n| n.contains("unlock") || n.contains("allow")),
+                "{names:?}"
+            );
+        }
+    }
+}

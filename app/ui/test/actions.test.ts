@@ -83,6 +83,13 @@ describe("a click", () => {
     expect(window.state().selected).toBe("github");
   });
 
+  it("on [다시 허용] asks the app to lift the session's lock", async () => {
+    const { calls, click } = await mounted();
+    click({ action: "unlock-session", id: "s1" });
+    await new Promise((done) => setTimeout(done, 0));
+    expect(calls).toContain("unlockSession");
+  });
+
   it("starts no new item form before the kinds have loaded", async () => {
     const { window, click } = await mounted();
     const before = window.state();

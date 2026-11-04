@@ -46,6 +46,9 @@ export function windowActions(w: Win): Actions {
     "stop-session": ({ id }) => {
       if (id) void guard(() => api.stopSession(id).then(reload));
     },
+    "unlock-session": ({ id }) => {
+      if (id) void guard(() => api.unlockSession(id).then(reload));
+    },
     recover: ({ id }) => {
       if (!id) return;
       const box = w.root.querySelector<HTMLInputElement>(`[data-closed="${CSS.escape(id)}"]`);

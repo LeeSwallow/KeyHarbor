@@ -1,7 +1,7 @@
 //! The sessions screen (09 §9.4.3): each session's state and its sites' sign-in states.
 
 use super::ids::session_id;
-use crate::Ctx;
+use crate::{Ctx, auth::AuthScope, confirm::DialogConfirm};
 use anyhow::Result;
 use keyharbor_core::{session, site};
 use keyharbor_domain::{browser_choice::BrowserChoice, policy::LOCAL_AGENT};
@@ -34,11 +34,15 @@ pub struct SessionDto {
     pub failure: Option<String>,
     pub description: Option<String>,
     pub sites: Vec<SiteDto>,
+    /// Why a live session stopped substituting (`mask_probe`, `focus_moved`), or `None`. The
+    /// card offers [다시 허용] while it is set (#190).
+    pub locked: Option<&'static str>,
 }
 
 pub fn sessions(ctx: &Ctx) -> Result<Vec<SessionDto>> {
     let store = ctx.store()?;
-    session::list(&*store, &*ctx.runtime())?
+    let runtime = ctx.runtime();
+    session::list(&*store, &*runtime)?
         .into_iter()
         .map(|view| {
             let sites = site::list(&*store, view.row.id)?
@@ -50,6 +54,13 @@ pub fn sessions(ctx: &Ctx) -> Result<Vec<SessionDto>> {
                     checked_at: r.checked_at,
                 })
                 .collect();
+            // Asked of the running supervisor; one that does not answer shows no lock.
+            let locked = view
+                .state
+                .is_live()
+                .then(|| runtime.lock_reason(view.row.id).ok().flatten())
+                .flatten()
+                .map(|r| r.as_str());
             Ok(SessionDto {
                 id: view.row.id.to_string(),
                 name: view.row.name.as_str().to_owned(),
@@ -62,6 +73,7 @@ pub fn sessions(ctx: &Ctx) -> Result<Vec<SessionDto>> {
                 failure: view.row.failure.clone(),
                 description: view.row.description.map(|d| d.as_str().to_owned()),
                 sites,
+                locked,
             })
         })
         .collect()
@@ -97,6 +109,15 @@ pub fn stop_session(ctx: &Ctx, id: &str) -> Result<()> {
         LOCAL_AGENT,
     )
     .map(|_| ())
+}
+
+/// Lets a session that stopped substituting substitute again ([다시 허용], #190). A weakening:
+/// the authenticator asks first (`PolicyChange`, J-220), and the click on the button, which
+/// only the person at the window sees and which names what it does, is the confirmation.
+pub fn unlock_session(ctx: &Ctx, id: &str) -> Result<()> {
+    ctx.challenge(AuthScope::PolicyChange)?;
+    let clicked = DialogConfirm::new(true);
+    session::unlock(&*ctx.runtime(), &clicked, session_id(id)?).map(|_| ())
 }
 
 /// Marks a session whose supervisor is gone as stopped ([복구…]). Only after the person

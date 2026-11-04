@@ -264,6 +264,7 @@ mod tests {
     use keyharbor_domain::{
         browser_choice::BrowserKind,
         ports::runtime::{LaunchOptions, RuntimeLock, StartedSupervisor},
+        session::substitution_lock::LockReason,
     };
     use std::{cell::RefCell, path::Path, sync::Mutex};
 
@@ -322,6 +323,12 @@ mod tests {
             unreachable!()
         }
         fn close(&self, _: SessionId) -> Result<()> {
+            unreachable!()
+        }
+        fn lock_reason(&self, _: SessionId) -> Result<Option<LockReason>> {
+            unreachable!()
+        }
+        fn unlock(&self, _: SessionId) -> Result<()> {
             unreachable!()
         }
         fn remove_socket(&self, _: SessionId) {

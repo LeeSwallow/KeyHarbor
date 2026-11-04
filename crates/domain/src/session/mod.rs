@@ -2,6 +2,7 @@
 //! open, which browser they run in and which files they may upload.
 
 pub mod browser_choice;
+pub mod substitution_lock;
 pub mod upload;
 mod url;
 

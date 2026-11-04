@@ -7,7 +7,7 @@
 use crate::{
     control::{
         command::{Command, parse},
-        wire::{FillResultWire, LoginResultWire},
+        wire::{FillResultWire, LoginResultWire, StatusResultWire},
     },
     process::Shared,
     upload_files,
@@ -106,6 +106,11 @@ impl Ops {
                 .await;
             return guard.redact_outcome(received);
         }
+        // A person's request (`parse` refused it from an agent): the guard itself, no page.
+        if let Command::Unlock = command {
+            let lifted = guard.unlock(&agent);
+            return guard.redact_outcome(Ok(json!({"lifted": lifted.map(|r| r.as_str())})));
+        }
         self.on_page(shared, &agent, command).await
     }
 
@@ -144,7 +149,9 @@ impl Ops {
                 closed.map(|()| json!({}))
             }
             Command::Status => guard.redact_outcome(status(shared)),
-            Command::ReceiveSite { .. } => Err(anyhow!("receive_site is handled above")),
+            Command::ReceiveSite { .. } | Command::Unlock => {
+                Err(anyhow!("handled before the page"))
+            }
         }
     }
 
@@ -188,8 +195,9 @@ fn wire<T, W: serde::Serialize>(outcome: Result<T>, shape: impl FnOnce(T) -> W) 
 
 fn status(shared: &Shared) -> Result<Value> {
     let row = lock_store(&shared.store)?.get(shared.id)?;
-    Ok(json!({
-        "state": row.as_ref().map(|r| r.state.as_str()),
-        "generation": shared.generation.to_string(),
-    }))
+    Ok(serde_json::to_value(StatusResultWire {
+        state: row.map(|r| r.state.as_str().to_owned()),
+        generation: shared.generation.to_string(),
+        locked: shared.guard.lock_reason().map(|r| r.as_str().to_owned()),
+    })?)
 }

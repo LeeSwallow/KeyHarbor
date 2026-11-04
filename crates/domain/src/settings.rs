@@ -24,6 +24,8 @@ pub const NOTIFY_REQUESTS: &str = "notify_requests";
 pub const NOTIFY_HANDOFFS: &str = "notify_handoffs";
 pub const NOTIFY_DRAFTS: &str = "notify_drafts";
 pub const NOTIFY_DENIALS: &str = "notify_denials";
+/// A session stopped substituting (`substitution_locked`, #190).
+pub const NOTIFY_LOCKS: &str = "notify_locks";
 /// Folders `browser_upload` may take files from, separated by `:` (03 §3.14). Empty (the
 /// default): uploads are refused. Any change needs a person: it decides what may leave.
 pub const UPLOAD_DIRS: &str = "upload_dirs";
@@ -191,6 +193,7 @@ pub const SETTINGS: &[SettingSpec] = &[
     notice(NOTIFY_HANDOFFS),
     notice(NOTIFY_DRAFTS),
     notice(NOTIFY_DENIALS),
+    notice(NOTIFY_LOCKS),
 ];
 
 /// A value a setting does not take. The message names the format, never the value.
@@ -335,6 +338,7 @@ mod tests {
             NOTIFY_HANDOFFS,
             NOTIFY_DRAFTS,
             NOTIFY_DENIALS,
+            NOTIFY_LOCKS,
         ] {
             let spec = SettingSpec::find(key).unwrap();
             assert_eq!(

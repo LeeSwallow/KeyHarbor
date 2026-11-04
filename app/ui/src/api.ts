@@ -18,6 +18,8 @@ export interface Session {
   failure: string | null;
   /// From Rust (`DisplayState`): a run is under way, or only [복구…] brings it back.
   live: boolean; recoverable: boolean;
+  /// Why a live session stopped substituting (`mask_probe`, `focus_moved`); [다시 허용] lifts it.
+  locked?: string | null;
 }
 export interface Browsers { ego_lite: boolean }
 export interface Request { id: string; agent: string; kind: string; name: string; origin: string | null; reason: string }
@@ -82,6 +84,8 @@ export interface Api {
   browsers(): Promise<Browsers>;
   stopSession(id: string): Promise<void>;
   recoverSession(id: string, browserClosed: boolean): Promise<void>;
+  /// Lifts a session's substitution lock (#190): the person's click, past the authenticator.
+  unlockSession(id: string): Promise<void>;
   kinds(): Promise<KindForm[]>;
   addItem(form: NewItemForm): Promise<string>;
   editItem(name: string, form: ChangeForm, confirmed: boolean): Promise<Outcome>;
@@ -122,6 +126,7 @@ export function tauriApi(invoke: Invoke): Api {
     browsers: () => call("browsers"),
     stopSession: (id) => call("stop_session", { id }),
     recoverSession: (id, browserClosed) => call("recover_session", { id, browserClosed }),
+    unlockSession: (id) => call("unlock_session", { id }),
     kinds: () => call("kinds"),
     addItem: (form) => call("add_item", { form }),
     editItem: (name, form, confirmed) => call("edit_item", { name, form, confirmed }),

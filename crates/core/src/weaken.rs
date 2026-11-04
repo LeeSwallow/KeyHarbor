@@ -13,6 +13,7 @@ use keyharbor_domain::{
     date::Expiry,
     policy::{Effect, Rule},
     ports::{Answer, Confirm},
+    session::substitution_lock::LockReason,
     settings::SettingSpec,
     vault::ItemName,
 };
@@ -59,6 +60,11 @@ pub enum WeakeningOp {
         session: String,
         origin: String,
     },
+    /// Letting a session that locked substitute again (#190, J-220).
+    SessionUnlock {
+        session: String,
+        reason: LockReason,
+    },
 }
 
 impl fmt::Display for WeakeningOp {
@@ -86,6 +92,11 @@ impl fmt::Display for WeakeningOp {
             Self::Grant { session, origin } => {
                 write!(f, "granting session {session} the site {origin}")
             }
+            Self::SessionUnlock { session, reason } => write!(
+                f,
+                "letting session {session} substitute again after it locked ({})",
+                reason.as_str()
+            ),
         }
     }
 }

@@ -9,7 +9,7 @@ import { editor } from "./views/editor.js";
 import { form } from "./views/form.js";
 import { palette, paletteCommands } from "./views/palette.js";
 import { badge, btn, card, empty, glyph, heading, icon, screenIcon } from "./views/parts.js";
-import { auditWord, authWord, fieldWord, kindWord, sessionWord, siteWord, sourceWord } from "./words.js";
+import { auditWord, authWord, fieldWord, kindWord, lockWord, sessionWord, siteWord, sourceWord } from "./words.js";
 
 import { esc } from "./html.js";
 
@@ -104,7 +104,9 @@ function sessionActions(x: Session, browsers: Browsers): string {
   if (x.recoverable) {
     return `<label class="kh-help"><input type="checkbox" data-closed="${id}"> 브라우저 창을 모두 닫았습니다</label>${btn("복구…", `data-action="recover" data-id="${id}"`, "danger")}`;
   }
-  if (x.state !== "stopped") return btn("중지", `data-action="stop-session" data-id="${id}"`);
+  // Only the person lifts a lock (#190); agents have no such tool.
+  const unlock = x.locked ? btn("다시 허용", `data-action="unlock-session" data-id="${id}"`, "primary") : "";
+  if (x.state !== "stopped") return unlock + btn("중지", `data-action="stop-session" data-id="${id}"`);
   const pick = browsers.ego_lite
     ? btn("Chrome으로", `data-action="open-session" data-id="${id}" data-browser="chrome"`, "ghost") +
       btn("ego lite로", `data-action="open-session" data-id="${id}" data-browser="ego-lite"`, "ghost")
@@ -138,11 +140,14 @@ function sessions(s: State): string {
       const failed = x.failure && x.recoverable
         ? `<p class="kh-help error">${icon("triangle-alert")} 시작하지 못했습니다: ${esc(x.failure)}</p>`
         : "";
+      const locked = x.locked
+        ? `<p class="kh-help error">${icon("triangle-alert")} ${esc(lockWord(x.locked))}. 페이지가 정상이면 다시 허용하세요.</p>`
+        : "";
       return `<div data-session-drop="${esc(x.name)}">` + card({
         glyph: `<span class="glyph session">${icon("app-window")}</span>`,
-        title: `${esc(x.name)} ${sessionBadge(x)} ${browserBadges(x)}${x.cdp ? ` ${badge("raw CDP", "expiring")}` : ""}`,
+        title: `${esc(x.name)} ${sessionBadge(x)} ${browserBadges(x)}${x.cdp ? ` ${badge("raw CDP", "expiring")}` : ""}${x.locked ? ` ${badge("치환 잠김", "denied")}` : ""}`,
         sub: x.description ? esc(x.description) : "",
-        extra: failed + (sites ? `<ul class="sites">${sites}</ul>` : ""),
+        extra: failed + locked + (sites ? `<ul class="sites">${sites}</ul>` : ""),
         actions: sessionActions(x, s.browsers),
       }) + "</div>";
     })
