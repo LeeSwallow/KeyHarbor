@@ -10,12 +10,10 @@ use keyharbor_domain::{
         Clock, SessionRuntime, SettingsStore, Store,
         runtime::{LaunchOptions, ResolvedBrowser, StartedSupervisor},
     },
-    settings::{BROWSER, EGO_PROBE_SECONDS},
+    settings::{BROWSER, EGO_PROBE_SECONDS, SESSION_START_SECONDS, SESSION_STOP_SECONDS},
 };
 use std::time::Duration;
 
-const START_TIMEOUT: Duration = Duration::from_secs(15);
-const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 /// How often `open` and `stop` look at the session while they wait.
 const POLL: Duration = Duration::from_millis(50);
 
@@ -57,13 +55,11 @@ pub fn ego_lite_answers(
 }
 
 fn ego_probe(settings: &dyn SettingsStore) -> Result<Duration> {
-    let seconds = crate::settings::get(settings, EGO_PROBE_SECONDS)?
-        .parse()
-        .with_context(|| format!("invalid {EGO_PROBE_SECONDS}"))?;
-    Ok(Duration::from_secs(seconds))
+    crate::settings::seconds(settings, EGO_PROBE_SECONDS)
 }
 
-/// Reserves the session and starts its supervisor, returning once the session is `running`.
+/// Reserves the session and starts its supervisor, returning once the session is `running`
+/// or failing after the `session_start_seconds` setting.
 pub fn open(
     store: &dyn Store,
     runtime: &dyn SessionRuntime,
@@ -75,6 +71,8 @@ pub fn open(
         .url
         .map(keyharbor_domain::validate_start_url)
         .transpose()?;
+    // Read before the reservation, so an odd stored value leaves the session as it was.
+    let start_wait = crate::settings::seconds(store, SESSION_START_SECONDS)?;
     let generation = reserve_run(store, runtime, id, options)?;
     let launch = LaunchOptions {
         browser: options.browser,
@@ -96,7 +94,7 @@ pub fn open(
         id,
         generation,
         child.as_mut(),
-        clock.now() + START_TIMEOUT,
+        clock.now() + start_wait,
     );
     // Reap the supervisor when it eventually exits, so a long-lived caller leaves no zombie.
     child.detach();
@@ -183,7 +181,8 @@ fn wait_until_running(
     }
 }
 
-/// Asks the supervisor to close the browser and waits until the session has stopped.
+/// Asks the supervisor to close the browser and waits until the session has stopped, for at
+/// most the `session_stop_seconds` setting.
 pub fn stop(
     store: &dyn Store,
     runtime: &dyn SessionRuntime,
@@ -200,13 +199,14 @@ pub fn stop(
     }
     require_supervisor(runtime, id)?;
     let generation = row.generation.context("session has no generation")?;
+    let stop_wait = crate::settings::seconds(store, SESSION_STOP_SECONDS)?;
     if row.state != State::Stopping
         && !store.transition(id, generation, row.state, State::Stopping)?
     {
         bail!("session state changed; retry");
     }
     runtime.close(id)?;
-    let deadline = clock.now() + STOP_TIMEOUT;
+    let deadline = clock.now() + stop_wait;
     loop {
         let row = session(store, id)?;
         if row.generation != Some(generation) || row.state != State::Stopping {
@@ -263,7 +263,10 @@ mod tests {
     use super::*;
     use keyharbor_domain::{
         browser_choice::BrowserKind,
-        ports::runtime::{LaunchOptions, RuntimeLock, StartedSupervisor},
+        ports::{
+            ManualClock, SessionStore,
+            runtime::{LaunchOptions, RuntimeLock, StartedSupervisor},
+        },
         session::substitution_lock::LockReason,
     };
     use std::{cell::RefCell, path::Path, sync::Mutex};
@@ -359,5 +362,121 @@ mod tests {
             *probe.waits.lock().unwrap(),
             [Duration::from_secs(5), Duration::from_secs(10)]
         );
+    }
+
+    /// A browser that never gets ready and never exits: `open` and `stop` wait it out.
+    struct Slow;
+    struct NeverReady;
+    impl StartedSupervisor for NeverReady {
+        fn exited(&mut self) -> Result<Option<String>> {
+            Ok(None)
+        }
+        fn detach(self: Box<Self>) {}
+    }
+    impl SessionRuntime for Slow {
+        fn has_browser(&self, _: &Path) -> bool {
+            true
+        }
+        fn preflight(&self, _: SessionId) -> Result<()> {
+            Ok(())
+        }
+        fn is_alive(&self, _: SessionId) -> bool {
+            true
+        }
+        fn lock(&self, _: SessionId) -> Result<RuntimeLock> {
+            Ok(Box::new(()))
+        }
+        fn start(
+            &self,
+            _: SessionId,
+            _: Generation,
+            _: &LaunchOptions<'_>,
+        ) -> Result<Box<dyn StartedSupervisor>> {
+            Ok(Box::new(NeverReady))
+        }
+        fn close(&self, _: SessionId) -> Result<()> {
+            Ok(())
+        }
+        fn resolve_browser(&self, _: &BrowserChoice, _: Duration) -> Result<ResolvedBrowser> {
+            unreachable!()
+        }
+        fn lock_reason(&self, _: SessionId) -> Result<Option<LockReason>> {
+            unreachable!()
+        }
+        fn unlock(&self, _: SessionId) -> Result<()> {
+            unreachable!()
+        }
+        fn remove_socket(&self, _: SessionId) {
+            unreachable!()
+        }
+        fn remove_profile(&self, _: SessionId) -> Result<()> {
+            unreachable!()
+        }
+        fn debug_endpoint(&self, _: SessionId) -> Result<String> {
+            unreachable!()
+        }
+    }
+
+    fn new_session(store: &dyn Store) -> SessionId {
+        let name = keyharbor_domain::SessionName::parse("work").unwrap();
+        store.create_described(name, None).unwrap().id
+    }
+
+    /// How long `open` waited before it gave up on the slow browser.
+    fn open_gives_up_after(store: &dyn Store, id: SessionId) -> Duration {
+        let clock = ManualClock::at_unix_seconds(1_000);
+        let before = clock.now();
+        let browser = ResolvedBrowser {
+            kind: BrowserKind::Chrome,
+            executable: "/bin/chrome".into(),
+        };
+        let options = OpenOptions {
+            url: None,
+            cdp: false,
+            browser: &browser,
+            headless: true,
+            agent: "cli",
+        };
+        let error = open(store, &Slow, &clock, id, &options).unwrap_err();
+        assert!(
+            error.to_string().contains("did not report ready"),
+            "{error}"
+        );
+        clock.now() - before
+    }
+
+    #[test]
+    fn open_waits_as_long_as_the_start_setting_says() {
+        let e = crate::tests::env();
+        let store = crate::tests::open_store(&e.data);
+        let id = new_session(&store);
+        let waited = open_gives_up_after(&store, id);
+        assert!(waited >= Duration::from_secs(15) && waited < Duration::from_secs(16));
+        store.force_stopped(id).unwrap();
+        store.setting_set(SESSION_START_SECONDS, "5").unwrap();
+        let waited = open_gives_up_after(&store, id);
+        assert!(waited >= Duration::from_secs(5) && waited < Duration::from_secs(6));
+    }
+
+    #[test]
+    fn stop_waits_as_long_as_the_stop_setting_says() {
+        let e = crate::tests::env();
+        let store = crate::tests::open_store(&e.data);
+        let id = new_session(&store);
+        store.setting_set(SESSION_STOP_SECONDS, "40").unwrap();
+        let generation = store
+            .reserve(id, false, BrowserKind::Chrome)
+            .unwrap()
+            .unwrap();
+        assert!(super::supervision::mark_running(&store, id, generation).unwrap());
+        let clock = ManualClock::at_unix_seconds(1_000);
+        let before = clock.now();
+        let error = stop(&store, &Slow, &clock, id, "cli").unwrap_err();
+        assert!(
+            error.to_string().contains("did not exit in time"),
+            "{error}"
+        );
+        let waited = clock.now() - before;
+        assert!(waited >= Duration::from_secs(40) && waited < Duration::from_secs(41));
     }
 }

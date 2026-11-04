@@ -415,7 +415,7 @@ Claude Code·Codex 같은 에이전트는 MCP뿐 아니라 **셸**도 쓴다. �
 | `grant add` | 언제나(세션이 그 사이트로 갈 수 있게 된다) | `grant revoke` |
 | `unlock` | 잠긴 세션을 다시 치환하게 할 때(§3.8, J-220). 관리 앱은 [다시 허용] 누름이 확인이다 | 잠기지 않은 세션(묻지 않고 거부) |
 | `policy` | `allow`(어떤 대상이든), deny 규칙 `rm` | `deny`, allow 규칙 `rm` |
-| `settings set` | `audit_enabled false`, `capture_enabled` 변경 | `audit_enabled true`, `default_item_ttl` |
+| `settings set` | `audit_enabled false`, `capture_enabled` 변경, `request_ttl_hours`·`max_drafts`를 기본보다 크게(J-273) | `audit_enabled true`, `default_item_ttl`, 대기 시간(`session_start_seconds` 등) |
 
 stdin과 stderr가 모두 터미널이 아니면 `"<작업> needs confirmation from a person at a terminal (or the admin app)"`으로 거부한다. 터미널이면 `/dev/tty`에 묻고 `yes`만 받는다. §3.1에 쓴 대로 이 경계는 pty 흉내로 우회할 수 있다.
 

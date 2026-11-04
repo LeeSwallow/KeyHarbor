@@ -6,7 +6,9 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-/// Requests larger than this are refused.
+/// Requests larger than this are refused. Fixed, not a setting (J-274): it bounds what any
+/// local caller can make the supervisor buffer, and the largest real request (a typed text or
+/// a file list) is far smaller.
 const MAX_REQUEST: usize = 1 << 20;
 
 pub(crate) async fn serve_connection(stream: tokio::net::UnixStream, shared: Arc<Shared>) {

@@ -16,7 +16,7 @@ pub struct OverviewDto {
 }
 
 pub fn overview(ctx: &Ctx) -> Result<OverviewDto> {
-    let s = status::status(&*ctx.store()?, &*ctx.runtime(), ctx.clock())?;
+    let s = status::status(&*ctx.store()?, &*ctx.runtime()?, ctx.clock())?;
     Ok(OverviewDto {
         vault_ready: s.vault_ready,
         sessions_open: s.sessions_open,

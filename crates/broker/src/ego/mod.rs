@@ -16,8 +16,6 @@ use tokio::net::UnixListener;
 
 /// The relay script; [`script`] fills its configuration in.
 const RELAY: &str = include_str!("relay.js");
-/// How long ego lite may take to start the relay and connect.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// The relay looks for new and closed tabs once every this many event polls.
 const RECONCILE_EVERY: u32 = 25;
 
@@ -35,6 +33,9 @@ pub struct EgoLaunch {
     pub url: Option<String>,
     /// How often the relay takes page events (setting `ego_poll_ms`).
     pub poll: Duration,
+    /// How long ego lite may take to start the relay and connect, and how long one CDP call
+    /// through it may go unanswered (setting `browser_call_seconds`, J-272).
+    pub call_timeout: Duration,
 }
 
 /// The relay script with its configuration.
@@ -73,7 +74,7 @@ pub async fn spawn(launch: &EgoLaunch) -> Result<Chrome> {
             let _ = fs::remove_file(&launch.socket);
             bail!("ego relay exited before it connected ({}); see {}", status?, launch.log.display());
         }
-        () = tokio::time::sleep(CONNECT_TIMEOUT) => {
+        () = tokio::time::sleep(launch.call_timeout) => {
             let _ = process.start_kill();
             let _ = fs::remove_file(&launch.socket);
             bail!("ego lite did not start the relay in time; see {}", launch.log.display());
@@ -83,7 +84,7 @@ pub async fn spawn(launch: &EgoLaunch) -> Result<Chrome> {
     drop(listener);
     let _ = fs::remove_file(&launch.socket);
     let (reader, writer) = accepted.0.into_split();
-    let link = CdpLink::from_cdp(Arc::new(Cdp::new(writer, reader)));
+    let link = CdpLink::from_cdp(Arc::new(Cdp::new(writer, reader, launch.call_timeout)));
     if let Some(url) = &launch.url {
         start_at(&link, url).await?;
     }
@@ -147,6 +148,7 @@ mod tests {
             space: "keyharbor work".into(),
             url: None,
             poll: Duration::from_millis(20),
+            call_timeout: Duration::from_secs(30),
         };
         let text = script(&launch);
         assert!(!text.contains("__CONFIG__"));
@@ -190,7 +192,7 @@ mod tests {
         });
         let (stream, _) = listener.accept().await.unwrap();
         let (reader, writer) = stream.into_split();
-        let cdp = Cdp::new(writer, reader);
+        let cdp = Cdp::new(writer, reader, Duration::from_secs(30));
         let out = cdp
             .call("Target.getTargets", json!({}), None)
             .await

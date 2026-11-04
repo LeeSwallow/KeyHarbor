@@ -11,7 +11,10 @@ use std::{
     time::Duration,
 };
 
-/// How long a client waits for one answer (a `wait` or `navigate` can take a while).
+/// How long a client waits for one answer (a `wait` or `navigate` can take a while). Fixed:
+/// the `browser_call_seconds` setting's range stops below it, so a stuck browser call fails
+/// in the supervisor with its own reason before the client stops listening (J-272, checked
+/// by `the_answer_wait_outlasts_the_longest_browser_wait`).
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Sends one request to the session's supervisor and returns its `result`.
@@ -49,5 +52,20 @@ pub fn call(data: &Path, id: &SessionId, request: &Value) -> Result<Value> {
     match serde_json::from_str(&response).context("invalid supervisor response")? {
         ControlResponse::Ok(result) => Ok(result),
         ControlResponse::Err(error) => bail!("{error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use keyharbor_domain::settings::{BROWSER_CALL_SECONDS, SettingSpec};
+
+    /// The longest CDP call the setting allows, plus the longest page wait a request makes,
+    /// still answers before the client gives up (J-272).
+    #[test]
+    fn the_answer_wait_outlasts_the_longest_browser_wait() {
+        let call = SettingSpec::find(BROWSER_CALL_SECONDS).unwrap().range();
+        let longest_call = Duration::from_secs(*call.unwrap().end());
+        assert!(longest_call + keyharbor_broker::WAIT_TIMEOUT < ANSWER_TIMEOUT);
     }
 }

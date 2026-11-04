@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ANY } from "../src/api.js";
 import { RESOURCES } from "../src/views/admin.js";
+import { SHOWN } from "../src/views/settings.js";
 import { auditWords, resourceWords, valueWarningWords } from "../src/words.js";
 
 const vocabulary = JSON.parse(readFileSync(new URL("./vocabulary.json", import.meta.url), "utf8")) as {
@@ -13,6 +14,7 @@ const vocabulary = JSON.parse(readFileSync(new URL("./vocabulary.json", import.m
   resources: string[];
   audit_kinds: string[];
   value_warnings: string[];
+  settings: string[];
 };
 
 describe("the window's vocabulary", () => {
@@ -34,5 +36,10 @@ describe("the window's vocabulary", () => {
 
   it("has a sentence for every reason a saved value warns (J-230)", () => {
     expect(vocabulary.value_warnings.filter((r) => !(r in valueWarningWords))).toEqual([]);
+  });
+
+  it("names every setting in words, none left as a plain field (J-274)", () => {
+    expect(vocabulary.settings.filter((k) => !(k in SHOWN))).toEqual([]);
+    expect(Object.keys(SHOWN).filter((k) => !vocabulary.settings.includes(k))).toEqual([]);
   });
 });
