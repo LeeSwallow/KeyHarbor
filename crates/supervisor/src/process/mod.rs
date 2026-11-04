@@ -9,23 +9,15 @@ mod watch;
 
 use crate::{argv::SuperviseArgs, control, lock::acquire_lock_within, ops::Ops, paths};
 use anyhow::{Context, Result, bail};
-use keyharbor_broker::{
-    chrome::{self, ChromeLaunch},
-    ego::EgoLaunch,
-};
-use keyharbor_core::{
-    grant,
-    session::supervision::{self, BrowserExit},
-};
+use keyharbor_broker::chrome;
+use keyharbor_core::session::supervision::{self, BrowserExit};
 use keyharbor_domain::{
     Generation, SessionId,
-    browser_choice::BrowserKind,
     ports::{Clock, Store, StoreFactory},
-    settings::EGO_POLL_MS,
 };
 use keyharbor_guard::{Guard, SharedStore, VaultOpener, lock_store};
-use launch::Launch;
-use prepare::{bind, prepare};
+use launch::{Launch, Planned, launch_for};
+use prepare::bind;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -86,87 +78,42 @@ impl Shared {
 /// Runs the supervisor until the browser exits. The session must be `starting` under the
 /// run's generation.
 pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
-    let SuperviseArgs {
-        id,
-        generation,
-        browser,
-        url,
-        cdp,
-        kind,
-        headless,
-    } = args;
+    let (id, generation) = (args.id, args.generation);
     let _lock = acquire_lock_within(&paths::lock_path(data, &id), LOCK_HANDOFF)
         .context("another supervisor is running this session")?;
     let store = adapters.stores.open().context("open store")?;
     supervision::check_reservation(&*store, id, generation)?;
-    let fail = |store: &dyn Store, error: anyhow::Error| {
-        supervision::mark_failed(store, id, generation, &error);
-        error
+    // Every failure from here to the browser's start leaves the session `failed` with its
+    // reason, never `starting` (J-180).
+    let started = launch_for(data, &*store, &*adapters.clock, args, adapters.headless)
+        .and_then(|planned| Ok((planned, new_runtime()?)));
+    let (planned, runtime) = match started {
+        Ok(started) => started,
+        Err(error) => {
+            supervision::mark_failed(&*store, id, generation, &error);
+            return Err(error);
+        }
     };
-    let is_ego = kind == BrowserKind::EgoLite;
-    if is_ego && cdp {
-        return Err(fail(
-            &*store,
-            anyhow::anyhow!("raw CDP is not available in ego lite sessions"),
-        ));
-    }
-    let url = match url
-        .as_deref()
-        .map(keyharbor_domain::validate_start_url)
-        .transpose()
-    {
-        Ok(url) => url,
-        Err(error) => return Err(fail(&*store, anyhow::anyhow!("{error}"))),
-    };
-    // The page watcher attaches after Chrome loads its start page, so check that one here.
-    if let Some(url) = &url
-        && !grant::allows(&*store, &*adapters.clock, id, url)?
-    {
-        return Err(fail(
-            &*store,
-            anyhow::anyhow!("denied: navigation (out-of-grant)"),
-        ));
-    }
-    let prepared = match prepare(data, &id, cdp, !is_ego) {
-        Ok(prepared) => prepared,
-        Err(error) => return Err(fail(&*store, error)),
-    };
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    let launch = if is_ego {
-        let space = match store.get(id)? {
-            Some(row) => format!("keyharbor-{}-{}", row.name.as_str(), &id.to_string()[..8]),
-            None => return Err(fail(&*store, anyhow::anyhow!("session not found"))),
-        };
-        let poll = keyharbor_core::settings::get(&*store, EGO_POLL_MS)?
-            .parse()
-            .context("invalid ego_poll_ms")?;
-        Launch::Ego(EgoLaunch {
-            command: browser,
-            socket: paths::ego_socket_path(data, &id),
-            log: paths::ego_log_path(data, &id),
-            space,
-            url,
-            poll: Duration::from_millis(poll),
-        })
-    } else {
-        Launch::Chrome(ChromeLaunch {
-            executable: browser,
-            profile: prepared.profile,
-            url,
-            debug_port: cdp,
-            headless: adapters.headless || headless,
-        })
-    };
+    let Planned {
+        launch,
+        socket,
+        shots,
+    } = planned;
     let run = Run {
         id,
         generation,
-        socket: prepared.socket,
-        shots: prepared.shots,
+        socket,
+        shots,
     };
     let guard_parts = (adapters.open_vault, adapters.clock);
     runtime.block_on(supervise(run, store, guard_parts, launch))
+}
+
+fn new_runtime() -> Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("start the async runtime")
 }
 
 /// One run's identity and files.
@@ -299,5 +246,62 @@ async fn record_exit(shared: &Shared, status: ExitStatus) {
             return;
         }
         tokio::time::sleep(EXIT_RECORD_BACKOFF).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use keyharbor_domain::{
+        SessionName, State, browser_choice::BrowserKind, ports::ManualClock, settings::EGO_POLL_MS,
+    };
+    use keyharbor_sqlite::SqliteStores;
+
+    /// A folder short enough for the control socket path (`paths::MAX_SOCKET_PATH`); the data
+    /// directory is created inside it, private as the store demands.
+    fn short_dir() -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix("kh-")
+            .tempdir_in("/tmp")
+            .unwrap()
+    }
+
+    #[test]
+    fn a_start_that_cannot_read_its_settings_fails_with_a_reason() {
+        let dir = short_dir();
+        let data = dir.path().join("data");
+        let stores = Arc::new(SqliteStores::new(&data));
+        let (id, generation) = {
+            let store = stores.open().unwrap();
+            let session = store.create(SessionName::parse("work").unwrap()).unwrap();
+            let generation = store
+                .reserve(session.id, false, BrowserKind::EgoLite)
+                .unwrap()
+                .unwrap();
+            // Stored behind the settings rules' back, so reading it fails at start.
+            store.setting_set(EGO_POLL_MS, "soon").unwrap();
+            (session.id, generation)
+        };
+        let args = SuperviseArgs {
+            id,
+            generation,
+            browser: PathBuf::from("/nonexistent/ego"),
+            url: None,
+            cdp: false,
+            kind: BrowserKind::EgoLite,
+            headless: true,
+        };
+        let adapters = Adapters {
+            stores: stores.clone(),
+            open_vault: Box::new(|| anyhow::bail!("no vault in this test")),
+            clock: Arc::new(ManualClock::at_unix_seconds(1_793_203_129)),
+            headless: true,
+        };
+        let error = run(&data, args, adapters).unwrap_err();
+        assert!(format!("{error:#}").contains("ego_poll_ms"), "{error:#}");
+        let row = stores.open().unwrap().get(id).unwrap().unwrap();
+        assert_eq!(row.state, State::Failed);
+        let reason = row.failure.expect("the reason is kept");
+        assert!(reason.contains("invalid ego_poll_ms"), "{reason}");
     }
 }
