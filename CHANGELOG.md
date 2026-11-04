@@ -4,13 +4,35 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-04
+
 ### Added
 
-- `keyharbor run`의 통로 ④ 실행 중 로컬 조회: 자식에게만 알려 주는 일회용 Unix socket과 토큰(`KEYHARBOR_LOOKUP_SOCKET`·`KEYHARBOR_LOOKUP_TOKEN`). 범위는 `run`에 준 항목이고 `--allow <패턴>`으로 넓힌다. 요청마다 같은 guard 검사와 사용 기록을 거친다. Python keyring 백엔드는 `integrations/python-keyring/`(배포하지 않음).
+- `keyharbor run`의 통로 ④ 실행 중 로컬 조회: 자식에게만 알려 주는 일회용 Unix socket과 토큰(`KEYHARBOR_LOOKUP_SOCKET`·`KEYHARBOR_LOOKUP_TOKEN`). 범위는 `run`에 준 항목이고 `--allow <패턴>`으로 넓힌다. 요청마다 같은 guard 검사와 사용 기록을 거친다. Python keyring 백엔드는 `integrations/python-keyring/`(배포하지 않음). (#146)
+- 관리 앱: 앱 열기·값 보기·편집·정책 변경 전에 인증 포트(`Authenticator`)를 거친다. 지금 방식은 "인증 없음" 하나이고 설정 화면의 표시가 이 포트에서 온다. (#151)
+- 관리 앱: 정책 규칙에 `browser` 자원을 고를 수 있다. 사용 기록에 "세션 지움"·"파일 올림" 이름이 생겼다. (#173)
+
+### Changed
+
+- 반복 거부(초당 상한으로 묶인 거부)도 "거부됨" 알림이 간다. 설정 화면의 ego lite 확인은 설정 `ego_probe_seconds`만큼 기다린다. 세션의 실패 이유는 복구가 필요한 세션에만 보인다. (#181)
+- 확장의 항목 이름 미리 검사가 CLI와 같은 규칙을 쓴다(`contracts/item-names.json`). 빈 경로 조각(`a//b`)을 거부하고 결합 문자를 받는다. (#168)
+- 내부 구조를 계층·책임별 모듈로 나눴다(domain, core, guard, broker, supervisor, mcp, cli, design-check, 관리 앱, 확장). 명령·도구 이름, 출력, 저장 형식은 그대로다. (#159–#186)
 
 ### Fixed
 
-- Ctrl-C에 `keyharbor run`이 바로 죽지 않고 자식이 끝난 뒤 임시 파일과 socket을 지운다.
+- 세션 시작 중 설정·저장소 읽기가 실패하면 `starting`에 남지 않고 `failed`와 사유가 남는다. 로그인 포착 실패도 값 없이 사용 기록에 남는다. (#176)
+- 관리 앱: `HOME`이 없으면 상대 경로에 금고를 만들지 않고 오류로 끝난다. 시작할 때 인증이 거절되면 끝나지 않고 메뉴 막대에 남는다. (#173)
+- 확장 팝업: 넘기기 요청이 실패해도 버튼이 막히지 않고, 화면이 loading에 멈추지 않는다. 백그라운드 응답을 검사한다. (#158)
+- 응답 마스커를 만들지 못하면 panic으로 세션을 망가뜨리지 않고 응답을 보내지 않는다. (#165)
+- Ctrl-C에 `keyharbor run`이 바로 죽지 않고 자식이 끝난 뒤 임시 파일과 socket을 지운다. (#146)
+
+### Security
+
+- `browser_screenshot`이 찍는 동안 KeyHarbor가 값을 넣은 입력칸을 원(●)으로 그린다. 가리지 못하면 찍지 않는다. (#144)
+- 확장 자동 완성 답의 비밀번호가 지워지지 않는 사본으로 남지 않는다. 제어 요청의 Debug 출력에 localStorage 값이 나오지 않는다. (#184)
+- age 가져오기·내보내기에서 도중에 끝나도 평문 필드가 메모리에서 지워진다. (#174)
+- 관리 앱 항목 편집이 비밀 값을 지워지지 않는 문자열로 복제하지 않는다. (#173)
+- 개발 도구 `vitest`·`web-ext`를 critical 권고 이후 버전으로 올렸다(배포 번들에는 들어가지 않음). (#187)
 
 ## [0.2.0] - 2026-11-02
 
@@ -76,7 +98,8 @@
 - 보호를 약하게 하는 변경(정책 allow, 기록 끄기, 포착, origin 추가, 클립보드 시간 늘리기 등)은 사람이 확인한다.
 - 관리 앱은 네트워크 listener를 열지 않고, 창의 capability는 `core:default`뿐이다.
 
-[Unreleased]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/LeeSwallow/KeyHarbor/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/LeeSwallow/KeyHarbor/releases/tag/v0.1.0
