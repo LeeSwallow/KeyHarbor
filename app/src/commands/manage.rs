@@ -12,19 +12,37 @@ use anyhow::{Result, anyhow, bail};
 use keyharbor_core::{ItemChange, ItemDetails, ItemSource, ItemStatus, NewItem, generate_password};
 use keyharbor_domain::{
     password::PasswordRule,
-    vault::{FieldName, ItemKind, KINDS, Origin},
+    vault::{FieldName, FieldSpec, ItemKind, KINDS, Origin},
 };
 use keyharbor_guard::items;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
+/// A field a form asks for: the "새 항목" form here and the secure input form
+/// ([`super::RequestForm`]) send the same shape.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct FormField {
+    pub name: &'static str,
+    /// Shown as a password input, never echoed.
+    pub secret: bool,
+}
+
+impl From<&FieldSpec> for FormField {
+    fn from(spec: &FieldSpec) -> Self {
+        Self {
+            name: spec.name,
+            secret: spec.secret,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct KindForm {
     pub kind: &'static str,
     pub domain: &'static str,
-    /// `(name, secret)`; empty for env items, whose variables the person names.
-    pub fields: Vec<(&'static str, bool)>,
+    /// Empty for env items, whose variables the person names.
+    pub fields: Vec<FormField>,
     pub free_fields: bool,
     pub custom_fields: bool,
     /// The field the form can make up instead of taking (`KindSpec::generated`); `None` hides
@@ -39,7 +57,7 @@ pub fn kinds() -> Vec<KindForm> {
         .map(|spec| KindForm {
             kind: spec.name,
             domain: spec.domain.as_str(),
-            fields: spec.fields.iter().map(|f| (f.name, f.secret)).collect(),
+            fields: spec.fields.iter().map(FormField::from).collect(),
             free_fields: spec.free_fields,
             custom_fields: spec.custom_fields,
             generates: spec.generated,

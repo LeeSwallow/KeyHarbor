@@ -4,7 +4,7 @@
 //
 //   KEYHARBOR_TEST_CHROME=<chrome> node scripts/shots.mjs <out-dir> [screen…]
 //
-// Screens: sessions, settings, identity. Each is written as <screen>.png and <screen>-dark.png.
+// Screens: sessions, settings, identity, policies, audit. Each is written as <screen>.png and <screen>-dark.png.
 
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -25,9 +25,9 @@ const session = (patch) => ({
   browser: "chrome", protection: "owned", failure: null, ...patch,
 });
 const identityFields = [
-  ["full_name", false], ["given_name", false], ["family_name", false], ["email", false], ["phone", false],
-  ["birth_date", false], ["english_name", false], ["hanja_name", false], ["gender", false], ["nationality", false],
-  ["emergency_phone", false], ["military_service", true], ["disability", true], ["veterans", true], ["note", true],
+  { name: "full_name", secret: false }, { name: "given_name", secret: false }, { name: "family_name", secret: false }, { name: "email", secret: false }, { name: "phone", secret: false },
+  { name: "birth_date", secret: false }, { name: "english_name", secret: false }, { name: "hanja_name", secret: false }, { name: "gender", secret: false }, { name: "nationality", secret: false },
+  { name: "emergency_phone", secret: false }, { name: "military_service", secret: true }, { name: "disability", secret: true }, { name: "veterans", secret: true }, { name: "note", secret: true },
 ];
 const answers = {
   overview: { vault_ready: true, sessions_open: 2, requests_pending: 0, drafts: 0, auth: "none" },
@@ -40,7 +40,10 @@ const answers = {
     session({ id: "s4", name: "old", state: "failed", description: null, failure: "ego lite is not available: `ego-browser` did not answer within 5s" }),
   ],
   items: [],
-  audit: [],
+  audit: [
+    { at: "2026-10-29T05:02:00Z", agent: "codex", kind: "secret_denied", denied: true, item: "bank", origin: "https://bank.example", result: "origin" },
+    { at: "2026-10-29T04:40:00Z", agent: "claude", kind: "secret_used", denied: false, item: "github", origin: null, result: "ok" },
+  ],
   handoffs: [],
   settings: [
     ["audit_enabled", "true", "true"], ["capture_enabled", "false", "false"],
@@ -49,10 +52,13 @@ const answers = {
     ["default_item_ttl", "none", "none"], ["draft_ttl", "7d", "7d"], ["clipboard_clear_seconds", "30", "30"],
     ["notify_requests", "true", "true"], ["notify_handoffs", "true", "true"], ["notify_drafts", "true", "true"], ["notify_denials", "true", "true"],
   ].map(([key, value, def]) => ({ key, value, default: def })),
-  policies: [],
+  policies: [
+    { agent: "*", resource: "domain", target: "payment", effect: "deny" },
+    { agent: "codex", resource: "item", target: "*", effect: "allow" },
+  ],
   kinds: [
     { kind: "identity", domain: "personal", fields: identityFields, free_fields: false, custom_fields: true },
-    { kind: "login", domain: "credentials", fields: [["username", false], ["password", true]], free_fields: false, custom_fields: false },
+    { kind: "login", domain: "credentials", fields: [{ name: "username", secret: false }, { name: "password", secret: true }], free_fields: false, custom_fields: false },
   ],
   browsers: { ego_lite: true },
 };
@@ -61,6 +67,8 @@ const answers = {
 const screens = {
   sessions: `document.querySelector('[data-action="go"][data-view="sessions"]').click()`,
   settings: `document.querySelector('[data-action="go"][data-view="settings"]').click()`,
+  policies: `document.querySelector('[data-action="go"][data-view="policies"]').click()`,
+  audit: `document.querySelector('[data-action="go"][data-view="audit"]').click()`,
   identity: `document.querySelector('[data-action="go"][data-view="items"]').click();
     document.querySelector('[data-action="new-item"]').click();
     const kind = document.querySelector('select[name="kind"]'); kind.value = "identity";

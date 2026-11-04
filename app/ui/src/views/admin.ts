@@ -1,7 +1,7 @@
 // Policies (09 §9.4.4), and the dialog that asks the person before a
 // change that weakens a protection.
 
-import type { Rule } from "../api.js";
+import { ANY, type Rule } from "../api.js";
 import type { Ask } from "../state.js";
 import { esc } from "../html.js";
 import { domainWord, effectWord, resourceWord } from "../words.js";
@@ -11,13 +11,13 @@ import { badge, btn, card, empty, heading } from "./parts.js";
 export const RESOURCES = ["item", "domain", "session", "create_session", "raw_cdp", "browser"];
 
 /// `* → 모든 …`, a domain in words, anything else as typed.
-const target = (r: Rule) => (r.target === "*" ? "모두" : r.resource === "domain" ? domainWord(r.target) : r.target);
+const target = (r: Rule) => (r.target === ANY ? "모두" : r.resource === "domain" ? domainWord(r.target) : r.target);
 
 export function policies(rules: Rule[]): string {
   const rows = rules
     .map((r) =>
       card({
-        title: `${esc(r.agent === "*" ? "모든 에이전트" : r.agent)} · ${esc(resourceWord(r.resource))} ${esc(target(r))} ${badge(effectWord(r.effect), r.effect === "deny" ? "denied" : "active")}`,
+        title: `${esc(r.agent === ANY ? "모든 에이전트" : r.agent)} · ${esc(resourceWord(r.resource))} ${esc(target(r))} ${badge(effectWord(r.effect), r.effect === "deny" ? "denied" : "active")}`,
         actions: btn("삭제", `data-action="remove-rule" data-agent="${esc(r.agent)}" data-resource="${esc(r.resource)}" data-target="${esc(r.target)}"`, "ghost"),
       }),
     )

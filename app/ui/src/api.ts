@@ -25,6 +25,8 @@ export interface Draft { name: string; kind: string; source: string; origins: st
 export interface Inbox { requests: Request[]; drafts: Draft[] }
 /// `denied` is Rust's `AuditKind::is_denial`, the rule the denial notices use too (J-200).
 export interface AuditEvent { at: string; agent: string; kind: string; denied: boolean; item: string | null; origin: string | null; result: string }
+/// A field a form asks for (Rust `FormField`, one shape for the request form and the item form).
+/// `secret` fields are password inputs, never echoed.
 export interface FormField { name: string; secret: boolean }
 export interface RequestForm {
   id: string; agent: string; kind: string; name: string; origin: string | null; reason: string;
@@ -39,15 +41,17 @@ export type Weakening =
   | { when: "never" };
 export interface Setting { key: string; value: string; default: string; weakening: Weakening }
 export interface Rule { agent: string; resource: string; target: string; effect: string }
-/// A change that may need a person: done, or the question to put to them.
+/// A rule's agent or target that means every one (Rust `policy::ANY`, test/vocabulary.test.ts).
+export const ANY = "*";
 /// `generates` names the field the form can make up (`KindSpec::generated`), if any.
-export interface KindForm { kind: string; domain: string; fields: [string, boolean][]; free_fields: boolean; custom_fields: boolean; generates: string | null }
+export interface KindForm { kind: string; domain: string; fields: FormField[]; free_fields: boolean; custom_fields: boolean; generates: string | null }
 export interface NewItemForm { name: string; kind: string; origins: string[]; values: Record<string, string>; generate_password: boolean }
 export interface ChangeForm { values: Record<string, string>; origins?: string[] }
 /// How a site dragged onto a session ended; `words.ts` says it (J-202).
 export type SiteHandOff =
   | { outcome: "handed_off"; cookies: number }
   | { outcome: "declined" | "no_permission" | "no_session" | "bad_site" | "timeout" | "failed" };
+/// A change that may need a person: done, or the question to put to them.
 export type Outcome = { outcome: "done" } | { outcome: "ask"; question: string };
 
 export interface Api {
@@ -68,7 +72,8 @@ export interface Api {
   setSetting(key: string, value: string, confirmed: boolean): Promise<Outcome>;
   policies(): Promise<Rule[]>;
   setPolicy(rule: Rule, confirmed: boolean): Promise<Outcome>;
-  removePolicy(rule: Rule, confirmed: boolean): Promise<Outcome>;
+  /// A rule is named by agent, resource and target; its effect does not pick it.
+  removePolicy(rule: Omit<Rule, "effect">, confirmed: boolean): Promise<Outcome>;
   copyValue(item: string, field: string): Promise<void>;
   copyPlaceholder(text: string): Promise<void>;
   /// `browser` is `chrome` or `ego-lite`; none follows the `browser` setting.

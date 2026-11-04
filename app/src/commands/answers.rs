@@ -2,6 +2,7 @@
 //! form, 09 §9.4.5) and a browser handed to them (resume).
 
 use super::ids::{self, item_name, request_id};
+use super::manage::FormField;
 use crate::{Ctx, auth::AuthScope};
 use anyhow::{Result, anyhow, bail};
 use keyharbor_core::{
@@ -12,13 +13,6 @@ use keyharbor_domain::policy::LOCAL_AGENT;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
-
-#[derive(Debug, Serialize)]
-pub struct FormField {
-    pub name: &'static str,
-    /// Shown as a password input, never echoed.
-    pub secret: bool,
-}
 
 /// The secure input form for one request: who asks, for what, why, where, and the fields.
 #[derive(Debug, Serialize)]
@@ -66,14 +60,7 @@ pub fn request_form(ctx: &Ctx, id: &str) -> Result<RequestForm> {
         name: request.name.as_str().to_owned(),
         origin: request.origin.map(|o| o.as_str().to_owned()),
         reason: request.reason.as_str().to_owned(),
-        fields: spec
-            .fields
-            .iter()
-            .map(|f| FormField {
-                name: f.name,
-                secret: f.secret,
-            })
-            .collect(),
+        fields: spec.fields.iter().map(FormField::from).collect(),
         free_fields: spec.free_fields,
         custom_fields: spec.custom_fields,
     })

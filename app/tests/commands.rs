@@ -340,7 +340,10 @@ fn items_are_added_changed_and_removed_through_the_guard() {
     init_vault(tmp.path());
     let kinds = commands::kinds();
     let login = kinds.iter().find(|k| k.kind == "login").unwrap();
-    assert!(login.fields.contains(&("password", true)));
+    assert!(login.fields.contains(&commands::FormField {
+        name: "password",
+        secret: true
+    }));
     assert_eq!(login.generates, Some("password"));
     assert!(
         kinds

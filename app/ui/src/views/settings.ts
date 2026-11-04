@@ -5,6 +5,7 @@
 
 import type { Browsers, Setting, Weakening } from "../api.js";
 import { esc } from "../html.js";
+import { NO_AUTH } from "../words.js";
 import { heading } from "./parts.js";
 
 type Control =
@@ -80,7 +81,7 @@ function control(s: Setting, c: Control): string {
     return `<button type="button" class="kh-toggle${on ? " is-on" : ""}" role="switch" aria-checked="${on}" ${set(s.key, on ? "false" : "true")}><span class="track"></span></button>`;
   }
   // A value set elsewhere (the CLI takes any `<N>d`) stays visible as its own choice.
-  const choices = c.choices.some(([v]) => v === s.value) ? c.choices : [...c.choices, [s.value, label(s.value)] as [string, string]];
+  const choices: [value: string, label: string][] = c.choices.some(([v]) => v === s.value) ? c.choices : [...c.choices, [s.value, label(s.value)]];
   const buttons = choices
     .map(([v, text]) => `<button type="button"${v === s.value ? ' class="is-on"' : ""} ${set(s.key, v)}>${esc(text)}</button>`)
     .join("");
@@ -107,16 +108,16 @@ function plain(s: Setting): string {
 }
 
 /// What the method in use (`auth`, from the app's authenticator) means for the person. Only
-/// `none` exists (R-21); the others are shown, not chosen.
+/// [`NO_AUTH`] exists (R-21); the others are shown, not chosen.
 const AUTH_HELP: Record<string, string> = {
-  none: "인증 없음: 이 Mac 사용자 계정으로 접근할 수 있는 누구나 금고를 볼 수 있습니다.",
+  [NO_AUTH]: "인증 없음: 이 Mac 사용자 계정으로 접근할 수 있는 누구나 금고를 볼 수 있습니다.",
 };
 
 function authSection(auth: string | null): string {
   const help = auth ? AUTH_HELP[auth] : undefined;
   return `<section class="settings-group"><h3>인증 방식</h3><div class="setting"><div><div class="title">앱과 값 보기 잠금</div>
     ${help ? `<div class="kh-help">${esc(help)}</div>` : ""}</div>
-    <div class="kh-seg" role="group"><button type="button"${auth === "none" ? ' class="is-on"' : ""}>없음</button><button type="button" disabled>macOS 인증 · 준비 중</button><button type="button" disabled>마스터 비밀번호 · 준비 중</button></div></div></section>`;
+    <div class="kh-seg" role="group"><button type="button"${auth === NO_AUTH ? ' class="is-on"' : ""}>없음</button><button type="button" disabled>macOS 인증 · 준비 중</button><button type="button" disabled>마스터 비밀번호 · 준비 중</button></div></div></section>`;
 }
 
 export function settings(list: Setting[], browsers: Browsers = { ego_lite: false }, auth: string | null = null): string {
@@ -125,9 +126,13 @@ export function settings(list: Setting[], browsers: Browsers = { ego_lite: false
     const status = browsers.ego_lite
       ? " 지금 ego lite가 켜져 있습니다."
       : " 지금은 ego lite를 찾지 못했습니다(설치되지 않았거나 꺼져 있음).";
-    const shown = (s: Setting) =>
-      s.key === "browser" ? { ...SHOWN[s.key]!, help: SHOWN[s.key]!.help + status } : SHOWN[s.key]!;
-    const rows = list.filter((s) => SHOWN[s.key]?.group === group).map((s) => row(s, shown(s))).join("");
+    const rows = list
+      .flatMap((s) => {
+        const shown = SHOWN[s.key];
+        if (shown?.group !== group) return [];
+        return [row(s, s.key === "browser" ? { ...shown, help: shown.help + status } : shown)];
+      })
+      .join("");
     return rows ? `<section class="settings-group"><h3>${group}</h3>${rows}</section>` : "";
   }).join("");
   const unknown = list.filter((s) => !SHOWN[s.key]).map(plain).join("");
@@ -135,13 +140,22 @@ export function settings(list: Setting[], browsers: Browsers = { ego_lite: false
   return `${heading("settings")}${sections}${others}${authSection(auth)}`;
 }
 
+/// How `upload_dirs` keeps its folders in one value, like `PATH`.
+const FOLDER_SEPARATOR = ":";
+
+/// The folders a list setting holds, without blanks.
+export const parseFolders = (value: string): string[] => value.split(FOLDER_SEPARATOR).map((d) => d.trim()).filter(Boolean);
+
+/// The value that holds `folders`, blanks left out.
+export const joinFolders = (folders: string[]): string => folders.map((d) => d.trim()).filter(Boolean).join(FOLDER_SEPARATOR);
+
 /// `upload_dirs` as a list: each folder can be taken out, one can be added. The new value is
-/// the whole list (`:`-separated), so a weakening change still goes through the question.
+/// the whole list, so a weakening change still goes through the question.
 function folders(s: Setting): string {
-  const list = s.value.split(":").map((d) => d.trim()).filter(Boolean);
+  const list = parseFolders(s.value);
   const rows = list
     .map((dir) => {
-      const rest = list.filter((d) => d !== dir).join(":");
+      const rest = joinFolders(list.filter((d) => d !== dir));
       return `<li><code>${esc(dir)}</code> <button type="button" class="kh-btn ghost sm" ${set(s.key, rest)}>빼기</button></li>`;
     })
     .join("");

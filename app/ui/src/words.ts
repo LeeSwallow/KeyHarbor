@@ -2,12 +2,16 @@
 // not stored names). A value missing from a table is shown as it is, so a new one is still
 // readable before it gets a word here. Environment variable names are never translated.
 
-import type { SiteHandOff } from "./api.js";
+import { ANY, type SiteHandOff } from "./api.js";
 
 const word = (table: Record<string, string>) => (value: string) => table[value] ?? value;
 
+/// The authentication method that asks nothing (`Authenticator::id` of `NoneAuth`, R-21): the
+/// only one so far.
+export const NO_AUTH = "none";
+
 /// The sidebar's security line, by authentication method (03 §3.10, R-21).
-export const authWord = word({ none: "인증 없음" });
+export const authWord = word({ [NO_AUTH]: "인증 없음" });
 
 export const kindWord = word({
   login: "로그인", secret: "API 키", env: "환경 변수", card: "카드", identity: "신원", address: "주소",
@@ -65,7 +69,7 @@ export const resourceWord = word(resourceWords);
 export const effectWord = word({ allow: "허용", deny: "거부" });
 
 export const domainWord = word({
-  credentials: "자격 증명", payment: "결제", personal: "개인정보", developer: "개발자", "*": "모두",
+  credentials: "자격 증명", payment: "결제", personal: "개인정보", developer: "개발자", [ANY]: "모두",
 });
 
 /// Every `AuditKind` (test/vocabulary.test.ts checks it against Rust, J-175).

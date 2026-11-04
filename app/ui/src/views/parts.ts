@@ -6,6 +6,9 @@ import { esc } from "../html.js";
 import { SCREENS, type View } from "../state.js";
 import { kindLook } from "../words.js";
 
+/// What every text input in a form says to the browser: remember, correct and check nothing.
+export const quiet = 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"';
+
 export type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 /// A button; `attrs` is trusted markup (`data-action` and escaped data attributes).

@@ -1,4 +1,5 @@
 {
+  "any": "*",
   "resources": ["session", "item", "domain", "create_session", "raw_cdp", "browser"],
   "audit_kinds": [
     "secret_used", "secret_denied", "origin_changed_after_fill", "session_opened", "session_stopped",

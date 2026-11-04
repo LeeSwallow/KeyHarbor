@@ -15,8 +15,6 @@ import { esc } from "./html.js";
 
 export { esc };
 
-const NAV = SCREENS;
-
 function count(s: State, view: View): number {
   if (view === "inbox") return s.inbox.requests.length + s.inbox.drafts.length + s.handoffs.length;
   if (view === "sessions") return s.sessions.length;
@@ -25,7 +23,7 @@ function count(s: State, view: View): number {
 }
 
 function side(s: State): string {
-  const links = NAV.map(([view, label]) => {
+  const links = SCREENS.map(([view, label]) => {
     const n = count(s, view);
     const badge = n > 0 ? `<span class="kh-count">${n}</span>` : "";
     return `<button class="nav${s.view === view ? " is-on" : ""}" data-action="go" data-view="${view}">${icon(screenIcon(view))}${esc(label)}${badge}</button>`;
@@ -35,11 +33,16 @@ function side(s: State): string {
   return `<nav class="side" aria-label="KeyHarbor"><div class="brand"><img class="brand-icon" src="app-icon.svg" alt="">KeyHarbor</div>${links}${auth}</nav>`;
 }
 
+/// How many usage records the window loads and the audit screen says it shows.
+export const AUDIT_SHOWN = 50;
+/// How many of them the home screen lists as recent activity.
+const RECENT_ON_HOME = 6;
+
 /// `2026-10-29T05:02:00Z` → `10-29 05:02` (UTC as stored; the record is a glance, not a log).
 const when = (at: string) => at.replace(/^\d{4}-(\d\d-\d\d)T(\d\d:\d\d).*$/, "$1 $2");
 
 function event(e: AuditEvent): string {
-  const what = [e.item, e.origin].filter(Boolean).map((t) => esc(t!)).join(" · ");
+  const what = [e.item, e.origin].filter((t): t is string => Boolean(t)).map(esc).join(" · ");
   return card({
     title: `${esc(auditWord(e.kind))} ${e.denied ? badge("거부", "denied") : ""}`,
     sub: `${esc(e.agent)}${what ? ` · ${what}` : ""}`,
@@ -54,7 +57,7 @@ function home(s: State): string {
   }
   const stat = (label: string, n: number | undefined, view: View) =>
     `<button type="button" class="stat" data-action="go" data-view="${view}"><span class="kh-help">${esc(label)}</span><strong>${n ?? "…"}</strong></button>`;
-  const recent = s.audit.slice(0, 6).map(event).join("");
+  const recent = s.audit.slice(0, RECENT_ON_HOME).map(event).join("");
   return `${heading("home")}<div class="stats">${stat("실행 중인 세션", o?.sessions_open, "sessions")}${stat("확인 대기", o ? count(s, "inbox") : undefined, "inbox")}${stat("항목", s.items.length, "items")}</div>
     <h3 class="section">최근 활동</h3>${recent || empty("기록이 없습니다")}`;
 }
@@ -211,7 +214,7 @@ function detail(s: State): string {
 }
 
 function audit(s: State): string {
-  return `${heading("audit", "최근 50개. 값은 기록하지 않습니다.")}${s.audit.map(event).join("") || empty("기록이 없습니다")}`;
+  return `${heading("audit", `최근 ${AUDIT_SHOWN}개. 값은 기록하지 않습니다.`)}${s.audit.map(event).join("") || empty("기록이 없습니다")}`;
 }
 
 export function render(s: State): string {

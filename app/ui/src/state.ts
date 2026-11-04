@@ -18,6 +18,9 @@ export const SCREENS: [View, string, string][] = [
   ["settings", "설정", "settings"],
 ];
 
+/// Whether `name` is one of the [`SCREENS`] (a `data-view` read from the page).
+export const isView = (name: string): name is View => SCREENS.some(([view]) => view === name);
+
 /// The item list's search (09 §9.4, ⌘F): text in names, sites or tags, one kind, drafts only.
 export interface Filter { text: string; kind: string | null; drafts: boolean }
 const NO_FILTER: Filter = { text: "", kind: null, drafts: false };
@@ -111,6 +114,11 @@ export const closeForm = (s: State): State => ({ ...s, form: null });
 export const asking = (s: State, ask: Ask | null): State => ({ ...s, ask });
 export const select = (s: State, name: string): State => ({ ...s, selected: name, revealed: null, editor: null });
 export const edit = (s: State, editor: Editor | null): State => ({ ...s, editor, revealed: null });
+/// The new item form for the first kind; nothing until the kinds have loaded (no form to show).
+export const editNew = (s: State): State => {
+  const kind = s.kinds[0]?.kind;
+  return kind ? edit(s, { mode: "new", kind }) : s;
+};
 export const show = (s: State, revealed: Revealed): State =>
   s.selected === revealed.item ? { ...s, revealed } : s;
 export const hide = (s: State): State => ({ ...s, revealed: null });

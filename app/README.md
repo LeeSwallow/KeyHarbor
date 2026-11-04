@@ -11,6 +11,17 @@ flowchart LR
   C -- "처리 전에 challenge(scope)" --> A["src/auth.rs<br/>Authenticator · NoneAuth"]
 ```
 
+창 쪽(`ui/src`)에서는 `main.ts`가 상태 하나를 들고 이벤트를 `events/`의 표로 넘깁니다. 클릭은 `data-action` 이름으로 `events/actions.ts`의 표를, 폼 제출은 폼의 data 속성으로 `events/forms.ts`의 표를 찾고, 표에 없는 이름은 아무것도 하지 않습니다. 값 보기·복사와 보안 입력 폼 제출처럼 값을 다루는 처리기만 `main.ts`에 남아 같은 표에 더해집니다([J-210](../docs/design/06-requirements-log.md)).
+
+```mermaid
+flowchart LR
+  EV["DOM 이벤트"] --> L["events/listeners.ts<br/>instanceof로 확인"]
+  L -- "data-action" --> A["events/actions.ts<br/>클릭 처리기 표"]
+  L -- "폼 종류" --> F["events/forms.ts<br/>제출 처리기 표"]
+  M["main.ts<br/>상태 · 값 보기 · 복사 · 보안 입력 폼"] -- "표에 더함" --> A & F
+  A & F --> W["events/window.ts · undo.ts<br/>불러오기 · 확인 묻기 · 실행 취소"]
+```
+
 명령은 판정하지 않습니다. 거부인지, 세션이 실행 중인지·복구가 필요한지, 어떤 필드를 생성할 수 있는지, 어떤 설정 변경이 약화인지는 domain·core가 정하고 명령은 그 결과를 DTO 필드(`AuditDto.denied`, `SessionDto.live`·`recoverable`, `KindForm.generates`, `SettingDto.weakening`)로 화면에 넘깁니다. 화면은 그 필드만 읽고 문구를 고릅니다([J-200–J-204](../docs/design/06-requirements-log.md)). 메뉴 막대 문구와 알림은 `src/commands/presence/`에 있습니다.
 
 앱 열기·값 보기·편집·정책 변경 명령은 처리 전에 `Authenticator::challenge`를 부르고, 거절되면 아무것도 하지 않습니다. 지금 방식은 `NoneAuth`(언제나 통과) 하나이고 `src/main.rs`에서 한 번 주입합니다([03 §3.10](../docs/design/03-security-whitepaper.md#310-관리-앱-인증), [J-126](../docs/design/06-requirements-log.md)). 사이드바와 설정 화면의 "인증 없음"은 그 포트의 `id()`에서 옵니다. 창은 숨긴 채로 뜨고 `OpenApp`을 통과해야 보입니다. 시작할 때 거절되어도 앱은 끝나지 않고 메뉴 막대에 남으며, 메뉴 막대의 "KeyHarbor 열기"가 같은 길(`window::open_main_window`)로 다시 묻습니다([J-177](../docs/design/06-requirements-log.md)).
@@ -38,7 +49,7 @@ KEYHARBOR_HOME=/tmp/kh cargo run                   # 개발용 창 (기본은 ~/
 | 확인 대기 | 에이전트의 정보 요청에 보안 입력 폼으로 답하거나 거절(메인 창 안, 또는 "창으로 열기"로 항상 위에 뜨고 화면 캡처에서 빠지는 작은 창), 인계 재개, draft 확정·폐기 |
 | 세션 | 상태, 사이트별 로그인 상태, raw CDP 표시, 열기·중지, 복구(브라우저를 닫았다는 확인 뒤), 평소 Chrome의 탭을 카드에 끌어다 놓아 그 사이트 로그인 넘기기(브라우저 알림에서 한 번 더 누름) |
 | 항목 | 목록(draft·변조 의심·만료 표시), 검색·필터(⌘F: 이름·사이트·태그, 종류, draft만), 새 항목(종류별 폼, 로그인은 비밀번호 생성), 편집(비운 칸은 그대로, 약화 변경은 확인 창), 이름 바꾸기(placeholder 바뀜 경고, 규칙이 가리키면 거절), 삭제(10초 동안 실행 취소), 필드·placeholder, 비밀 아닌 값, 값 보기(30초 뒤나 다른 곳으로 가면 사라짐), 값 복사(가린 표시, 30초 뒤 지움), placeholder 복사 |
-| 사용 기록 | 최근 50개 |
+| 사용 기록 | 최근 50개(`ui/src/view.ts`의 `AUDIT_SHOWN`, 화면 문구도 이 값에서 만든다) |
 | 에이전트와 정책 | 규칙 목록·추가·삭제. allow 추가와 deny 삭제는 확인 창 |
 | 설정 | 설정 값 보기·바꾸기. 약화(기록 끄기, 포착 바꾸기, 클립보드 지우는 시간 늘리기)는 확인 창 |
 

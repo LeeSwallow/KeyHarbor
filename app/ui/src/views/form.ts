@@ -6,7 +6,7 @@ import type { RequestForm } from "../api.js";
 import { esc } from "../html.js";
 import { fieldWord, kindWord } from "../words.js";
 
-const quiet = 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"';
+import { quiet } from "./parts.js";
 
 function input(name: string, secret: boolean): string {
   return `<label class="kh-field"><span class="kh-label">${esc(fieldWord(name))}</span>
