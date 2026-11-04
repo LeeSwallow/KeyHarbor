@@ -2,7 +2,7 @@
 //! (`browser_select`; the page function fires `input` and `change` so frameworks see a
 //! person's choice) and putting files into a file input (`browser_upload`).
 
-use super::CdpBrowser;
+use crate::browser::CdpBrowser;
 use anyhow::{Context, Result};
 use keyharbor_domain::ports::browser::Choice;
 use serde_json::{Value, json};
@@ -22,7 +22,7 @@ const CHOOSE: &str = "function(kind, want) {
 }";
 
 impl CdpBrowser {
-    pub(super) async fn choose_option(
+    pub(crate) async fn choose_option(
         &self,
         session: &str,
         node: u64,
@@ -61,7 +61,7 @@ impl CdpBrowser {
 
 impl CdpBrowser {
     /// Puts local files into a file input, as a person choosing them in the file dialog.
-    pub(super) async fn put_files(
+    pub(crate) async fn put_files(
         &self,
         session: &str,
         node: u64,

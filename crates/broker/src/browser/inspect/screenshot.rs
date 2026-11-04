@@ -3,7 +3,7 @@
 //! the screenshot is taken (03 §3.11 #2). The style is set through the DOM agent, not page
 //! script, so the page cannot redefine the call that hides them.
 
-use super::CdpBrowser;
+use crate::browser::{CdpBrowser, dom::attribute};
 use anyhow::{Context, Result};
 use base64::Engine;
 use serde_json::{Value, json};
@@ -16,7 +16,7 @@ struct Concealed {
 }
 
 impl CdpBrowser {
-    pub(super) async fn save_screenshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
+    pub(crate) async fn save_screenshot(&mut self, hidden: &BTreeSet<u64>) -> Result<Value> {
         let session = self.active_page().await?;
         let concealed = self
             .conceal(&session, hidden)
@@ -73,7 +73,7 @@ impl CdpBrowser {
                 .call("DOM.describeNode", json!({"nodeId": node}), session)
                 .await?;
             let element = &described["node"];
-            let style = attribute(element, "style");
+            let style = attribute(element, "style").map(str::to_owned);
             let name = element["nodeName"].as_str().unwrap_or_default();
             self.call(
                 "DOM.setAttributeValue",
@@ -112,7 +112,9 @@ impl CdpBrowser {
     }
 
     fn write_shot(&self, png: &[u8]) -> Result<Value> {
-        for n in 1.. {
+        let mut n = 0;
+        loop {
+            n += 1;
             let path = self.shots.join(format!("{}-{n}.png", self.shot_prefix));
             let mut options = std::fs::OpenOptions::new();
             options.write(true).create_new(true);
@@ -130,17 +132,7 @@ impl CdpBrowser {
                 Err(error) => return Err(error.into()),
             }
         }
-        unreachable!()
     }
-}
-
-/// The value of attribute `name` of a described node (`attributes` is `[name, value, …]`).
-fn attribute(node: &Value, name: &str) -> Option<String> {
-    node["attributes"]
-        .as_array()?
-        .chunks(2)
-        .find(|pair| pair[0].as_str() == Some(name))
-        .and_then(|pair| pair.get(1)?.as_str().map(str::to_owned))
 }
 
 /// The element's style with its text drawn as discs. A closed `<select>` ignores text
@@ -177,12 +169,5 @@ mod tests {
     #[test]
     fn a_select_hides_its_text_by_colour() {
         assert!(concealing_style(None, "SELECT").contains("color: transparent !important"));
-    }
-
-    #[test]
-    fn attributes_are_read_in_name_value_pairs() {
-        let node = json!({"attributes": ["id", "user", "style", "color: red"]});
-        assert_eq!(attribute(&node, "style").as_deref(), Some("color: red"));
-        assert_eq!(attribute(&node, "class"), None);
     }
 }

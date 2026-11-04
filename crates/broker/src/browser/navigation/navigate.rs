@@ -1,12 +1,16 @@
 //! `navigate`: load a URL in the active tab and wait for its load event.
 
-use super::{CdpBrowser, LOAD_TIMEOUT};
+use crate::{browser::CdpBrowser, cdp::CONNECTION_CLOSED};
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
+use std::time::Duration;
 use tokio::time::Instant;
 
+/// How long `navigate` waits for the page's load event.
+const LOAD_TIMEOUT: Duration = Duration::from_secs(15);
+
 impl CdpBrowser {
-    pub(super) async fn navigate_to(&mut self, url: &str) -> Result<Value> {
+    pub(crate) async fn navigate_to(&mut self, url: &str) -> Result<Value> {
         let url = keyharbor_domain::validate_navigation_url(url).map_err(|e| anyhow!("{e}"))?;
         let session = self.active_page().await?;
         let mut events = self.cdp.events();
@@ -25,7 +29,12 @@ impl CdpBrowser {
         loop {
             let event = tokio::time::timeout_at(deadline, events.recv())
                 .await
-                .map_err(|_| anyhow!("page did not finish loading within 15 seconds"))?;
+                .map_err(|_| {
+                    anyhow!(
+                        "page did not finish loading within {} seconds",
+                        LOAD_TIMEOUT.as_secs()
+                    )
+                })?;
             match event {
                 Ok(event) if event["sessionId"] != session.as_str() => (),
                 Ok(event)
@@ -37,7 +46,7 @@ impl CdpBrowser {
                 }
                 Ok(event) if committed && event["method"] == "Page.loadEventFired" => break,
                 Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => (),
-                Err(_) => bail!("browser connection closed"),
+                Err(_) => bail!(CONNECTION_CLOSED),
             }
         }
         let (url, title) = self.page_info(&session).await?;
