@@ -1,9 +1,9 @@
 // PageForm: runs a small function in the tab's top frame (the `scripting` permission and the
 // tab access `activeTab` gives on the person's click). Frames of other sites are never touched.
 
-import type { LoginValues } from "../../domain/login.js";
-import type { PageForm } from "../../ports/index.js";
-import type { WebExtApi } from "./api.js";
+import type { LoginValues } from "../../../domain/login.js";
+import type { PageForm } from "../../../ports/index.js";
+import type { WebExtApi } from "../api.js";
 
 /**
  * Runs inside the page. Must be self-contained: it is serialised, not closed over. Fills the
