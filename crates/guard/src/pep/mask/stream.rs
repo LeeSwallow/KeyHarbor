@@ -71,6 +71,7 @@ mod tests {
             },
             Zeroizing::new("sk-SECRETVALUE".to_owned()),
         )])
+        .unwrap()
     }
 
     /// Feeds `pieces` one by one and returns all output, with or without a final flush.

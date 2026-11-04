@@ -4,17 +4,14 @@
 
 use super::Vault;
 use crate::LOCAL_AGENT;
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use keyharbor_domain::vault::{FieldName, ItemName};
 
 impl Vault {
     /// Swaps each named field (every field that has one, when `fields` is empty) with its
     /// previous value; returns the fields swapped. Reverting twice restores the change.
     pub fn revert(&self, name: &ItemName, fields: &[FieldName]) -> Result<Vec<String>> {
-        let (mut row, mut stored) = self
-            .store
-            .item_get(name.as_str())?
-            .context("item not found")?;
+        let (mut row, mut stored) = self.load_item_row(name)?;
         let (kind, name, origins) = self.verified(&row)?;
         let wanted = |field: &str| fields.is_empty() || fields.iter().any(|f| f.as_str() == field);
         let mut swapped = Vec::new();
@@ -30,7 +27,7 @@ impl Vault {
         row.updated_at = self.clock.now_rfc3339();
         row.meta_mac = self.mac_for(&row, kind, &name, &origins);
         self.store
-            .item_update(&self.guard(kind.domain()), &row, &stored)?;
+            .item_update(&self.guard(kind.domain())?, &row, &stored)?;
         self.note_change_by(LOCAL_AGENT, &name, "reverted");
         Ok(swapped)
     }

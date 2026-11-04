@@ -64,13 +64,20 @@ export type HostReplyWire =
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 
+/** A message of protocol v1 as a plain record, or null for anything else. */
+const readV1 = (raw: unknown): Record<string, unknown> | null => (isRecord(raw) && raw.v === PROTOCOL_VERSION ? raw : null);
+
+/** An error code the host may send: short, lowercase, words joined by '_'. */
+const HOST_ERROR_CODE = /^[a-z_]{1,40}$/;
+
 /** Reads a host reply. Anything not shaped like protocol v1 is `bad_reply`. */
-export function parseHostReply(raw: unknown): Result<HostReply> {
-  if (!isRecord(raw) || raw.v !== PROTOCOL_VERSION) return err("bad_reply");
+export function parseHostReply(input: unknown): Result<HostReply> {
+  const raw = readV1(input);
+  if (!raw) return err("bad_reply");
   if (raw.type === "received" && typeof raw.session === "string" && Number.isInteger(raw.cookies)) {
     return ok({ kind: "received", session: raw.session, cookies: raw.cookies as number });
   }
-  if (raw.type === "error" && typeof raw.code === "string" && /^[a-z_]{1,40}$/.test(raw.code)) {
+  if (raw.type === "error" && typeof raw.code === "string" && HOST_ERROR_CODE.test(raw.code)) {
     return ok({ kind: "refused", code: raw.code });
   }
   return err("bad_reply");
@@ -102,8 +109,9 @@ export function toSaveLoginWire(origin: string, login: LoginValues): SaveLoginWi
 }
 
 /** `logins {items}`: names of logins, nothing else. */
-export function parseLoginsReply(raw: unknown): Result<LoginChoice[]> {
-  if (!isRecord(raw) || raw.v !== PROTOCOL_VERSION) return err("bad_reply");
+export function parseLoginsReply(input: unknown): Result<LoginChoice[]> {
+  const raw = readV1(input);
+  if (!raw) return err("bad_reply");
   const refused = hostError(raw);
   if (refused) return refused;
   if (raw.type !== "logins" || !Array.isArray(raw.items) || !raw.items.every((i) => typeof i === "string")) return err("bad_reply");
@@ -111,8 +119,9 @@ export function parseLoginsReply(raw: unknown): Result<LoginChoice[]> {
 }
 
 /** `filled {username?, password}`: the values, to put into the page and drop. */
-export function parseFillReply(raw: unknown): Result<LoginValues> {
-  if (!isRecord(raw) || raw.v !== PROTOCOL_VERSION) return err("bad_reply");
+export function parseFillReply(input: unknown): Result<LoginValues> {
+  const raw = readV1(input);
+  if (!raw) return err("bad_reply");
   const refused = hostError(raw);
   if (refused) return refused;
   if (raw.type !== "filled" || typeof raw.password !== "string") return err("bad_reply");
@@ -122,8 +131,9 @@ export function parseFillReply(raw: unknown): Result<LoginValues> {
 }
 
 /** `saved {item}` (a draft) or `known {item}`. */
-export function parseSaveReply(raw: unknown): Result<SaveOutcome> {
-  if (!isRecord(raw) || raw.v !== PROTOCOL_VERSION) return err("bad_reply");
+export function parseSaveReply(input: unknown): Result<SaveOutcome> {
+  const raw = readV1(input);
+  if (!raw) return err("bad_reply");
   const refused = hostError(raw);
   if (refused) return refused;
   if ((raw.type !== "saved" && raw.type !== "known") || typeof raw.item !== "string") return err("bad_reply");
@@ -150,8 +160,9 @@ export const toBridgeWire = (): BridgeWire => ({ v: PROTOCOL_VERSION, type: "bri
 export const toRequestAnswerWire = (id: number, outcome: SiteRequestOutcome): RequestAnswerWire => ({ v: PROTOCOL_VERSION, type: "request_answer", id, ...outcome });
 
 /** A `request_site` from the host, or null for anything else. */
-export function parseRequestSite(raw: unknown): { id: number; session: string; origin: string } | null {
-  if (!isRecord(raw) || raw.v !== PROTOCOL_VERSION || raw.type !== "request_site") return null;
+export function parseRequestSite(input: unknown): { id: number; session: string; origin: string } | null {
+  const raw = readV1(input);
+  if (!raw || raw.type !== "request_site") return null;
   if (!Number.isInteger(raw.id) || typeof raw.session !== "string" || typeof raw.origin !== "string") return null;
   return { id: raw.id as number, session: raw.session, origin: raw.origin };
 }

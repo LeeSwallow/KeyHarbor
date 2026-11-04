@@ -2,6 +2,6 @@
 // every first-party domain (first-party isolation, `firstPartyDomain: null`). Without
 // `firstPartyDomain` the call throws when isolation is on.
 
-import type { CookieQueries } from "../webext/cookies.js";
+import type { CookieQueries } from "../webext/sources/cookies.js";
 
 export const firefoxCookieQueries: CookieQueries = (scope) => [{ domain: scope.site, partitionKey: {}, firstPartyDomain: null }];

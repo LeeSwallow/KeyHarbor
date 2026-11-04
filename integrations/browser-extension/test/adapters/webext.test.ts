@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { toSiteCookie, webextCookieSource } from "../../src/adapters/webext/cookies.js";
+import { toSiteCookie, webextCookieSource } from "../../src/adapters/webext/sources/cookies.js";
 import { webextPopupDeps } from "../../src/adapters/webext/popup.js";
-import { webextStorageSource } from "../../src/adapters/webext/storage.js";
+import { webextStorageSource } from "../../src/adapters/webext/sources/storage.js";
 import { scopeOf } from "../../src/domain/scope.js";
 import { fakeBrowser } from "../support/fake-browser.js";
 
