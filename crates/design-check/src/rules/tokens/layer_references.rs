@@ -1,10 +1,9 @@
 //! A layer reads only the layers the table allows: primitives read nothing, semantic reads
 //! primitives, components and patterns read semantic tokens and component hooks — never primitives.
 
-use super::Rule;
-use crate::layers;
 use crate::model::DesignSet;
 use crate::report::Violation;
+use crate::rules::Rule;
 use crate::scanner;
 
 pub struct LayerReferences;
@@ -18,10 +17,8 @@ impl Rule for LayerReferences {
         let owners = ds.owners();
         let mut out = Vec::new();
         for file in &ds.sheets {
-            let Some(spec) = layers::layer_of(&file.path) else {
-                continue;
-            };
-            for decl in file.sheet.blocks.iter().flat_map(|b| &b.decls) {
+            let spec = file.spec;
+            for decl in file.sheet.decls() {
                 for name in scanner::var_refs(&decl.value) {
                     // Undefined names are the defined-vars rule's business.
                     let Some(owner) = owners.get(&name) else {

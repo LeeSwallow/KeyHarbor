@@ -1,10 +1,10 @@
 //! Every stylesheet is in a layer, keyharbor.css imports each one that exists (and nothing that
 //! does not), and every component or pattern file styles a class some page actually uses.
 
-use super::Rule;
 use crate::layers::{ENTRY, Layer};
 use crate::model::DesignSet;
 use crate::report::Violation;
+use crate::rules::Rule;
 
 pub struct ComponentFiles;
 
@@ -47,7 +47,7 @@ impl Rule for ComponentFiles {
         {
             used.insert("kh".into(), String::new());
         }
-        for file in ds.sheets.iter().filter(|f| IMPORTED.contains(&f.layer)) {
+        for file in ds.sheets.iter().filter(|f| IMPORTED.contains(&f.layer())) {
             if !imports.contains(&file.path) {
                 out.push(Violation::new(
                     self.name(),
@@ -55,7 +55,7 @@ impl Rule for ComponentFiles {
                     format!("not imported by {ENTRY}"),
                 ));
             }
-            if matches!(file.layer, Layer::Components | Layer::Patterns)
+            if matches!(file.layer(), Layer::Components | Layer::Patterns)
                 && !DesignSet::styled_classes(file)
                     .iter()
                     .any(|c| used.contains_key(c))

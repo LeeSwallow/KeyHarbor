@@ -3,13 +3,18 @@
 
 use std::{env, thread};
 
+use keyharbor_design_check::DESIGN_ROOT;
+
+/// The port when none is given; design-system/README.md links to it.
+const DEFAULT_PORT: &str = "8765";
+
 fn main() -> std::io::Result<()> {
-    let port = env::args().nth(1).unwrap_or_else(|| "8765".into());
+    let port = env::args().nth(1).unwrap_or_else(|| DEFAULT_PORT.into());
     let base = keyharbor_design_check::serve::spawn(
         keyharbor_design_check::repo_root(),
         &format!("127.0.0.1:{port}"),
     )?;
-    println!("{base}/design-system/index.html  (Ctrl-C to stop)");
+    println!("{base}/{DESIGN_ROOT}/index.html  (Ctrl-C to stop)");
     loop {
         thread::park();
     }
