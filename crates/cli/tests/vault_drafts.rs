@@ -87,7 +87,9 @@ fn a_put_never_replaces_an_existing_item_and_returns_no_value() {
         json!({"name": "github~draft-9", "kind": "login", "fields": {"password": "x"}}),
         json!({"name": "x", "kind": "nope", "fields": {"password": "x"}}),
         json!({"name": "x", "kind": "login", "fields": {}}),
-        json!({"name": "x", "kind": "login", "fields": {"pin": "x"}}),
+        // Every kind but env takes fields the agent names (R-48); a bad name is still refused.
+        json!({"name": "x", "kind": "login", "fields": {"p-in": "x"}}),
+        json!({"name": "x", "kind": "env", "fields": {"pin": "x"}}),
         json!({"name": "x", "kind": "login", "fields": {"password": "x"}, "origins": ["github.com"]}),
     ] {
         let error = mcp.err("vault_put", bad.clone());

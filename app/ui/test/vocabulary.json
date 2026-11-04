@@ -16,5 +16,6 @@
     "session_start_seconds", "session_stop_seconds", "browser_endpoint_seconds", "browser_call_seconds",
     "request_ttl_hours", "max_drafts", "notify_requests", "notify_handoffs", "notify_drafts",
     "notify_denials", "notify_locks"
-  ]
+  ],
+  "kinds": ["login", "secret", "env", "card", "identity", "address", "credential"]
 }

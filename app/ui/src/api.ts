@@ -47,8 +47,13 @@ export interface Rule { agent: string; resource: string; target: string; effect:
 export const ANY = "*";
 /// `generates` names the field the form can make up (`KindSpec::generated`), if any.
 export interface KindForm { kind: string; domain: string; fields: FormField[]; free_fields: boolean; custom_fields: boolean; generates: string | null }
-export interface NewItemForm { name: string; kind: string; origins: string[]; values: Record<string, string>; generate_password: boolean }
-export interface ChangeForm { values: Record<string, string>; origins?: string[] }
+/// `plain` names fields that are not secret: shown in listings, not masked (R-48).
+export interface NewItemForm { name: string; kind: string; origins: string[]; values: Record<string, string>; generate_password: boolean; plain: string[] }
+/// Marking a field the item has `plain` asks the person first; `secret` marks one secret again.
+export interface ChangeForm { values: Record<string, string>; origins?: string[]; remove?: string[]; plain?: string[]; secret?: string[] }
+/// A credential template (R-48): the fields a new credential starts with. It holds no value.
+export interface TemplateField { name: string; secret: boolean }
+export interface Template { name: string; fields: TemplateField[] }
 /// How a site dragged onto a session ended; `words.ts` says it (J-202).
 export type SiteHandOff =
   | { outcome: "handed_off"; cookies: number }
@@ -98,6 +103,9 @@ export interface Api {
   editItem(name: string, form: ChangeForm, confirmed: boolean): Promise<Edited>;
   removeItem(name: string): Promise<void>;
   renameItem(from: string, to: string): Promise<string>;
+  templates(): Promise<Template[]>;
+  addTemplate(form: Template): Promise<void>;
+  removeTemplate(name: string): Promise<void>;
   requestSite(session: string, url: string): Promise<SiteHandOff>;
   openRequestWindow(id: string): Promise<void>;
   closeRequestWindow(): Promise<void>;
@@ -139,6 +147,9 @@ export function tauriApi(invoke: Invoke): Api {
     editItem: (name, form, confirmed) => call("edit_item", { name, form, confirmed }),
     removeItem: (name) => call("remove_item", { name }),
     renameItem: (from, to) => call("rename_item", { from, to }),
+    templates: () => call("templates"),
+    addTemplate: (form) => call("add_template", { form }),
+    removeTemplate: (name) => call("remove_template", { name }),
     requestSite: (session, url) => call("request_site", { session, url }),
     openRequestWindow: (id) => call("open_request_window", { id }),
     closeRequestWindow: () => call("close_request_window"),

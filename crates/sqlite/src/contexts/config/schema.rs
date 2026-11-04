@@ -6,3 +6,10 @@ diesel::table! {
         value -> Text,
     }
 }
+
+diesel::table! {
+    credential_templates (name) {
+        name -> Text,
+        fields -> Text,
+    }
+}

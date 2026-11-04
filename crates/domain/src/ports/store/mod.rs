@@ -1,5 +1,5 @@
 //! Storage ports, one per persistence context (vault, session, site, request, access, audit,
-//! settings), and the [`Store`] that bundles them. `keyharbor-sqlite` implements them.
+//! settings and its credential templates), and the [`Store`] that bundles them. `keyharbor-sqlite` implements them.
 
 pub mod access;
 pub mod audit;
@@ -7,6 +7,7 @@ pub mod request;
 pub mod session;
 pub mod settings;
 pub mod site;
+pub mod template;
 pub mod vault;
 
 pub use access::{GrantStore, PolicyStore};
@@ -15,6 +16,7 @@ pub use request::VaultRequestStore;
 pub use session::{SessionRow, SessionStore};
 pub use settings::{AUDIT_ENABLED, SettingsStore};
 pub use site::SiteStore;
+pub use template::TemplateStore;
 pub use vault::{
     DomainKeyRow, FieldRow, ItemRow, KeyGuard, RotationGuard, RotationLock, VaultRow, VaultStore,
 };
@@ -30,6 +32,7 @@ pub trait Store:
     + GrantStore
     + AuditStore
     + SettingsStore
+    + TemplateStore
 {
 }
 impl<
@@ -41,7 +44,8 @@ impl<
         + PolicyStore
         + GrantStore
         + AuditStore
-        + SettingsStore,
+        + SettingsStore
+        + TemplateStore,
 > Store for T
 {
 }

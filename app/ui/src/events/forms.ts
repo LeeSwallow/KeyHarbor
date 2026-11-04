@@ -2,12 +2,12 @@
 // (#182). The secure input form's handler is not here: main.ts keeps it as it was.
 
 import { ANY } from "../api.js";
-import { edit, select, warned } from "../state.js";
+import { edit, fail, select, warned } from "../state.js";
 import { editorValues } from "../views/editor.js";
-import { joinFolders, parseFolders } from "../views/settings.js";
+import { joinFolders, parseFolders, templateForm } from "../views/settings.js";
 import { type Win, change, load } from "./window.js";
 
-export type FormKind = "request" | "new-item" | "edit-item" | "rename-item" | "setting" | "rule";
+export type FormKind = "request" | "new-item" | "edit-item" | "rename-item" | "setting" | "rule" | "template";
 export type FormHandler = (el: HTMLFormElement, data: FormData) => void;
 export type Forms = Record<FormKind, FormHandler>;
 
@@ -20,6 +20,7 @@ export function formKind(el: HTMLFormElement): FormKind | null {
   if (d.editor === "rename") return "rename-item";
   if (d.setting) return "setting";
   if (d.rule !== undefined) return "rule";
+  if (d.templateForm !== undefined) return "template";
   return null;
 }
 
@@ -28,6 +29,9 @@ const text = (data: FormData, name: string): string => {
   const value = data.get(name);
   return typeof value === "string" ? value : "";
 };
+
+/// A form that repeats a field name is not sent: the second would replace the first.
+const clashMessage = (fields: string[]) => `이미 있는 필드 이름입니다: ${fields.join(", ")}`;
 
 /// Every form but the secure input form.
 export function windowForms(w: Win): Omit<Forms, "request"> {
@@ -38,19 +42,21 @@ export function windowForms(w: Win): Omit<Forms, "request"> {
       // A form that names no kind is not sent: no item is stored as "undefined" (#182).
       const kind = text(data, "kind") || el.dataset.kind;
       if (!kind) return;
-      const { values, origins } = editorValues(data);
-      const item = { name: text(data, "name"), kind, origins, values, generate_password: data.get("generate") === "on" };
+      const { values, origins, plain, clashes } = editorValues(data);
+      if (clashes.length) return w.set(fail(w.state, clashMessage(clashes)));
+      const item = { name: text(data, "name"), kind, origins, values, plain, generate_password: data.get("generate") === "on" };
       el.reset();
       void guard(() => api.addItem(item).then((saved) => selectAfterLoad(saved.name).then(() => w.set(warned(w.state, saved.warnings)))));
     },
     "edit-item": (el, data) => {
       const name = el.dataset.name;
       if (!name) return;
-      const { values, origins } = editorValues(data);
+      const { values, origins, plain, secret, remove, clashes } = editorValues(data);
+      if (clashes.length) return w.set(fail(w.state, clashMessage(clashes)));
       el.reset();
       // The warnings land with the answer that stored the change, the confirmed resend too.
       const send = (confirmed: boolean) =>
-        api.editItem(name, { values, origins }, confirmed).then((edited) => (w.set(warned(w.state, edited.warnings)), edited));
+        api.editItem(name, { values, origins, plain, secret, remove }, confirmed).then((edited) => (w.set(warned(w.state, edited.warnings)), edited));
       void change(w, send).then(() => w.set(edit(w.state, null)));
     },
     "rename-item": (el, data) => {
@@ -75,6 +81,12 @@ export function windowForms(w: Win): Omit<Forms, "request"> {
         effect: text(data, "effect"),
       };
       void change(w, (confirmed) => api.setPolicy(rule, confirmed));
+    },
+    // A template holds no value: nothing to confirm (R-48).
+    template: (el, data) => {
+      const form = templateForm(data);
+      el.reset();
+      void guard(() => api.addTemplate(form).then(() => load(w)));
     },
   };
 }

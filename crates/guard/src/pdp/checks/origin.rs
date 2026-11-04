@@ -13,7 +13,12 @@ impl Check for BrowserOrigin {
             return Ok(());
         };
         let info = ctx.info;
-        origin::allows_browser(info.domain, info.origin_binding, &info.origins, to.frame)
+        origin::allows_browser(
+            info.kind.needs_origin_for_browser(),
+            info.origin_binding,
+            &info.origins,
+            to.frame,
+        )
     }
 }
 

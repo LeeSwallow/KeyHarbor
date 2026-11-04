@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { ANY } from "../src/api.js";
 import { RESOURCES } from "../src/views/admin.js";
 import { SHOWN } from "../src/views/settings.js";
-import { auditWords, resourceWords, valueWarningWords } from "../src/words.js";
+import { auditWords, kindLook, kindWord, resourceWords, valueWarningWords } from "../src/words.js";
 
 const vocabulary = JSON.parse(readFileSync(new URL("./vocabulary.json", import.meta.url), "utf8")) as {
   any: string;
@@ -15,6 +15,7 @@ const vocabulary = JSON.parse(readFileSync(new URL("./vocabulary.json", import.m
   audit_kinds: string[];
   value_warnings: string[];
   settings: string[];
+  kinds: string[];
 };
 
 describe("the window's vocabulary", () => {
@@ -36,6 +37,11 @@ describe("the window's vocabulary", () => {
 
   it("has a sentence for every reason a saved value warns (J-230)", () => {
     expect(vocabulary.value_warnings.filter((r) => !(r in valueWarningWords))).toEqual([]);
+  });
+
+  it("has a word and a look for every item kind (R-48 added credential)", () => {
+    expect(vocabulary.kinds.filter((k) => kindWord(k) === k)).toEqual([]);
+    expect(vocabulary.kinds.filter((k) => !(k in kindLook))).toEqual([]);
   });
 
   it("names every setting in words, none left as a plain field (J-274)", () => {
