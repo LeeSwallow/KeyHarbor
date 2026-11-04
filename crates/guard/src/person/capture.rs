@@ -4,7 +4,7 @@
 //! draft, an unchanged one is left alone.
 
 use super::PERSON;
-use crate::Guard;
+use crate::{Guard, lock_store};
 use anyhow::{Result, anyhow, bail};
 use keyharbor_core::{DraftItem, ItemSource, ItemStatus, PlaintextAccess, Vault};
 use keyharbor_domain::{
@@ -32,10 +32,7 @@ pub enum CaptureOutcome {
 impl Guard {
     pub fn capture(&self, login: CapturedLogin) -> Result<CaptureOutcome> {
         let (enabled, state) = {
-            let store = self
-                .store()
-                .lock()
-                .map_err(|_| anyhow!("store lock poisoned"))?;
+            let store = lock_store(self.store())?;
             let enabled = capture_enabled(store.setting_get(CAPTURE_ENABLED)?.as_deref());
             (enabled, store.get(self.session())?.map(|row| row.state))
         };
