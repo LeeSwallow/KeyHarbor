@@ -2,6 +2,8 @@
 // not stored names). A value missing from a table is shown as it is, so a new one is still
 // readable before it gets a word here. Environment variable names are never translated.
 
+import type { SiteHandOff } from "./api.js";
+
 const word = (table: Record<string, string>) => (value: string) => table[value] ?? value;
 
 /// The sidebar's security line, by authentication method (03 §3.10, R-21).
@@ -38,6 +40,19 @@ export const sessionWord = word({
   running: "실행 중", stopped: "멈춤", starting: "시작 중", stopping: "멈추는 중", awaiting_user: "사람 기다림",
   failed: "실패", recovery_required: "복구 필요",
 });
+
+/// How a site dragged onto `session` ended (`SiteHandOff`, J-202).
+export function handOffWord(answer: SiteHandOff, session: string): string {
+  switch (answer.outcome) {
+    case "handed_off": return `쿠키 ${answer.cookies}개를 ${session} 세션에 넘겼습니다`;
+    case "declined": return "브라우저에서 넘기지 않았습니다";
+    case "no_permission": return "확장이 이 사이트에 접근할 수 없습니다. 확장 팝업에서 한 번 넘겨 허용하세요";
+    case "no_session": return `실행 중인 ${session} 세션이 없습니다`;
+    case "bad_site": return "http·https 사이트만 넘길 수 있습니다";
+    case "timeout": return "브라우저에서 답이 오지 않았습니다";
+    case "failed": return "넘기지 못했습니다";
+  }
+}
 
 export const siteWord = word({ logged_in: "로그인됨", expired: "로그인 만료", unknown: "확인 안 됨" });
 

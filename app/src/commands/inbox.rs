@@ -1,9 +1,10 @@
 //! "확인 대기" (09 §9.3): agents' requests for information and drafts to settle.
 
+use super::ids::{item_name, request_id};
 use crate::{Ctx, auth::AuthScope};
-use anyhow::{Context, Result, anyhow};
+use anyhow::Result;
 use keyharbor_core::{ItemStatus, request};
-use keyharbor_domain::{RequestId, policy::LOCAL_AGENT, vault::ItemName};
+use keyharbor_domain::policy::LOCAL_AGENT;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -62,13 +63,6 @@ pub fn inbox(ctx: &Ctx) -> Result<InboxDto> {
     Ok(InboxDto { requests, drafts })
 }
 
-fn request_id(id: &str) -> Result<RequestId> {
-    RequestId::parse(id).context("invalid request id")
-}
-fn item(name: &str) -> Result<ItemName> {
-    ItemName::parse(name).map_err(|e| anyhow!("{e}"))
-}
-
 pub fn decline_request(ctx: &Ctx, id: &str) -> Result<()> {
     ctx.challenge(AuthScope::Edit)?;
     request::decline(&*ctx.store()?, ctx.clock(), request_id(id)?)
@@ -78,12 +72,12 @@ pub fn confirm_draft(ctx: &Ctx, name: &str) -> Result<String> {
     ctx.challenge(AuthScope::Edit)?;
     Ok(ctx
         .vault()?
-        .confirm(&item(name)?, LOCAL_AGENT)?
+        .confirm(&item_name(name)?, LOCAL_AGENT)?
         .as_str()
         .to_owned())
 }
 
 pub fn discard_draft(ctx: &Ctx, name: &str) -> Result<()> {
     ctx.challenge(AuthScope::Edit)?;
-    ctx.vault()?.discard(&item(name)?)
+    ctx.vault()?.discard(&item_name(name)?)
 }

@@ -41,10 +41,26 @@ pub fn resolve_browser(
         None => BrowserChoice::parse(&crate::settings::get(settings, BROWSER)?)
             .map_err(|e| anyhow::anyhow!("{BROWSER} {e}"))?,
     };
-    let probe = crate::settings::get(settings, EGO_PROBE_SECONDS)?
+    runtime.resolve_browser(&choice, ego_probe(settings)?)
+}
+
+/// Whether ego lite answers within the `ego_probe_seconds` setting, the same wait `auto` gives
+/// it when a session opens (the settings screen's "지금 ego lite가 켜져 있습니다").
+pub fn ego_lite_answers(
+    settings: &dyn SettingsStore,
+    runtime: &dyn SessionRuntime,
+) -> Result<bool> {
+    let probe = ego_probe(settings)?;
+    Ok(runtime
+        .resolve_browser(&BrowserChoice::EgoLite, probe)
+        .is_ok())
+}
+
+fn ego_probe(settings: &dyn SettingsStore) -> Result<Duration> {
+    let seconds = crate::settings::get(settings, EGO_PROBE_SECONDS)?
         .parse()
         .with_context(|| format!("invalid {EGO_PROBE_SECONDS}"))?;
-    runtime.resolve_browser(&choice, Duration::from_secs(probe))
+    Ok(Duration::from_secs(seconds))
 }
 
 /// Reserves the session and starts its supervisor, returning once the session is `running`.
@@ -240,4 +256,101 @@ pub fn endpoint(store: &dyn Store, runtime: &dyn SessionRuntime, id: SessionId) 
         bail!("session changed while reading the endpoint");
     }
     Ok(endpoint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use keyharbor_domain::{
+        browser_choice::BrowserKind,
+        ports::runtime::{LaunchOptions, RuntimeLock, StartedSupervisor},
+    };
+    use std::{cell::RefCell, path::Path, sync::Mutex};
+
+    #[derive(Default)]
+    struct Settings(RefCell<Option<String>>);
+    impl SettingsStore for Settings {
+        fn setting_get(&self, key: &str) -> Result<Option<String>> {
+            assert_eq!(key, EGO_PROBE_SECONDS);
+            Ok(self.0.borrow().clone())
+        }
+        fn setting_set(&self, _: &str, value: &str) -> Result<()> {
+            *self.0.borrow_mut() = Some(value.to_owned());
+            Ok(())
+        }
+    }
+
+    /// Ego lite answers only when given at least `answers_within`; records each wait.
+    struct Probe {
+        answers_within: Duration,
+        waits: Mutex<Vec<Duration>>,
+    }
+    impl SessionRuntime for Probe {
+        fn resolve_browser(
+            &self,
+            choice: &BrowserChoice,
+            probe: Duration,
+        ) -> Result<ResolvedBrowser> {
+            assert_eq!(choice, &BrowserChoice::EgoLite);
+            self.waits.lock().unwrap().push(probe);
+            if probe < self.answers_within {
+                bail!("ego lite did not answer");
+            }
+            Ok(ResolvedBrowser {
+                kind: BrowserKind::EgoLite,
+                executable: "ego-browser".into(),
+            })
+        }
+        fn has_browser(&self, _: &Path) -> bool {
+            unreachable!()
+        }
+        fn preflight(&self, _: SessionId) -> Result<()> {
+            unreachable!()
+        }
+        fn is_alive(&self, _: SessionId) -> bool {
+            unreachable!()
+        }
+        fn lock(&self, _: SessionId) -> Result<RuntimeLock> {
+            unreachable!()
+        }
+        fn start(
+            &self,
+            _: SessionId,
+            _: Generation,
+            _: &LaunchOptions<'_>,
+        ) -> Result<Box<dyn StartedSupervisor>> {
+            unreachable!()
+        }
+        fn close(&self, _: SessionId) -> Result<()> {
+            unreachable!()
+        }
+        fn remove_socket(&self, _: SessionId) {
+            unreachable!()
+        }
+        fn remove_profile(&self, _: SessionId) -> Result<()> {
+            unreachable!()
+        }
+        fn debug_endpoint(&self, _: SessionId) -> Result<String> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn the_ego_lite_check_waits_as_long_as_the_setting_says() {
+        let settings = Settings::default();
+        let probe = Probe {
+            answers_within: Duration::from_secs(10),
+            waits: Mutex::default(),
+        };
+        assert!(
+            !ego_lite_answers(&settings, &probe).unwrap(),
+            "the default 5 s"
+        );
+        settings.setting_set(EGO_PROBE_SECONDS, "10").unwrap();
+        assert!(ego_lite_answers(&settings, &probe).unwrap());
+        assert_eq!(
+            *probe.waits.lock().unwrap(),
+            [Duration::from_secs(5), Duration::from_secs(10)]
+        );
+    }
 }

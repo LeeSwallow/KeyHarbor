@@ -37,6 +37,9 @@ pub struct AuditDto {
     pub at: String,
     pub agent: String,
     pub kind: String,
+    /// The agent was refused (`AuditKind::is_denial`): the screen's "거부" badge and the
+    /// denial notices read this one rule (J-200).
+    pub denied: bool,
     pub item: Option<String>,
     pub origin: Option<String>,
     pub result: String,
@@ -52,15 +55,10 @@ pub fn audit(ctx: &Ctx, limit: usize) -> Result<Vec<AuditDto>> {
             at: r.at,
             agent: r.event.agent,
             kind: r.event.kind.as_str().to_owned(),
+            denied: r.event.kind.is_denial(),
             item: r.event.item_name,
             origin: r.event.origin,
             result: r.event.result,
         })
         .collect())
 }
-
-mod menu;
-mod notices;
-
-pub use menu::{MenuText, menu_text};
-pub use notices::{Notice, NoticeKinds, Seen, Snapshot, notice_kinds, notices, snapshot};

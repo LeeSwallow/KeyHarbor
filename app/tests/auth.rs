@@ -137,7 +137,12 @@ fn a_refused_challenge_stops_every_protected_command_before_it_does_anything() {
         commands::set_setting(&c, "audit_enabled", "false", true),
         PolicyChange,
     );
-    let allow = ("codex", "item", "github", "allow");
+    let allow = commands::RuleForm {
+        agent: "codex".into(),
+        resource: "item".into(),
+        target: "github".into(),
+        effect: "allow".into(),
+    };
     refused_for(commands::set_policy(&c, allow, true), PolicyChange);
     refused_for(
         commands::remove_policy(&c, "codex", "item", "github", true),

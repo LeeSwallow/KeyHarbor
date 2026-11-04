@@ -2,6 +2,7 @@
 //! item path like the CLI: descriptions are checked for values, what a change weakens is
 //! confirmed by the person ([`crate::confirm`]), then it is stored.
 
+use super::ids::{item_name, new_item_name};
 use crate::{
     Ctx,
     auth::AuthScope,
@@ -11,7 +12,7 @@ use anyhow::{Result, anyhow, bail};
 use keyharbor_core::{ItemChange, ItemDetails, ItemSource, ItemStatus, NewItem, generate_password};
 use keyharbor_domain::{
     password::PasswordRule,
-    vault::{FieldName, ItemKind, ItemName, KINDS, Origin},
+    vault::{FieldName, ItemKind, KINDS, Origin},
 };
 use keyharbor_guard::items;
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,9 @@ pub struct KindForm {
     pub fields: Vec<(&'static str, bool)>,
     pub free_fields: bool,
     pub custom_fields: bool,
+    /// The field the form can make up instead of taking (`KindSpec::generated`); `None` hides
+    /// the "생성" box.
+    pub generates: Option<&'static str>,
 }
 
 /// What the "새 항목" form offers, from the kind registry.
@@ -38,6 +42,7 @@ pub fn kinds() -> Vec<KindForm> {
             fields: spec.fields.iter().map(|f| (f.name, f.secret)).collect(),
             free_fields: spec.free_fields,
             custom_fields: spec.custom_fields,
+            generates: spec.generated,
         })
         .collect()
 }
@@ -51,13 +56,9 @@ pub struct NewItemForm {
     pub origins: Vec<String>,
     #[serde(default)]
     pub values: BTreeMap<String, String>,
-    /// Make up the login's password instead of taking one.
+    /// Make up the kind's generated field (a login's password) instead of taking one.
     #[serde(default)]
     pub generate_password: bool,
-}
-
-fn invalid(e: keyharbor_domain::vault::InvalidValue) -> anyhow::Error {
-    anyhow!("{e}")
 }
 
 /// The form's values as they arrive, each wiped when dropped. Done first, before any check
@@ -75,7 +76,7 @@ fn fields(kind: ItemKind, values: Typed) -> Result<Vec<(FieldName, Zeroizing<Str
     let mut out = Vec::new();
     for (name, value) in values {
         if !value.is_empty() {
-            out.push((kind.field_name(&name).map_err(invalid)?, value));
+            out.push((kind.field_name(&name)?, value));
         }
     }
     Ok(out)
@@ -85,7 +86,7 @@ fn origins(values: &[String]) -> Result<Vec<Origin>> {
     values
         .iter()
         .filter(|o| !o.trim().is_empty())
-        .map(|o| Origin::parse(o.trim()).map_err(invalid))
+        .map(|o| Ok(Origin::parse(o.trim())?))
         .collect()
 }
 
@@ -93,15 +94,15 @@ pub fn add_item(ctx: &Ctx, form: NewItemForm) -> Result<String> {
     let typed = wiped(form.values);
     ctx.challenge(AuthScope::Edit)?;
     let kind = ItemKind::parse(&form.kind).ok_or_else(|| anyhow!("unknown kind"))?;
-    let name = ItemName::parse_new(&form.name).map_err(invalid)?;
+    let name = new_item_name(&form.name)?;
     let mut values = fields(kind, typed)?;
     if form.generate_password {
-        if kind != ItemKind::Login {
-            bail!("only a login gets a generated password");
-        }
-        values.retain(|(f, _)| f.as_str() != "password");
+        let field = kind
+            .generated_field()
+            .ok_or_else(|| anyhow!("only a login gets a generated password"))?;
+        values.retain(|(f, _)| f.as_str() != field);
         values.push((
-            FieldName::parse("password")?,
+            FieldName::parse(field)?,
             generate_password(&PasswordRule::default()),
         ));
     }
@@ -135,12 +136,10 @@ pub struct ChangeForm {
 pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Result<Outcome> {
     let typed = wiped(form.values);
     ctx.challenge(AuthScope::Edit)?;
-    let name = ItemName::parse(name).map_err(invalid)?;
+    let name = item_name(name)?;
     let vault = ctx.vault()?;
     let kind = vault
-        .list()?
-        .into_iter()
-        .find(|i| i.name == name.as_str())
+        .item_use(&name)?
         .ok_or_else(|| anyhow!("item not found"))?
         .kind;
     // Moved, not cloned: `confirmed_by_dialog` runs the change once.
@@ -158,7 +157,7 @@ pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Re
 
 pub fn remove_item(ctx: &Ctx, name: &str) -> Result<()> {
     ctx.challenge(AuthScope::Edit)?;
-    let name = ItemName::parse(name).map_err(invalid)?;
+    let name = item_name(name)?;
     if !ctx.vault()?.remove(&name)? {
         bail!("item not found");
     }
@@ -169,8 +168,8 @@ pub fn remove_item(ctx: &Ctx, name: &str) -> Result<()> {
 /// policy rule names it (J-104).
 pub fn rename_item(ctx: &Ctx, from: &str, to: &str) -> Result<String> {
     ctx.challenge(AuthScope::Edit)?;
-    let from = ItemName::parse(from).map_err(invalid)?;
-    let to = ItemName::parse_new(to).map_err(invalid)?;
+    let from = item_name(from)?;
+    let to = new_item_name(to)?;
     keyharbor_core::rename::rename_item(&*ctx.store()?, &ctx.vault()?, &from, &to)?;
     Ok(to.as_str().to_owned())
 }

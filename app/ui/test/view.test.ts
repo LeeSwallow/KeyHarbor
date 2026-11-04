@@ -4,6 +4,7 @@ import { alone, asking, closeForm, edit, go, hide, initial, openForm, select, sh
 import { editorValues } from "../src/views/editor.js";
 import { formValues } from "../src/views/form.js";
 import { esc, render } from "../src/view.js";
+import { handOffWord } from "../src/words.js";
 
 const github: Item = {
   name: "github", kind: "login", domain: "credentials", status: "active", source: "user",
@@ -119,7 +120,10 @@ describe("copying and sessions", () => {
   });
 
   it("shows open, stop, or recovery behind a checkbox", () => {
-    const session = (state: string) => ({ id: "s1", name: "work", state, cdp: false, description: null, browser: null, protection: null, failure: null, sites: [] });
+    const session = (state: string) => ({
+      id: "s1", name: "work", state, cdp: false, description: null, browser: null, protection: null, failure: null, sites: [],
+      live: state === "running", recoverable: state === "recovery_required",
+    });
     const view = (state: string) => render({ ...initial, view: "sessions", sessions: [session(state)] });
     expect(view("stopped")).toContain('data-action="open-session"');
     expect(view("running")).toContain('data-action="stop-session"');
@@ -129,8 +133,8 @@ describe("copying and sessions", () => {
 
 describe("the item forms", () => {
   const kinds = [
-    { kind: "login", domain: "credentials", fields: [["username", false], ["password", true]] as [string, boolean][], free_fields: false, custom_fields: false },
-    { kind: "env", domain: "developer", fields: [] as [string, boolean][], free_fields: true, custom_fields: false },
+    { kind: "login", domain: "credentials", fields: [["username", false], ["password", true]] as [string, boolean][], free_fields: false, custom_fields: false, generates: "password" },
+    { kind: "env", domain: "developer", fields: [] as [string, boolean][], free_fields: true, custom_fields: false, generates: null },
   ];
 
   it("offer the kind's fields, password inputs for secrets, and generation for logins", () => {
@@ -157,5 +161,25 @@ describe("the item forms", () => {
     data.set("v:password", "pw");
     data.set("origins", "https://a.example\n\n https://b.example ");
     expect(editorValues(data)).toEqual({ values: { password: "pw" }, origins: ["https://a.example", "https://b.example"] });
+  });
+});
+
+describe("what Rust decides, the window only shows", () => {
+  const event = (kind: string, denied: boolean) => ({ at: "2026-10-29T05:02:00Z", agent: "codex", kind, denied, item: null, origin: null, result: "x" });
+  const audit = (e: ReturnType<typeof event>) => render({ ...initial, view: "audit", audit: [e] });
+
+  it("marks a denial by the record's flag, the one the notices use (J-200)", () => {
+    expect(audit(event("secret_denied_suppressed", true))).toContain('class="kh-badge denied"');
+    expect(audit(event("future_denied_kind", false))).not.toContain('class="kh-badge denied"');
+  });
+
+  it("words a site hand-off by its outcome", () => {
+    expect(handOffWord({ outcome: "handed_off", cookies: 3 }, "work")).toBe("쿠키 3개를 work 세션에 넘겼습니다");
+    expect(handOffWord({ outcome: "no_session" }, "work")).toBe("실행 중인 work 세션이 없습니다");
+  });
+
+  it("offers generation only for the field a kind names", () => {
+    const kinds = [{ kind: "secret", domain: "developer", fields: [["value", true]] as [string, boolean][], free_fields: false, custom_fields: false, generates: "value" }];
+    expect(render(edit({ ...initial, view: "items", kinds }, { mode: "new", kind: "secret" }))).toContain("값 생성");
   });
 });
