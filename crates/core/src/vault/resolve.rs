@@ -3,7 +3,7 @@
 
 use super::{MaskValues, Vault, vault_err};
 use crate::PlaintextAccess;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use keyharbor_domain::vault::{
     Domain, FieldName, ItemKind, ItemName, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN, PlaceholderRef,
     parse_placeholders,
@@ -19,10 +19,7 @@ impl Vault {
         _access: &PlaintextAccess,
         reference: &PlaceholderRef,
     ) -> Result<Zeroizing<String>> {
-        let (row, fields) = self
-            .store
-            .item_get(reference.item.as_str())?
-            .context("item not found")?;
+        let (row, fields) = self.load_item_row(&reference.item)?;
         let (kind, _, _) = self.verified(&row)?;
         let field = fields
             .iter()
@@ -36,7 +33,7 @@ impl Vault {
             field: &field.field,
         };
         let bytes =
-            open_field(&self.domain_keys[&domain].1, &ad, &field.sealed).map_err(vault_err)?;
+            open_field(&self.domain_key(domain)?.1, &ad, &field.sealed).map_err(vault_err)?;
         let text = std::str::from_utf8(&bytes).context("stored field is not UTF-8")?;
         Ok(Zeroizing::new(text.to_owned()))
     }
@@ -49,7 +46,7 @@ impl Vault {
         let version = self.version()?;
         let mut values = Vec::new();
         for row in self.store.item_list()? {
-            let item = ItemName::parse(&row.name).map_err(|e| anyhow!("{e}"))?;
+            let item = ItemName::parse(&row.name)?;
             let domain = Domain::from_byte(row.domain).context("unknown domain in database")?;
             let (_, fields) = self
                 .store
@@ -78,12 +75,13 @@ impl Vault {
                 };
                 let reference = PlaceholderRef {
                     item: item.clone(),
-                    field: FieldName::parse(&field.field).map_err(|e| anyhow!("{e}"))?,
+                    field: FieldName::parse(&field.field)?,
                 };
+                let dk = &self.domain_key(domain)?.1;
                 // The value before the last change may still be valid somewhere: mask it too.
                 for record in std::iter::once(&field.sealed).chain(field.previous.as_ref()) {
-                    let bytes = open_field(&self.domain_keys[&domain].1, &ad, record)
-                        .map_err(|e| anyhow!("{e}"))
+                    let bytes = open_field(dk, &ad, record)
+                        .map_err(vault_err)
                         .context("could not decrypt a value for masking")?;
                     let text = Zeroizing::new(
                         std::str::from_utf8(&bytes)
@@ -104,7 +102,7 @@ pub fn fill_template(
     template: &str,
     mut resolve: impl FnMut(&PlaceholderRef) -> Result<Zeroizing<String>>,
 ) -> Result<Zeroizing<String>> {
-    let refs = parse_placeholders(template).map_err(|e| anyhow!("{e}"))?;
+    let refs = parse_placeholders(template)?;
     let values = refs.iter().map(&mut resolve).collect::<Result<Vec<_>>>()?;
     let size = template.len() + values.iter().map(|v| v.len()).sum::<usize>();
     let mut out = Zeroizing::new(String::with_capacity(size));

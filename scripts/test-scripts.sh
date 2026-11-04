@@ -62,7 +62,7 @@ planted "a-nested-cli-module-calling-a-storage-port" cli/src/session_cmd/grant.r
 	"interfaces call storage ports directly"
 planted "an-mcp-tool-calling-a-storage-port" mcp/src/tools/vault.rs 'fn x(s: &dyn S) { let _ = s.policy_rules(); }' \
 	"interfaces call storage ports directly"
-planted "a-placeholder-literal-outside-domain" guard/src/login.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
+planted "a-placeholder-literal-outside-domain" guard/src/browser/login.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
 	"placeholder syntax outside keyharbor-domain"
 planted "a-requester-check-outside-domain" supervisor/src/ops.rs 'fn x(a: &str) -> bool { a == ANY }' \
 	"requester-name rule outside keyharbor-domain"

@@ -4,4 +4,4 @@
 mod client;
 mod protocol;
 
-pub(crate) use client::Cdp;
+pub(crate) use client::{CONNECTION_CLOSED, Cdp};
