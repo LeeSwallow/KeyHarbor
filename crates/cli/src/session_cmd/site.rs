@@ -1,12 +1,12 @@
 //! `keyharbor site`: a session's recorded sign-in state per site. The rules are core's
 //! (`keyharbor_core::site`); this module parses and prints.
 
+use super::session_id;
 use crate::compose::App;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use clap::Subcommand;
 use keyharbor_core::site::{self, SiteChange};
 use keyharbor_domain::{
-    SessionId,
     policy::LOCAL_AGENT,
     site::{SiteRecord, SiteState},
     vault::{ItemName, Origin},
@@ -47,7 +47,7 @@ pub fn run(app: &App, command: SiteCmd) -> Result<()> {
     let store = app.store()?;
     match command {
         SiteCmd::List { session } => {
-            let id = SessionId::parse(&session).context("invalid session id")?;
+            let id = session_id(&session)?;
             for record in site::list(&*store, id)? {
                 println!("{}", line(&record));
             }
@@ -59,7 +59,7 @@ pub fn run(app: &App, command: SiteCmd) -> Result<()> {
             item,
         } => {
             let change = SiteChange {
-                session: SessionId::parse(&session).context("invalid session id")?,
+                session: session_id(&session)?,
                 origin: Origin::parse(&origin).map_err(invalid)?,
                 state: SiteState::parse(&state).map_err(invalid)?,
                 item: item

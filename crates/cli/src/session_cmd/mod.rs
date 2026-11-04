@@ -1,11 +1,20 @@
-//! Session commands: `create`, `list` (`ls`), `rm`, `open`, `stop`, `wait-auth`, `handoff`, `resume`,
-//! `recover`, `endpoint`, and the hidden `__supervise` used by `open`.
+//! Session commands: `create`, `edit`, `list` (`ls`), `rm`, `open`, `stop`, `wait-auth`,
+//! `receive`, `handoff`, `resume`, `recover`, `endpoint`, and the hidden `__supervise` used by
+//! `open` ([`supervise`]). A session's sites are in [`site`] (sign-in state) and [`grant`]
+//! (which sites it may load).
 
-use crate::compose::App;
+pub mod grant;
+pub mod site;
+
+use crate::{
+    args::{parse_browser, parse_description},
+    compose::App,
+};
 use anyhow::{Context, Result, bail};
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use keyharbor_core::{
-    LOCAL_AGENT, grant,
+    LOCAL_AGENT,
+    grant::handed_off,
     session::{
         self as lifecycle, DisplayState, OpenOptions, ResumeWait, SessionView, poll,
         remove::{self, Force},
@@ -15,9 +24,9 @@ use keyharbor_domain::{
     SessionId, SessionName, State,
     browser_choice::{BrowserChoice, BrowserKind},
     ports::{Clock, SessionRuntime, Store},
-    vault::{Description, Origin},
+    vault::Origin,
 };
-use keyharbor_supervisor::{SUPERVISE_COMMAND, SuperviseArgs};
+use keyharbor_supervisor::SuperviseArgs;
 use std::ffi::OsString;
 
 #[derive(Subcommand)]
@@ -65,7 +74,7 @@ pub enum SessionCmd {
         cdp: bool,
         /// auto, chrome, ego-lite or an absolute path to a Chrome-like executable (default:
         /// the `browser` setting)
-        #[arg(long, value_parser = crate::parse_browser)]
+        #[arg(long, value_parser = parse_browser)]
         browser: Option<BrowserChoice>,
         /// Run Chrome without a window
         #[arg(long)]
@@ -104,16 +113,14 @@ pub enum SessionCmd {
     },
     /// Print the raw CDP endpoint of a session opened with --cdp
     Endpoint { id: String },
-    /// Run a session's supervisor (started by `open`; arguments are `SuperviseArgs`)
-    #[command(name = SUPERVISE_COMMAND, hide = true)]
-    Supervise {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<OsString>,
-    },
 }
 
-fn parse_description(text: &str) -> Result<Description> {
-    Description::parse(text).map_err(|e| anyhow::anyhow!("{e}"))
+/// `__supervise`: arguments are `SuperviseArgs`. Not a [`SessionCmd`]: it runs on the
+/// supervisor's adapters, not on [`Ports`], so `main` sends it here first.
+#[derive(Args)]
+pub struct SuperviseCmd {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<OsString>,
 }
 
 fn session_id(value: &str) -> Result<SessionId> {
@@ -144,6 +151,12 @@ fn view_line(view: &SessionView) -> String {
     )
 }
 
+/// Runs a session's supervisor (started by `open`).
+pub fn supervise(app: &App, command: SuperviseCmd) -> Result<()> {
+    let args = SuperviseArgs::parse(&command.args)?;
+    keyharbor_supervisor::run(app.root(), args, app.supervisor_adapters())
+}
+
 /// What a session command runs on.
 struct Ports<'a> {
     store: Box<dyn Store>,
@@ -152,10 +165,6 @@ struct Ports<'a> {
 }
 
 pub fn run(app: &App, command: SessionCmd) -> Result<()> {
-    if let SessionCmd::Supervise { args } = command {
-        let args = SuperviseArgs::parse(&args)?;
-        return keyharbor_supervisor::run(app.root(), args, app.supervisor_adapters());
-    }
     let ports = Ports {
         store: app.store()?,
         runtime: app.runtime()?,
@@ -167,85 +176,36 @@ pub fn run(app: &App, command: SessionCmd) -> Result<()> {
 impl Ports<'_> {
     fn run(&self, command: SessionCmd) -> Result<()> {
         match command {
-            SessionCmd::Create { name, description } => self.create(&name, description)?,
-            SessionCmd::List => {
-                for view in lifecycle::list(&*self.store, &*self.runtime)? {
-                    println!("{}", view_line(&view));
-                }
-            }
-            SessionCmd::Rm { sessions, force } => self.remove(&sessions, force)?,
+            SessionCmd::Create { name, description } => self.create(&name, description),
+            SessionCmd::List => self.list(),
+            SessionCmd::Rm { sessions, force } => self.remove(&sessions, force),
             SessionCmd::Edit {
                 id,
                 description,
                 no_description,
-            } => self.edit(&id, description, no_description)?,
+            } => self.edit(&id, description, no_description),
             SessionCmd::Open {
                 id,
                 url,
                 cdp,
                 browser,
                 headless,
-            } => self.open(&id, url.as_deref(), cdp, browser.as_ref(), headless)?,
-            SessionCmd::Stop { id } => {
-                let id = session_id(&id)?;
-                let state =
-                    lifecycle::stop(&*self.store, &*self.runtime, self.clock, id, LOCAL_AGENT)?;
-                println!("{id}\t{}", state.as_str());
-            }
-            SessionCmd::WaitAuth { id, origin } => {
-                let id = session_id(&id)?;
-                let request = lifecycle::wait_auth(
-                    &*self.store,
-                    &*self.runtime,
-                    id,
-                    origin.as_deref(),
-                    LOCAL_AGENT,
-                )?;
-                println!("{id}\t{}\t{request}", State::AwaitingUser.as_str());
-            }
+            } => self.open(&id, url.as_deref(), cdp, browser.as_ref(), headless),
+            SessionCmd::Stop { id } => self.stop(&id),
+            SessionCmd::WaitAuth { id, origin } => self.wait_auth(&id, origin.as_deref()),
             SessionCmd::Receive {
                 id,
                 origin,
                 timeout_seconds,
-            } => {
-                let id = session_id(&id)?;
-                let origin = origin
-                    .map(|o| Origin::parse(&o).map_err(|e| anyhow::anyhow!("{e}")))
-                    .transpose()?;
-                let wait = ResumeWait::seconds(timeout_seconds)?;
-                let since = self.clock.unix_seconds();
-                let check = || grant::handed_off(&*self.store, id, since, origin.as_ref());
-                let Some(grant) = poll(wait, check, std::thread::sleep)? else {
-                    bail!("no site was handed over before the wait ran out");
-                };
-                println!("{id}\treceived\t{}", grant.origin.as_str());
-            }
-            SessionCmd::Handoff { id } => {
-                let id = session_id(&id)?;
-                let (request, origin) =
-                    lifecycle::pending_handoff(&*self.store, &*self.runtime, id)?;
-                println!(
-                    "{id}\t{}\t{request}\t{}",
-                    State::AwaitingUser.as_str(),
-                    origin.as_deref().unwrap_or("origin not provided")
-                );
-            }
-            SessionCmd::Resume { id, request_id } => {
-                let id = session_id(&id)?;
-                lifecycle::resume(&*self.store, &*self.runtime, id, &request_id, LOCAL_AGENT)?;
-                println!("{id}\t{}", State::Running.as_str());
-            }
+            } => self.receive(&id, origin.as_deref(), timeout_seconds),
+            SessionCmd::Handoff { id } => self.handoff(&id),
+            SessionCmd::Resume { id, request_id } => self.resume(&id, &request_id),
             SessionCmd::Recover {
                 id,
                 confirm_browser_closed,
-            } => self.recover(&id, confirm_browser_closed)?,
-            SessionCmd::Endpoint { id } => {
-                let id = session_id(&id)?;
-                println!("{}", lifecycle::endpoint(&*self.store, &*self.runtime, id)?);
-            }
-            SessionCmd::Supervise { .. } => unreachable!("handled before the ports are built"),
+            } => self.recover(&id, confirm_browser_closed),
+            SessionCmd::Endpoint { id } => self.endpoint(&id),
         }
-        Ok(())
     }
 
     fn create(&self, name: &str, description: Option<String>) -> Result<()> {
@@ -261,6 +221,13 @@ impl Ports<'_> {
             session.name.as_str(),
             session.state.as_str()
         );
+        Ok(())
+    }
+
+    fn list(&self) -> Result<()> {
+        for view in lifecycle::list(&*self.store, &*self.runtime)? {
+            println!("{}", view_line(&view));
+        }
         Ok(())
     }
 
@@ -302,6 +269,55 @@ impl Ports<'_> {
         Ok(())
     }
 
+    fn stop(&self, id: &str) -> Result<()> {
+        let id = session_id(id)?;
+        let state = lifecycle::stop(&*self.store, &*self.runtime, self.clock, id, LOCAL_AGENT)?;
+        println!("{id}\t{}", state.as_str());
+        Ok(())
+    }
+
+    fn wait_auth(&self, id: &str, origin: Option<&str>) -> Result<()> {
+        let id = session_id(id)?;
+        let request = lifecycle::wait_auth(&*self.store, &*self.runtime, id, origin, LOCAL_AGENT)?;
+        println!("{id}\t{}\t{request}", State::AwaitingUser.as_str());
+        Ok(())
+    }
+
+    /// Waits until the person hands a site over from the extension. The waiting is meant to
+    /// move to core (a later change); this only splits it out of `run`.
+    fn receive(&self, id: &str, origin: Option<&str>, timeout_seconds: Option<u64>) -> Result<()> {
+        let id = session_id(id)?;
+        let origin = origin
+            .map(|o| Origin::parse(o).map_err(|e| anyhow::anyhow!("{e}")))
+            .transpose()?;
+        let wait = ResumeWait::seconds(timeout_seconds)?;
+        let since = self.clock.unix_seconds();
+        let check = || handed_off(&*self.store, id, since, origin.as_ref());
+        let Some(grant) = poll(wait, check, std::thread::sleep)? else {
+            bail!("no site was handed over before the wait ran out");
+        };
+        println!("{id}\treceived\t{}", grant.origin.as_str());
+        Ok(())
+    }
+
+    fn handoff(&self, id: &str) -> Result<()> {
+        let id = session_id(id)?;
+        let (request, origin) = lifecycle::pending_handoff(&*self.store, &*self.runtime, id)?;
+        println!(
+            "{id}\t{}\t{request}\t{}",
+            State::AwaitingUser.as_str(),
+            origin.as_deref().unwrap_or("origin not provided")
+        );
+        Ok(())
+    }
+
+    fn resume(&self, id: &str, request_id: &str) -> Result<()> {
+        let id = session_id(id)?;
+        lifecycle::resume(&*self.store, &*self.runtime, id, request_id, LOCAL_AGENT)?;
+        println!("{id}\t{}", State::Running.as_str());
+        Ok(())
+    }
+
     fn remove(&self, keys: &[String], force: bool) -> Result<()> {
         let force = if force { Force::CloseFirst } else { Force::No };
         for key in keys {
@@ -328,6 +344,12 @@ impl Ports<'_> {
         let id = session_id(id)?;
         lifecycle::recover(&*self.store, &*self.runtime, id)?;
         println!("{id}\t{}", State::Stopped.as_str());
+        Ok(())
+    }
+
+    fn endpoint(&self, id: &str) -> Result<()> {
+        let id = session_id(id)?;
+        println!("{}", lifecycle::endpoint(&*self.store, &*self.runtime, id)?);
         Ok(())
     }
 }

@@ -19,8 +19,8 @@ pub struct DescriptionArgs {
     fields: Vec<String>,
 }
 
-/// A description given on the command line.
-pub fn parse(text: &str) -> Result<Description> {
+/// A description given on the command line (items, sessions, grant reasons).
+pub fn parse_description(text: &str) -> Result<Description> {
     Description::parse(text).map_err(|e| anyhow!("{e}"))
 }
 
@@ -32,7 +32,7 @@ impl DescriptionArgs {
         }
         self.description
             .as_deref()
-            .map(parse)
+            .map(parse_description)
             .transpose()
             .map(|d| d.map(Some))
     }
@@ -46,7 +46,9 @@ impl DescriptionArgs {
                     .split_once('=')
                     .context("--field-description expects FIELD=TEXT")?;
                 let field = kind.field_name(field).map_err(|e| anyhow!("{e}"))?;
-                let text = (!text.trim().is_empty()).then(|| parse(text)).transpose()?;
+                let text = (!text.trim().is_empty())
+                    .then(|| parse_description(text))
+                    .transpose()?;
                 Ok((field, text))
             })
             .collect()

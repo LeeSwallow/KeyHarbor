@@ -1,48 +1,92 @@
-//! `vault add` and `vault edit`: parse the arguments into a new item or a change, then hand
-//! it to the guard, which checks descriptions and confirms weakening before storing.
+//! `vault add`, `edit`, `revert`, `mv` and `rm`: parse the arguments into a new item or a
+//! change, then hand it to the guard (which checks descriptions and confirms weakening before
+//! storing) or to core.
 
 use super::{
-    StatusArg, Toggle,
+    Toggle,
     input::{FieldInput, collect_fields, field_name, item_name, origins},
+    kind_parser, status_parser,
 };
 use crate::{
-    compose::App, description_args::DescriptionArgs, expiry_args::ExpiryArgs,
+    args::{DescriptionArgs, ExpiryArgs},
+    compose::App,
     tty_confirm::TtyConfirm,
 };
-use anyhow::{Context, Result, anyhow};
-use keyharbor_core::{ItemChange, ItemDetails, ItemSource, ItemStatus, NewItem};
-use keyharbor_domain::{tag::Tag, vault::ItemKind};
+use anyhow::{Context, Result, anyhow, bail};
+use clap::Args;
+use keyharbor_core::{ItemChange, ItemDetails, ItemSource, ItemStatus, NewItem, Vault};
+use keyharbor_domain::{
+    tag::Tag,
+    vault::{FieldName, ItemKind, ItemName, placeholder},
+};
 use keyharbor_guard::items;
 
+#[derive(Args)]
 pub struct AddArgs {
-    pub name: String,
-    pub kind: ItemKind,
-    pub input: FieldInput,
-    pub origins: Vec<String>,
-    pub no_origin_binding: bool,
-    pub run_allowed: Option<Toggle>,
-    pub expiry: ExpiryArgs,
-    pub about: DescriptionArgs,
-    pub tags: Vec<String>,
-    pub plain: Vec<String>,
-    pub draft: bool,
+    name: String,
+    #[arg(long, value_parser = kind_parser())]
+    kind: ItemKind,
+    #[command(flatten)]
+    input: FieldInput,
+    #[arg(long = "origin")]
+    origins: Vec<String>,
+    #[arg(long)]
+    no_origin_binding: bool,
+    /// Whether `keyharbor run` may inject the item (default: on for secret and env)
+    #[arg(long, value_enum)]
+    run_allowed: Option<Toggle>,
+    #[command(flatten)]
+    expiry: ExpiryArgs,
+    #[command(flatten)]
+    about: DescriptionArgs,
+    /// A label to find the item by, e.g. env:prod (repeat for more)
+    #[arg(long = "tag")]
+    tags: Vec<String>,
+    /// A field that is not secret (PORT): its value shows in listings, unmasked
+    #[arg(long = "plain", value_name = "FIELD")]
+    plain: Vec<String>,
+    #[arg(long)]
+    draft: bool,
 }
 
+#[derive(Args)]
 pub struct EditArgs {
-    pub name: String,
-    pub input: FieldInput,
-    pub unset: Vec<String>,
-    pub origins: Vec<String>,
-    pub clear_origins: bool,
-    pub origin_binding: Option<Toggle>,
-    pub run_allowed: Option<Toggle>,
-    pub expiry: ExpiryArgs,
-    pub about: DescriptionArgs,
-    pub tags: Vec<String>,
-    pub untag: Vec<String>,
-    pub plain: Vec<String>,
-    pub secret: Vec<String>,
-    pub status: Option<StatusArg>,
+    name: String,
+    #[command(flatten)]
+    input: FieldInput,
+    #[arg(long = "unset")]
+    unset: Vec<String>,
+    #[arg(long = "origin")]
+    origins: Vec<String>,
+    #[arg(long)]
+    clear_origins: bool,
+    #[arg(long, value_enum)]
+    origin_binding: Option<Toggle>,
+    /// Whether `keyharbor run` may inject the item
+    #[arg(long, value_enum)]
+    run_allowed: Option<Toggle>,
+    #[command(flatten)]
+    expiry: ExpiryArgs,
+    #[command(flatten)]
+    about: DescriptionArgs,
+    /// Add a tag (repeat for more)
+    #[arg(long = "tag")]
+    tags: Vec<String>,
+    /// Remove a tag
+    #[arg(long = "untag")]
+    untag: Vec<String>,
+    /// Mark a field not secret: its value shows in listings, unmasked (asks first)
+    #[arg(long = "plain", value_name = "FIELD")]
+    plain: Vec<String>,
+    /// Mark a field secret again
+    #[arg(long = "secret", value_name = "FIELD")]
+    secret: Vec<String>,
+    #[arg(long, value_parser = status_parser())]
+    status: Option<ItemStatus>,
+}
+
+fn field_names(kind: ItemKind, values: &[String]) -> Result<Vec<FieldName>> {
+    values.iter().map(|f| field_name(kind, f)).collect()
 }
 
 fn tags(values: &[String]) -> Result<Vec<Tag>> {
@@ -75,11 +119,7 @@ pub fn add(app: &App, args: &AddArgs) -> Result<()> {
             description: description.flatten(),
             field_descriptions,
             tags: tags(&args.tags)?,
-            plain_fields: args
-                .plain
-                .iter()
-                .map(|f| field_name(kind, f))
-                .collect::<Result<_>>()?,
+            plain_fields: field_names(kind, &args.plain)?,
         },
     };
     items::add(&vault, item, &args.about.texts())?;
@@ -90,12 +130,7 @@ pub fn add(app: &App, args: &AddArgs) -> Result<()> {
 pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
     let name = item_name(&args.name)?;
     let vault = app.vault()?;
-    let kind = vault
-        .list()?
-        .into_iter()
-        .find(|i| i.name == name.as_str())
-        .context("item not found")?
-        .kind;
+    let kind = stored_kind(&vault, &name)?;
     let new_origins = if args.clear_origins {
         Some(Vec::new())
     } else if args.origins.is_empty() {
@@ -105,32 +140,60 @@ pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
     };
     let change = ItemChange {
         set_fields: collect_fields(kind, &args.input, false)?,
-        remove_fields: args
-            .unset
-            .iter()
-            .map(|f| field_name(kind, f))
-            .collect::<Result<_>>()?,
+        remove_fields: field_names(kind, &args.unset)?,
         origins: new_origins,
         origin_binding: args.origin_binding.map(Toggle::on),
         run_allowed: args.run_allowed.map(Toggle::on),
         expiry: args.expiry.for_change(app.clock())?,
         description: args.about.item()?,
         field_descriptions: args.about.fields(kind)?,
-        status: args.status.map(ItemStatus::from),
+        status: args.status,
         add_tags: tags(&args.tags)?,
         remove_tags: tags(&args.untag)?,
-        make_plain: args
-            .plain
-            .iter()
-            .map(|f| field_name(kind, f))
-            .collect::<Result<_>>()?,
-        make_secret: args
-            .secret
-            .iter()
-            .map(|f| field_name(kind, f))
-            .collect::<Result<_>>()?,
+        make_plain: field_names(kind, &args.plain)?,
+        make_secret: field_names(kind, &args.secret)?,
     };
     items::edit(&vault, &TtyConfirm, &name, change, &args.about.texts())?;
     println!("updated\t{}", name.as_str());
+    Ok(())
+}
+
+/// The kind of a stored item, to read its field names.
+fn stored_kind(vault: &Vault, name: &ItemName) -> Result<ItemKind> {
+    Ok(vault
+        .list()?
+        .into_iter()
+        .find(|i| i.name == name.as_str())
+        .context("item not found")?
+        .kind)
+}
+
+pub fn revert(app: &App, name: &str, fields: &[String]) -> Result<()> {
+    let name = item_name(name)?;
+    let vault = app.vault()?;
+    let fields = field_names(stored_kind(&vault, &name)?, fields)?;
+    for field in vault.revert(&name, &fields)? {
+        println!("reverted\t{}\t{field}", name.as_str());
+    }
+    Ok(())
+}
+
+pub fn rename(app: &App, from: &str, to: &str) -> Result<()> {
+    let (from, to) = (item_name(from)?, item_name(to)?);
+    keyharbor_core::rename::rename_item(&*app.store()?, &app.vault()?, &from, &to)?;
+    println!("renamed\t{}\t{}", from.as_str(), to.as_str());
+    println!(
+        "placeholders now read {}; update agents that quote the old name",
+        placeholder(to.as_str(), "<field>")
+    );
+    Ok(())
+}
+
+pub fn remove(app: &App, name: &str) -> Result<()> {
+    let name = item_name(name)?;
+    if !app.vault()?.remove(&name)? {
+        bail!("item not found");
+    }
+    println!("removed\t{}", name.as_str());
     Ok(())
 }
