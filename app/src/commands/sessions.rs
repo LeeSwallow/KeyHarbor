@@ -1,8 +1,11 @@
 //! The sessions screen (09 §9.4.3): each session's state and its sites' sign-in states.
 
+use super::ids::session_id;
 use crate::Ctx;
 use anyhow::Result;
 use keyharbor_core::{session, site};
+use keyharbor_domain::{browser_choice::BrowserChoice, policy::LOCAL_AGENT};
+use keyharbor_supervisor::bridge::SiteAnswer;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -19,6 +22,10 @@ pub struct SessionDto {
     pub name: String,
     /// `running`, `stopped`, `awaiting_user`, `recovery_required`, …
     pub state: &'static str,
+    /// A run is under way: its browser badge applies (`DisplayState::is_live`).
+    pub live: bool,
+    /// Only [복구…] brings it back (`DisplayState::is_recoverable`).
+    pub recoverable: bool,
     pub cdp: bool,
     /// `chrome` or `ego-lite` while the session has a run; with its `protection`.
     pub browser: Option<&'static str>,
@@ -47,6 +54,8 @@ pub fn sessions(ctx: &Ctx) -> Result<Vec<SessionDto>> {
                 id: view.row.id.to_string(),
                 name: view.row.name.as_str().to_owned(),
                 state: view.state.as_str(),
+                live: view.state.is_live(),
+                recoverable: view.state.is_recoverable(),
                 cdp: view.row.cdp,
                 browser: view.row.browser.map(|b| b.as_str()),
                 protection: view.row.browser.map(|b| b.protection().as_str()),
@@ -58,24 +67,16 @@ pub fn sessions(ctx: &Ctx) -> Result<Vec<SessionDto>> {
         .collect()
 }
 
-fn session_id(id: &str) -> Result<keyharbor_domain::SessionId> {
-    use anyhow::Context;
-    keyharbor_domain::SessionId::parse(id).context("invalid session id")
-}
-
 /// Opens the session's browser (09 §9.4.3 [열기]) in `browser`, or the `browser` setting.
 pub fn open_session(ctx: &Ctx, id: &str, browser: Option<&str>) -> Result<()> {
-    let choice = browser
-        .map(keyharbor_domain::browser_choice::BrowserChoice::parse)
-        .transpose()
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let choice = browser.map(BrowserChoice::parse).transpose()?;
     let resolved = session::resolve_browser(&*ctx.store()?, &*ctx.runtime(), choice.as_ref())?;
     let options = session::OpenOptions {
         url: None,
         cdp: false,
         browser: &resolved,
         headless: false,
-        agent: keyharbor_domain::policy::LOCAL_AGENT,
+        agent: LOCAL_AGENT,
     };
     session::open(
         &*ctx.store()?,
@@ -88,13 +89,12 @@ pub fn open_session(ctx: &Ctx, id: &str, browser: Option<&str>) -> Result<()> {
 
 /// Closes the session's browser ([중지]).
 pub fn stop_session(ctx: &Ctx, id: &str) -> Result<()> {
-    let agent = keyharbor_domain::policy::LOCAL_AGENT;
     session::stop(
         &*ctx.store()?,
         &*ctx.runtime(),
         ctx.clock(),
         session_id(id)?,
-        agent,
+        LOCAL_AGENT,
     )
     .map(|_| ())
 }
@@ -108,29 +108,45 @@ pub fn recover_session(ctx: &Ctx, id: &str, browser_closed: bool) -> Result<()> 
     session::recover(&*ctx.store()?, &*ctx.runtime(), session_id(id)?)
 }
 
+/// How a site handed off from the person's browser ended. The window words it (`words.ts`
+/// `handOffWord`); no value comes back.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum SiteHandOff {
+    HandedOff { cookies: u64 },
+    Declined,
+    NoPermission,
+    NoSession,
+    BadSite,
+    Timeout,
+    Failed,
+}
+
+impl SiteHandOff {
+    /// The bridge's wire answer in the app's words; the wire type stays here.
+    fn from_answer(answer: SiteAnswer) -> Self {
+        match answer {
+            SiteAnswer::HandedOff { cookies } => Self::HandedOff { cookies },
+            SiteAnswer::Declined => Self::Declined,
+            SiteAnswer::NoPermission => Self::NoPermission,
+            SiteAnswer::NoSession => Self::NoSession,
+            SiteAnswer::BadSite => Self::BadSite,
+            SiteAnswer::Timeout => Self::Timeout,
+            SiteAnswer::Failed => Self::Failed,
+        }
+    }
+}
+
 /// Asks the browser extension to hand the site of `url` to the session `name` (drag to hand
 /// off, spec 2026-10-31). The extension asks the person in their browser first, so this waits
-/// for them; the text says how it ended. No value comes back.
-pub fn request_site(ctx: &Ctx, name: &str, url: &str) -> Result<String> {
-    use keyharbor_supervisor::bridge::{SiteAnswer, SiteAsk, ask};
-    let answer = ask(
-        ctx.root(),
-        &SiteAsk {
-            session: name.to_owned(),
-            url: url.to_owned(),
-        },
-    )?;
-    Ok(match answer {
-        SiteAnswer::HandedOff { cookies } => format!("쿠키 {cookies}개를 {name} 세션에 넘겼습니다"),
-        SiteAnswer::Declined => "브라우저에서 넘기지 않았습니다".to_owned(),
-        SiteAnswer::NoPermission => {
-            "확장이 이 사이트에 접근할 수 없습니다. 확장 팝업에서 한 번 넘겨 허용하세요".to_owned()
-        }
-        SiteAnswer::NoSession => format!("실행 중인 {name} 세션이 없습니다"),
-        SiteAnswer::BadSite => "http·https 사이트만 넘길 수 있습니다".to_owned(),
-        SiteAnswer::Timeout => "브라우저에서 답이 오지 않았습니다".to_owned(),
-        SiteAnswer::Failed => "넘기지 못했습니다".to_owned(),
-    })
+/// for them.
+pub fn request_site(ctx: &Ctx, name: &str, url: &str) -> Result<SiteHandOff> {
+    use keyharbor_supervisor::bridge::{SiteAsk, ask};
+    let request = SiteAsk {
+        session: name.to_owned(),
+        url: url.to_owned(),
+    };
+    Ok(SiteHandOff::from_answer(ask(ctx.root(), &request)?))
 }
 
 /// Removes a stopped session and its profile ([지우기], after the undo time).
@@ -141,7 +157,7 @@ pub fn remove_session(ctx: &Ctx, id: &str) -> Result<()> {
         ctx.clock(),
         session_id(id)?,
         session::remove::Force::No,
-        keyharbor_domain::policy::LOCAL_AGENT,
+        LOCAL_AGENT,
     )
 }
 
@@ -151,11 +167,9 @@ pub struct BrowsersDto {
     pub ego_lite: bool,
 }
 
-/// How long the settings screen waits for ego lite to answer.
-const EGO_CHECK: std::time::Duration = std::time::Duration::from_secs(3);
-
-pub fn browsers() -> BrowsersDto {
-    BrowsersDto {
-        ego_lite: keyharbor_supervisor::ego_lite_answers(EGO_CHECK),
-    }
+/// Whether ego lite answers now, given as long as `auto` would give it (`ego_probe_seconds`).
+pub fn browsers(ctx: &Ctx) -> Result<BrowsersDto> {
+    Ok(BrowsersDto {
+        ego_lite: session::ego_lite_answers(&*ctx.store()?, &*ctx.runtime())?,
+    })
 }

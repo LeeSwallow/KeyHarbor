@@ -10,6 +10,7 @@ import {
 } from "./state.js";
 import { render } from "./view.js";
 import { droppedUrl } from "./drop.js";
+import { handOffWord } from "./words.js";
 import { customRow, editorValues } from "./views/editor.js";
 import { formValues } from "./views/form.js";
 import { type Run, paletteCommands } from "./views/palette.js";
@@ -182,7 +183,7 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
     const url = droppedUrl(event.dataTransfer?.getData("text/uri-list") || event.dataTransfer?.getData("text/plain") || "");
     if (!url) return set(fail(state, "브라우저의 탭이나 주소를 끌어다 놓으세요"));
     set({ ...state, notice: `${session} 세션에 넘길지 브라우저에서 확인하세요…`, error: null });
-    void guard(() => api.requestSite(session, url).then((text) => set({ ...state, notice: text })).then(load));
+    void guard(() => api.requestSite(session, url).then((answer) => set({ ...state, notice: handOffWord(answer, session) })).then(load));
   });
 
   root.addEventListener("input", (event) => {

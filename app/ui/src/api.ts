@@ -16,24 +16,38 @@ export interface Session {
   browser: string | null; protection: "owned" | "shared" | null;
   /// Why the last run did not start.
   failure: string | null;
+  /// From Rust (`DisplayState`): a run is under way, or only [복구…] brings it back.
+  live: boolean; recoverable: boolean;
 }
 export interface Browsers { ego_lite: boolean }
 export interface Request { id: string; agent: string; kind: string; name: string; origin: string | null; reason: string }
 export interface Draft { name: string; kind: string; source: string; origins: string[] }
 export interface Inbox { requests: Request[]; drafts: Draft[] }
-export interface AuditEvent { at: string; agent: string; kind: string; item: string | null; origin: string | null; result: string }
+/// `denied` is Rust's `AuditKind::is_denial`, the rule the denial notices use too (J-200).
+export interface AuditEvent { at: string; agent: string; kind: string; denied: boolean; item: string | null; origin: string | null; result: string }
 export interface FormField { name: string; secret: boolean }
 export interface RequestForm {
   id: string; agent: string; kind: string; name: string; origin: string | null; reason: string;
   fields: FormField[]; free_fields: boolean; custom_fields: boolean;
 }
 export interface Handoff { session: string; session_name: string; request_id: string; origin: string | null }
-export interface Setting { key: string; value: string; default: string }
+/// Which change asks the person first (domain `SettingWeakening`, J-203).
+export type Weakening =
+  | { when: "set_to"; value: string }
+  | { when: "above"; than: string }
+  | { when: "any_change" }
+  | { when: "never" };
+export interface Setting { key: string; value: string; default: string; weakening: Weakening }
 export interface Rule { agent: string; resource: string; target: string; effect: string }
 /// A change that may need a person: done, or the question to put to them.
-export interface KindForm { kind: string; domain: string; fields: [string, boolean][]; free_fields: boolean; custom_fields: boolean }
+/// `generates` names the field the form can make up (`KindSpec::generated`), if any.
+export interface KindForm { kind: string; domain: string; fields: [string, boolean][]; free_fields: boolean; custom_fields: boolean; generates: string | null }
 export interface NewItemForm { name: string; kind: string; origins: string[]; values: Record<string, string>; generate_password: boolean }
 export interface ChangeForm { values: Record<string, string>; origins?: string[] }
+/// How a site dragged onto a session ended; `words.ts` says it (J-202).
+export type SiteHandOff =
+  | { outcome: "handed_off"; cookies: number }
+  | { outcome: "declined" | "no_permission" | "no_session" | "bad_site" | "timeout" | "failed" };
 export type Outcome = { outcome: "done" } | { outcome: "ask"; question: string };
 
 export interface Api {
@@ -68,7 +82,7 @@ export interface Api {
   editItem(name: string, form: ChangeForm, confirmed: boolean): Promise<Outcome>;
   removeItem(name: string): Promise<void>;
   renameItem(from: string, to: string): Promise<string>;
-  requestSite(session: string, url: string): Promise<string>;
+  requestSite(session: string, url: string): Promise<SiteHandOff>;
   openRequestWindow(id: string): Promise<void>;
   closeRequestWindow(): Promise<void>;
 }
@@ -94,7 +108,7 @@ export function tauriApi(invoke: Invoke): Api {
     settings: () => call("settings"),
     setSetting: (key, value, confirmed) => call("set_setting", { key, value, confirmed }),
     policies: () => call("policies"),
-    setPolicy: (r, confirmed) => call("set_policy", { ...r, confirmed }),
+    setPolicy: (rule, confirmed) => call("set_policy", { rule, confirmed }),
     removePolicy: (r, confirmed) => call("remove_policy", { agent: r.agent, resource: r.resource, target: r.target, confirmed }),
     copyValue: (item, field) => call("copy_value", { item, field }),
     copyPlaceholder: (text) => call("copy_placeholder", { text }),

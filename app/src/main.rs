@@ -10,7 +10,7 @@ use keyharbor_app::{
     auth::NoneAuth,
     commands::{
         self, AuditDto, ChangeForm, HandoffDto, InboxDto, ItemDto, KindForm, NewItemForm,
-        OverviewDto, RequestForm, RuleDto, SessionDto, SettingDto, message,
+        OverviewDto, RequestForm, RuleDto, RuleForm, SessionDto, SettingDto, SiteHandOff, message,
     },
     confirm::Outcome,
 };
@@ -66,7 +66,7 @@ fn open_request_window(app: tauri::AppHandle, ctx: State<'_, Ctx>, id: String) -
 
 /// Waits for the person to answer in their browser (up to two minutes), so it runs off the UI thread.
 #[tauri::command(async)]
-fn request_site(ctx: State<'_, Ctx>, session: String, url: String) -> Reply<String> {
+fn request_site(ctx: State<'_, Ctx>, session: String, url: String) -> Reply<SiteHandOff> {
     commands::request_site(&ctx, &session, &url).map_err(message)
 }
 
@@ -112,15 +112,8 @@ fn policies(ctx: State<'_, Ctx>) -> Reply<Vec<RuleDto>> {
     commands::policies(&ctx).map_err(message)
 }
 #[tauri::command]
-fn set_policy(
-    ctx: State<'_, Ctx>,
-    agent: String,
-    resource: String,
-    target: String,
-    effect: String,
-    confirmed: bool,
-) -> Reply<Outcome> {
-    commands::set_policy(&ctx, (&agent, &resource, &target, &effect), confirmed).map_err(message)
+fn set_policy(ctx: State<'_, Ctx>, rule: RuleForm, confirmed: bool) -> Reply<Outcome> {
+    commands::set_policy(&ctx, rule, confirmed).map_err(message)
 }
 #[tauri::command]
 fn remove_policy(
@@ -154,8 +147,8 @@ fn remove_session(ctx: State<'_, Ctx>, id: String) -> Reply<()> {
     commands::remove_session(&ctx, &id).map_err(message)
 }
 #[tauri::command(async)]
-fn browsers() -> commands::BrowsersDto {
-    commands::browsers()
+fn browsers(ctx: State<'_, Ctx>) -> Reply<commands::BrowsersDto> {
+    commands::browsers(&ctx).map_err(message)
 }
 #[tauri::command]
 fn recover_session(ctx: State<'_, Ctx>, id: String, browser_closed: bool) -> Reply<()> {

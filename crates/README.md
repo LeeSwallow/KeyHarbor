@@ -31,7 +31,7 @@ cargo run -p keyharbor -- list
 
 - 평문 값은 `Vault::resolve`·`Vault::mask_values`에서만 나오고, 둘 다 guard가 검사 뒤 발급하는 `PlaintextAccess`를 요구한다. 브라우저 조작은 제어 socket → `ops` → `GuardedBrowser`로만 간다.
 - **스키마 확장**: 저장소는 바운디드 컨텍스트별로 나뉘어 있다. 새 컨텍스트(예: 4단계 `vault_requests`)는 `crates/sqlite/src/contexts/<이름>/`(schema·models·mappers·repo) + `crates/sqlite/migrations/<이름>/<timestamp>_<이름>_<설명>/up.sql` + `contexts::CONTEXTS`에 한 줄이면 된다. 버전 타임스탬프는 모든 컨텍스트에서 유일해야 한다. 원시 SQL은 마이그레이션과 테스트에만 쓴다.
-- **항목 종류 확장**: `keyharbor_domain::vault::KINDS`에 `KindSpec` 하나(필드마다 `secret`·`maskable`·`input`·기본 `description`, 종류마다 origin 바인딩·`run` 허용 기본값)와 `ItemKind` 변형 하나를 더한다. 스키마·기본값·CLI의 비밀 필드 거부·필드 이름 검사·마스킹이 이 표를 읽는다.
+- **항목 종류 확장**: `keyharbor_domain::vault::KINDS`에 `KindSpec` 하나(필드마다 `secret`·`maskable`·`input`·기본 `description`, 종류마다 origin 바인딩·`run` 허용 기본값과 생성할 수 있는 필드 `generated`)와 `ItemKind` 변형 하나를 더한다. 스키마·기본값·CLI의 비밀 필드 거부·필드 이름 검사·마스킹이 이 표를 읽는다.
 - **검사·변형 확장**: 사용 검사는 `crates/guard/src/pdp/checks/<검사>.rs` 하나 + `checks::BROWSER`/`PROCESS`에 한 줄, 거부 사유는 `DenialReason` 변형 하나, 마스킹 형태는 `crates/guard/src/pep/mask/variants/<변형>.rs` 하나 + `VARIANTS`에 한 줄, 약화 작업은 `core::weaken::WeakeningOp` 변형 하나다.
 - 테스트 전용 기능: `keyharbor-keystore/insecure-test-keystore`, `keyharbor-sqlite/test-support`. 릴리스 빌드에 켜지지 않는지 `scripts/check-release-features.sh`가 확인한다.
 

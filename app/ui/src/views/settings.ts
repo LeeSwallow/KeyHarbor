@@ -3,7 +3,7 @@
 // which change weakens a protection stays in the domain registry; this table is only how the
 // window shows it. A click saves at once; a weakening change comes back as a question.
 
-import type { Browsers, Setting } from "../api.js";
+import type { Browsers, Setting, Weakening } from "../api.js";
 import { esc } from "../html.js";
 import { heading } from "./parts.js";
 
@@ -11,7 +11,9 @@ type Control =
   | { kind: "switch" }
   | { kind: "choices"; choices: [value: string, label: string][] }
   | { kind: "folders" };
-interface Shown { group: string; label: string; help: string; control: Control }
+/// `above` words the rule "more than the default asks first" with the number Rust sends
+/// (`Setting.weakening`), so the sentence cannot drift from the rule (J-203).
+interface Shown { group: string; label: string; help: string; control: Control; above?: (than: string) => string }
 
 const DAYS: [string, string][] = [["7d", "7일"], ["30d", "30일"], ["90d", "90일"], ["365d", "1년"]];
 
@@ -35,7 +37,7 @@ const SHOWN: Record<string, Shown> = {
   },
   clipboard_clear_seconds: {
     group: "클립보드", label: "복사한 값 자동 지우기", control: { kind: "choices", choices: [["10", "10초"], ["30", "30초"], ["60", "1분"], ["120", "2분"]] },
-    help: "30초보다 길게 하면 확인합니다. 다른 것을 복사했으면 지우지 않습니다.",
+    help: "다른 것을 복사했으면 지우지 않습니다.", above: (than) => `${than}초보다 길게 하면 확인합니다.`,
   },
   browser: {
     group: "브라우저", label: "세션을 여는 브라우저",
@@ -59,7 +61,7 @@ const SHOWN: Record<string, Shown> = {
   upload_max_files: {
     group: "파일 올리기", label: "한 번에 올리는 파일 수",
     control: { kind: "choices", choices: [["5", "5개"], ["10", "10개"], ["20", "20개"]] },
-    help: "10개보다 많게 하면 확인합니다.",
+    help: "", above: (than) => `${than}개보다 많게 하면 확인합니다.`,
   },
   notify_requests: { group: "알림", label: "정보 요청", control: { kind: "switch" }, help: "에이전트가 값을 입력해 달라고 할 때" },
   notify_handoffs: { group: "알림", label: "브라우저 인계", control: { kind: "switch" }, help: "에이전트가 로그인을 넘길 때" },
@@ -88,8 +90,14 @@ function control(s: Setting, c: Control): string {
 /// `45d` → `45일`, anything else as it is.
 const label = (value: string) => (/^\d+d$/.test(value) ? `${value.slice(0, -1)}일` : value);
 
+/// The help line, with the weakening sentence first when the setting has one.
+function help(shown: Shown, weakening: Weakening): string {
+  const rule = weakening.when === "above" && shown.above ? shown.above(weakening.than) : "";
+  return [rule, shown.help].filter(Boolean).join(" ");
+}
+
 function row(s: Setting, shown: Shown): string {
-  return `<div class="setting"><div><div class="title">${esc(shown.label)}</div><div class="kh-help">${esc(shown.help)}</div></div>${control(s, shown.control)}</div>`;
+  return `<div class="setting"><div><div class="title">${esc(shown.label)}</div><div class="kh-help">${esc(help(shown, s.weakening))}</div></div>${control(s, shown.control)}</div>`;
 }
 
 /// A setting this table does not know yet: a plain field, so it can still be changed.

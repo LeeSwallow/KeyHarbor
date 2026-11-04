@@ -1,6 +1,6 @@
 //! The menu bar text (09 §9.4.6).
 
-use super::OverviewDto;
+use crate::commands::OverviewDto;
 
 /// What the menu bar shows (09 §9.4.6): a status line, what waits for the person, and the
 /// count beside the icon when something waits. Counts only.

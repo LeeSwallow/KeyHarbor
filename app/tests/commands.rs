@@ -43,6 +43,15 @@ fn ctx_with(dir: &Path, board: Arc<Board>) -> Ctx {
 fn ctx(dir: &Path) -> Ctx {
     ctx_with(dir, Arc::default())
 }
+
+fn rule(agent: &str, resource: &str, target: &str, effect: &str) -> commands::RuleForm {
+    commands::RuleForm {
+        agent: agent.into(),
+        resource: resource.into(),
+        target: target.into(),
+        effect: effect.into(),
+    }
+}
 fn login(name: &str, status: ItemStatus) -> NewItem {
     NewItem {
         name: ItemName::parse(name).unwrap(),
@@ -155,6 +164,7 @@ fn sessions_show_their_sites() {
         ("work", "stopped")
     );
     assert!(sessions[0].sites.is_empty());
+    assert!(!sessions[0].live && !sessions[0].recoverable);
 }
 
 fn init_vault(dir: &Path) -> Vault {
@@ -214,8 +224,8 @@ fn weakening_changes_ask_first_and_stricter_ones_do_not() {
     use keyharbor_app::confirm::Outcome;
     let tmp = tempfile::tempdir().unwrap();
     let c = ctx(tmp.path());
-    let allow = ("codex", "item", "github", "allow");
-    let asked = commands::set_policy(&c, allow, false).unwrap();
+    let allow = || rule("codex", "item", "github", "allow");
+    let asked = commands::set_policy(&c, allow(), false).unwrap();
     assert!(
         matches!(&asked, Outcome::Ask { question } if question.contains("policy allow codex item github"))
     );
@@ -224,11 +234,11 @@ fn weakening_changes_ask_first_and_stricter_ones_do_not() {
         "nothing changed before the person confirmed"
     );
     assert_eq!(
-        commands::set_policy(&c, allow, true).unwrap(),
+        commands::set_policy(&c, allow(), true).unwrap(),
         Outcome::Done
     );
     assert_eq!(
-        commands::set_policy(&c, ("codex", "domain", "payment", "deny"), false).unwrap(),
+        commands::set_policy(&c, rule("codex", "domain", "payment", "deny"), false).unwrap(),
         Outcome::Done
     );
     assert_eq!(commands::policies(&c).unwrap().len(), 2);
@@ -331,6 +341,12 @@ fn items_are_added_changed_and_removed_through_the_guard() {
     let kinds = commands::kinds();
     let login = kinds.iter().find(|k| k.kind == "login").unwrap();
     assert!(login.fields.contains(&("password", true)));
+    assert_eq!(login.generates, Some("password"));
+    assert!(
+        kinds
+            .iter()
+            .all(|k| k.kind == "login" || k.generates.is_none())
+    );
     assert!(kinds.iter().any(|k| k.kind == "env" && k.free_fields));
 
     let form = NewItemForm {
@@ -469,7 +485,7 @@ fn an_item_is_renamed_unless_a_rule_names_it() {
         .map(|i| i.name)
         .collect();
     assert_eq!(names, ["work/github"]);
-    commands::set_policy(&c, ("codex", "item", "work/github", "deny"), false).unwrap();
+    commands::set_policy(&c, rule("codex", "item", "work/github", "deny"), false).unwrap();
     let err = commands::rename_item(&c, "work/github", "gh")
         .unwrap_err()
         .to_string();
@@ -504,7 +520,7 @@ fn a_site_dropped_on_a_session_is_asked_of_the_extension() {
     });
     assert_eq!(
         commands::request_site(&c, "work", "https://github.com/x").unwrap(),
-        "쿠키 3개를 work 세션에 넘겼습니다"
+        commands::SiteHandOff::HandedOff { cookies: 3 }
     );
     assert!(bridge.join().unwrap().contains("\"session\":\"work\""));
 }
@@ -514,7 +530,7 @@ fn a_browser_rule_is_added_from_the_window() {
     use keyharbor_app::confirm::Outcome;
     let tmp = tempfile::tempdir().unwrap();
     let c = ctx(tmp.path());
-    let deny = ("codex", "browser", "ego-lite", "deny");
+    let deny = rule("codex", "browser", "ego-lite", "deny");
     assert_eq!(
         commands::set_policy(&c, deny, false).unwrap(),
         Outcome::Done
@@ -563,4 +579,66 @@ fn a_form_with_an_unknown_field_is_refused_and_stores_nothing() {
         "pw-SECRET-1"
     );
     assert_eq!(commands::items(&c).unwrap().len(), 1, "no shop");
+}
+
+#[test]
+fn the_notices_and_the_usage_record_screen_call_the_same_records_denials() {
+    use keyharbor_domain::audit::{AuditEvent, AuditKind};
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    let store = SqliteStore::open(&tmp.path().join("data")).unwrap();
+    for kind in AuditKind::ALL {
+        let event = AuditEvent::new("codex", kind, "x").item(kind.as_str());
+        store.record(&event).unwrap();
+    }
+    let screen: Vec<String> = commands::audit(&c, 50)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.denied)
+        .map(|e| e.kind)
+        .collect();
+    let mut noticed: Vec<String> = commands::snapshot(&c)
+        .unwrap()
+        .denials
+        .into_iter()
+        .filter_map(|(_, _, item)| item)
+        .collect();
+    noticed.sort();
+    let mut expected = screen.clone();
+    expected.sort();
+    assert_eq!(noticed, expected);
+    assert_eq!(
+        expected,
+        [
+            "navigation_denied",
+            "secret_denied",
+            "secret_denied_suppressed"
+        ],
+        "a suppressed run of refusals is a denial too (J-200)"
+    );
+}
+
+#[test]
+fn settings_say_which_change_asks_first() {
+    use keyharbor_app::commands::WeakeningDto;
+    let tmp = tempfile::tempdir().unwrap();
+    let c = ctx(tmp.path());
+    let settings = commands::settings(&c).unwrap();
+    let weakening = |key: &str| &settings.iter().find(|s| s.key == key).unwrap().weakening;
+    assert_eq!(
+        weakening("clipboard_clear_seconds"),
+        &WeakeningDto::Above { than: "30" }
+    );
+    assert_eq!(
+        weakening("upload_max_files"),
+        &WeakeningDto::Above { than: "10" }
+    );
+    assert_eq!(
+        weakening("audit_enabled"),
+        &WeakeningDto::SetTo { value: "false" }
+    );
+    assert_eq!(weakening("upload_dirs"), &WeakeningDto::AnyChange);
+    assert_eq!(weakening("notify_denials"), &WeakeningDto::Never);
+    let json = serde_json::to_string(weakening("clipboard_clear_seconds")).unwrap();
+    assert_eq!(json, r#"{"when":"above","than":"30"}"#);
 }

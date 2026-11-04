@@ -106,6 +106,15 @@ impl AuditKind {
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|k| k.as_str() == value)
     }
+    /// Whether the record says an agent was refused: a value, a document outside its grants,
+    /// or refusals counted together under the per-second cap. The one place the admin app's
+    /// notices and its usage record screen read "거부" from (J-200).
+    pub fn is_denial(self) -> bool {
+        matches!(
+            self,
+            Self::SecretDenied | Self::DeniedSuppressed | Self::NavigationDenied
+        )
+    }
 }
 
 /// One usage event. `result` is a short outcome or reason code (`ok`, `policy`, `origin`, …).
@@ -176,6 +185,23 @@ mod tests {
             .origin(Some("https://github.com"));
         assert_eq!(event.item_name.as_deref(), Some("github"));
         assert_eq!(event.session_id, None);
+    }
+
+    #[test]
+    fn denials_are_refusals_of_a_value_or_a_document() {
+        let denials: Vec<&str> = AuditKind::ALL
+            .into_iter()
+            .filter(|k| k.is_denial())
+            .map(AuditKind::as_str)
+            .collect();
+        assert_eq!(
+            denials,
+            [
+                "secret_denied",
+                "secret_denied_suppressed",
+                "navigation_denied"
+            ]
+        );
     }
 
     #[test]

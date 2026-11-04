@@ -2,15 +2,18 @@
 //! bar loop takes a [`snapshot`] every few seconds; [`notices`] says what is new since the last
 //! one. Text names agents, items and sites, never a value or an agent's free-text reason.
 
-use crate::Ctx;
+use crate::{
+    Ctx,
+    commands::{audit, handoffs, inbox},
+};
 use anyhow::Result;
-use keyharbor_domain::settings::{NOTIFY_DENIALS, NOTIFY_DRAFTS, NOTIFY_HANDOFFS, NOTIFY_REQUESTS};
+use keyharbor_domain::settings::{
+    NOTIFY_DENIALS, NOTIFY_DRAFTS, NOTIFY_HANDOFFS, NOTIFY_REQUESTS, notify_enabled,
+};
 use std::collections::BTreeSet;
 
 /// More new things than this at once become one notice with the count.
 const MAX_SEPARATE: usize = 3;
-/// The usage record kinds that count as a denial for a notice.
-const DENIAL_KINDS: &[&str] = &["secret_denied", "navigation_denied"];
 /// How far back the usage record is read for denials, each time.
 const DENIAL_WINDOW: usize = 50;
 
@@ -50,11 +53,18 @@ pub struct Notice {
     pub body: String,
 }
 
+impl Notice {
+    fn new(title: String, body: String) -> Self {
+        Self { title, body }
+    }
+}
+
 pub fn snapshot(ctx: &Ctx) -> Result<Snapshot> {
-    let inbox = super::super::inbox(ctx)?;
-    let denials = super::audit(ctx, DENIAL_WINDOW)?
+    let inbox = inbox(ctx)?;
+    // The same flag the usage record screen marks "거부" with (J-200).
+    let denials = audit(ctx, DENIAL_WINDOW)?
         .into_iter()
-        .filter(|e| DENIAL_KINDS.contains(&e.kind.as_str()))
+        .filter(|e| e.denied)
         .map(|e| (e.at, e.agent, e.item.or(e.origin)))
         .collect();
     Ok(Snapshot {
@@ -63,7 +73,7 @@ pub fn snapshot(ctx: &Ctx) -> Result<Snapshot> {
             .into_iter()
             .map(|r| (r.id, r.agent, r.name))
             .collect(),
-        handoffs: super::super::handoffs(ctx)?
+        handoffs: handoffs(ctx)?
             .into_iter()
             .map(|h| (h.request_id, h.session_name, h.origin))
             .collect(),
@@ -72,11 +82,10 @@ pub fn snapshot(ctx: &Ctx) -> Result<Snapshot> {
     })
 }
 
-/// The `notify_*` settings; each is on unless set to `false`.
+/// The `notify_*` settings, read by the domain's rule (`notify_enabled`).
 pub fn notice_kinds(ctx: &Ctx) -> Result<NoticeKinds> {
     let store = ctx.store()?;
-    let on =
-        |key: &str| -> Result<bool> { Ok(store.setting_get(key)?.as_deref() != Some("false")) };
+    let on = |key: &str| -> Result<bool> { Ok(notify_enabled(store.setting_get(key)?.as_deref())) };
     Ok(NoticeKinds {
         requests: on(NOTIFY_REQUESTS)?,
         handoffs: on(NOTIFY_HANDOFFS)?,
@@ -87,45 +96,56 @@ pub fn notice_kinds(ctx: &Ctx) -> Result<NoticeKinds> {
 
 /// What in `now` is new since `seen`, for the kinds that are on; `seen` becomes `now`.
 pub fn notices(seen: &mut Seen, now: &Snapshot, kinds: NoticeKinds) -> Vec<Notice> {
-    let notice = |title: String, body: String| (title, body);
+    let mut out = waiting_notices(seen, now, kinds);
+    out.extend(denial_notices(seen, now, kinds));
+    seen.primed = true;
+    collapse(out)
+}
+
+/// A notice for each request, handoff and draft not waiting last time; remembers what waits.
+fn waiting_notices(seen: &mut Seen, now: &Snapshot, kinds: NoticeKinds) -> Vec<Notice> {
     // (key in `Seen::waiting`, whether its kind is on, the notice)
-    let waiting = now
-        .requests
-        .iter()
-        .map(|(id, agent, name)| {
-            let text = notice(
-                format!("입력 요청 · {agent}"),
-                format!("{name} — 확인 대기에서 답하세요"),
-            );
-            (format!("request:{id}"), kinds.requests, text)
-        })
-        .chain(now.handoffs.iter().map(|(id, session, origin)| {
-            let place = origin.as_deref().unwrap_or("브라우저");
-            let text = notice(
-                format!("브라우저 인계 · {session}"),
-                format!("{place}에서 마치면 재개하세요"),
-            );
-            (format!("handoff:{id}"), kinds.handoffs, text)
-        }))
-        .chain(now.drafts.iter().map(|name| {
-            let text = notice(
-                format!("새 draft · {name}"),
-                "확인 대기에서 확정하거나 폐기하세요".to_owned(),
-            );
-            (format!("draft:{name}"), kinds.drafts, text)
-        }));
+    let requests = now.requests.iter().map(|(id, agent, name)| {
+        let text = Notice::new(
+            format!("입력 요청 · {agent}"),
+            format!("{name} — 확인 대기에서 답하세요"),
+        );
+        (format!("request:{id}"), kinds.requests, text)
+    });
+    let handoffs = now.handoffs.iter().map(|(id, session, origin)| {
+        let place = origin.as_deref().unwrap_or("브라우저");
+        let text = Notice::new(
+            format!("브라우저 인계 · {session}"),
+            format!("{place}에서 마치면 재개하세요"),
+        );
+        (format!("handoff:{id}"), kinds.handoffs, text)
+    });
+    let drafts = now.drafts.iter().map(|name| {
+        let text = Notice::new(
+            format!("새 draft · {name}"),
+            "확인 대기에서 확정하거나 폐기하세요".to_owned(),
+        );
+        (format!("draft:{name}"), kinds.drafts, text)
+    });
     let mut out = Vec::new();
     let mut keys = BTreeSet::new();
-    for (key, on, text) in waiting {
+    for (key, on, text) in requests.chain(handoffs).chain(drafts) {
         if seen.primed && on && !seen.waiting.contains(&key) {
             out.push(text);
         }
         keys.insert(key);
     }
+    seen.waiting = keys;
+    out
+}
+
+/// A notice for each denial newer than the newest seen; remembers the newest.
+fn denial_notices(seen: &mut Seen, now: &Snapshot, kinds: NoticeKinds) -> Vec<Notice> {
+    let mut out = Vec::new();
     for (at, agent, target) in &now.denials {
         let newer = seen.last_denial.as_ref().is_none_or(|last| at > last);
         if seen.primed && kinds.denials && newer {
-            out.push(notice(
+            out.push(Notice::new(
                 format!("거부됨 · {agent}"),
                 target.clone().unwrap_or_default(),
             ));
@@ -135,17 +155,18 @@ pub fn notices(seen: &mut Seen, now: &Snapshot, kinds: NoticeKinds) -> Vec<Notic
     if let Some(at) = newest.filter(|at| seen.last_denial.as_ref() < Some(*at)) {
         seen.last_denial = Some(at.clone());
     }
-    seen.waiting = keys;
-    seen.primed = true;
+    out
+}
+
+/// More than [`MAX_SEPARATE`] at once become one notice with the count.
+fn collapse(out: Vec<Notice>) -> Vec<Notice> {
     if out.len() > MAX_SEPARATE {
-        return vec![Notice {
-            title: "KeyHarbor".into(),
-            body: format!("확인할 것 {}개가 새로 생겼습니다", out.len()),
-        }];
+        return vec![Notice::new(
+            "KeyHarbor".into(),
+            format!("확인할 것 {}개가 새로 생겼습니다", out.len()),
+        )];
     }
-    out.into_iter()
-        .map(|(title, body)| Notice { title, body })
-        .collect()
+    out
 }
 
 #[cfg(test)]
