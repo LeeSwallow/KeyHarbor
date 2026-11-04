@@ -9,9 +9,13 @@ use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     ports::{Clock, Store},
     request::{VaultRequest, VaultRequestStatus},
+    settings::REQUEST_TTL_HOURS,
     vault::{Description, FieldName, ItemKind, ItemName, Origin},
 };
+use std::time::Duration;
 use zeroize::Zeroizing;
+
+const SECONDS_PER_HOUR: u64 = 60 * 60;
 
 /// What an agent asks for.
 #[derive(Clone, Debug)]
@@ -64,19 +68,25 @@ pub fn ask(store: &dyn Store, clock: &dyn Clock, agent: &str, ask: Ask) -> Resul
 
 /// Requests waiting for an answer, oldest first.
 pub fn pending(store: &dyn Store, clock: &dyn Clock) -> Result<Vec<VaultRequest>> {
-    let now = clock.unix_seconds();
+    let (now, ttl) = (clock.unix_seconds(), ttl(store)?);
     Ok(store
         .vault_requests_pending()?
         .into_iter()
-        .filter(|r| r.status_at(now) == VaultRequestStatus::Pending)
+        .filter(|r| r.status_at(now, ttl) == VaultRequestStatus::Pending)
         .collect())
 }
 
 /// The request as of now, its status counting expiry.
 pub fn status(store: &dyn Store, clock: &dyn Clock, id: RequestId) -> Result<VaultRequest> {
     let mut request = store.vault_request_get(id)?.context("request not found")?;
-    request.status = request.status_at(clock.unix_seconds());
+    request.status = request.status_at(clock.unix_seconds(), ttl(store)?);
     Ok(request)
+}
+
+/// How long a request stays answerable (`request_ttl_hours`).
+fn ttl(store: &dyn Store) -> Result<Duration> {
+    let hours = crate::settings::number(store, REQUEST_TTL_HOURS)?;
+    Ok(Duration::from_secs(hours * SECONDS_PER_HOUR))
 }
 
 fn open_request(store: &dyn Store, clock: &dyn Clock, id: RequestId) -> Result<VaultRequest> {
@@ -179,8 +189,7 @@ pub fn answered(
 mod tests {
     use super::*;
     use crate::tests::{env, field, init, login, open_store, pref};
-    use keyharbor_domain::ports::ManualClock;
-    use std::time::Duration;
+    use keyharbor_domain::ports::{ManualClock, SettingsStore};
 
     fn card_ask() -> Ask {
         Ask {
@@ -262,7 +271,13 @@ mod tests {
             VaultRequestStatus::Declined
         );
         let old = ask(&store, &clock, "codex", card_ask()).unwrap();
-        clock.advance(Duration::from_secs(VaultRequest::TTL_SECONDS));
+        clock.advance(Duration::from_secs(24 * SECONDS_PER_HOUR - 1));
+        assert_eq!(
+            pending(&store, &clock).unwrap().len(),
+            1,
+            "a day by default"
+        );
+        clock.advance(Duration::from_secs(1));
         assert_eq!(
             answered(&store, &clock, old).unwrap().unwrap().status,
             VaultRequestStatus::Expired
@@ -277,5 +292,22 @@ mod tests {
         );
         assert_eq!(late.unwrap_err().to_string(), "request is expired");
         assert!(vault.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_request_stays_answerable_as_long_as_the_setting_says() {
+        let e = env();
+        let store = open_store(&e.data);
+        let clock = ManualClock::at_unix_seconds(1_000);
+        store.setting_set(REQUEST_TTL_HOURS, "2").unwrap();
+        let id = ask(&store, &clock, "codex", card_ask()).unwrap();
+        clock.advance(Duration::from_secs(2 * SECONDS_PER_HOUR - 1));
+        assert_eq!(pending(&store, &clock).unwrap()[0].id, id);
+        clock.advance(Duration::from_secs(1));
+        assert!(pending(&store, &clock).unwrap().is_empty());
+        assert_eq!(
+            status(&store, &clock, id).unwrap().status,
+            VaultRequestStatus::Expired
+        );
     }
 }

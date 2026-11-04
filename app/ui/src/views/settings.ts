@@ -18,8 +18,13 @@ interface Shown { group: string; label: string; help: string; control: Control; 
 
 const DAYS: [string, string][] = [["7d", "7일"], ["30d", "30일"], ["90d", "90일"], ["365d", "1년"]];
 
+/// Choices counted in seconds: `60` → `1분`, `15` → `15초`.
+function seconds(values: string[]): [string, string][] {
+  return values.map((v) => [v, Number(v) % 60 === 0 ? `${Number(v) / 60}분` : `${v}초`]);
+}
+
 /// Settings in the order the screen shows them, by group.
-const SHOWN: Record<string, Shown> = {
+export const SHOWN: Record<string, Shown> = {
   audit_enabled: {
     group: "보안", label: "사용 기록 남기기", control: { kind: "switch" },
     help: "에이전트가 무엇을 썼는지 기록합니다. 값은 기록하지 않습니다. 끌 때는 확인합니다.",
@@ -69,9 +74,42 @@ const SHOWN: Record<string, Shown> = {
   notify_drafts: { group: "알림", label: "새 draft", control: { kind: "switch" }, help: "확정을 기다리는 항목이 생길 때" },
   notify_denials: { group: "알림", label: "거부", control: { kind: "switch" }, help: "정책이 에이전트의 사용을 막았을 때" },
   notify_locks: { group: "알림", label: "치환 잠김", control: { kind: "switch" }, help: "세션이 값 넣기를 멈췄을 때. 세션 화면에서 다시 허용합니다" },
+  // 고급: waits and limits that were constants (#201, J-270–J-274).
+  session_start_seconds: {
+    group: "고급", label: "세션 시작을 기다리는 시간",
+    control: { kind: "choices", choices: seconds(["15", "30", "60", "120"]) },
+    help: "이 시간 안에 브라우저가 뜨지 않으면 세션 열기가 실패합니다. 느린 Mac에서 첫 실행이 걸리면 늘리세요.",
+  },
+  session_stop_seconds: {
+    group: "고급", label: "세션 멈춤을 기다리는 시간",
+    control: { kind: "choices", choices: seconds(["15", "30", "60"]) },
+    help: "이 시간 안에 브라우저가 닫히지 않으면 멈춤이 실패로 보입니다.",
+  },
+  browser_endpoint_seconds: {
+    group: "고급", label: "CDP 주소를 기다리는 시간",
+    control: { kind: "choices", choices: seconds(["15", "30", "60"]) },
+    help: "CDP를 켜고 연 세션에서 브라우저가 주소를 알려 줄 때까지 기다립니다.",
+  },
+  browser_call_seconds: {
+    group: "고급", label: "브라우저 응답을 기다리는 시간",
+    control: { kind: "choices", choices: seconds(["30", "60", "90"]) },
+    help: "브라우저가 명령 하나에 이 시간 안에 답하지 않으면 그 명령이 실패합니다. 새로 여는 세션부터 적용됩니다.",
+  },
+  request_ttl_hours: {
+    group: "고급", label: "정보 요청 만료",
+    control: { kind: "choices", choices: [["1", "1시간"], ["8", "8시간"], ["24", "1일"], ["72", "3일"]] },
+    help: "에이전트가 값을 입력해 달라고 한 요청은 이 시간이 지나면 답할 수 없습니다.",
+    above: (than) => `${than}시간보다 길게 하면 확인합니다.`,
+  },
+  max_drafts: {
+    group: "고급", label: "같은 이름의 draft 수",
+    control: { kind: "choices", choices: [["10", "10개"], ["20", "20개"], ["50", "50개"]] },
+    help: "에이전트가 같은 이름으로 쌓아 둘 수 있는 확정 전 항목 수입니다.",
+    above: (than) => `${than}개보다 많게 하면 확인합니다.`,
+  },
 };
 
-const GROUPS = ["보안", "브라우저", "파일 올리기", "새 항목과 draft", "클립보드", "알림"];
+const GROUPS = ["보안", "브라우저", "파일 올리기", "새 항목과 draft", "클립보드", "알림", "고급"];
 
 const set = (key: string, value: string) => `data-action="set-setting" data-key="${esc(key)}" data-value="${esc(value)}"`;
 

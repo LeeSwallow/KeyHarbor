@@ -11,20 +11,16 @@ use crate::{
 };
 use anyhow::{Result, bail};
 use keyharbor_broker::chrome::{DEVTOOLS_ACTIVE_PORT, parse_devtools_active_port};
-
-/// How long `endpoint` waits for Chrome to write `DevToolsActivePort`. As long as a session
-/// start may take (core `START_TIMEOUT`): on a busy machine Chrome writes the file seconds
-/// after the session is running, and 5 s was too short on CI (#25).
-const ENDPOINT_WAIT: Duration = Duration::from_secs(15);
 use keyharbor_broker::{chrome::locate as locate_chrome, ego::probe};
 use keyharbor_domain::{
     Generation, SessionId,
     browser_choice::{BrowserChoice, BrowserKind},
     ports::{
-        SessionRuntime,
+        SessionRuntime, SettingsStore,
         runtime::{LaunchOptions, ResolvedBrowser, RuntimeLock, StartedSupervisor},
     },
     session::substitution_lock::LockReason,
+    settings::{BROWSER_CALL_SECONDS, BROWSER_ENDPOINT_SECONDS},
 };
 use std::{
     path::{Path, PathBuf},
@@ -33,18 +29,62 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// How long the browser gets, from the settings the composition root reads (#201).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BrowserWaits {
+    /// How long `endpoint` waits for Chrome to write `DevToolsActivePort`
+    /// (`browser_endpoint_seconds`). On a busy machine Chrome writes it seconds after the
+    /// session is running; 5 s was too short on CI (#25).
+    pub endpoint: Duration,
+    /// How long one CDP call may go unanswered (`browser_call_seconds`), handed to each new
+    /// supervisor as `--call-seconds`.
+    pub call: Duration,
+}
+
+impl BrowserWaits {
+    /// The two settings' values, or their defaults when never set.
+    pub fn load(settings: &dyn SettingsStore) -> Result<Self> {
+        use keyharbor_core::settings::seconds;
+        Ok(Self {
+            endpoint: seconds(settings, BROWSER_ENDPOINT_SECONDS)?,
+            call: seconds(settings, BROWSER_CALL_SECONDS)?,
+        })
+    }
+}
+
 /// Session processes under one data directory, started as `exe --data-dir … __supervise …`
 /// ([`SuperviseArgs`]).
 pub struct ProcessRuntime {
     data: PathBuf,
     exe: PathBuf,
+    waits: BrowserWaits,
 }
 
 impl ProcessRuntime {
-    pub fn new(data: &Path, exe: &Path) -> Self {
+    pub fn new(data: &Path, exe: &Path, waits: BrowserWaits) -> Self {
         Self {
             data: data.to_path_buf(),
             exe: exe.to_path_buf(),
+            waits,
+        }
+    }
+
+    /// The supervisor's arguments for one run.
+    fn supervise_args(
+        &self,
+        id: SessionId,
+        generation: Generation,
+        options: &LaunchOptions<'_>,
+    ) -> SuperviseArgs {
+        SuperviseArgs {
+            id,
+            generation,
+            browser: options.browser.executable.clone(),
+            kind: options.browser.kind,
+            headless: options.headless,
+            url: options.url.map(str::to_owned),
+            cdp: options.cdp,
+            call_timeout: self.waits.call,
         }
     }
 }
@@ -121,15 +161,7 @@ impl SessionRuntime for ProcessRuntime {
         generation: Generation,
         options: &LaunchOptions<'_>,
     ) -> Result<Box<dyn StartedSupervisor>> {
-        let args = SuperviseArgs {
-            id,
-            generation,
-            browser: options.browser.executable.clone(),
-            kind: options.browser.kind,
-            headless: options.headless,
-            url: options.url.map(str::to_owned),
-            cdp: options.cdp,
-        };
+        let args = self.supervise_args(id, generation, options);
         let mut command = Command::new(&self.exe);
         command
             .args(args.to_argv(&self.data))
@@ -190,7 +222,7 @@ impl SessionRuntime for ProcessRuntime {
 
     fn debug_endpoint(&self, id: SessionId) -> Result<String> {
         let file = paths::profile_dir(&self.data, &id).join(DEVTOOLS_ACTIVE_PORT);
-        let deadline = Instant::now() + ENDPOINT_WAIT;
+        let deadline = Instant::now() + self.waits.endpoint;
         loop {
             // Chrome creates the file before it writes the port, so a half-written file is
             // "not yet", not "invalid", until the deadline (#31 CI).
@@ -215,6 +247,85 @@ mod tests {
     use super::*;
 
     const ID: &str = "11111111-1111-4111-8111-111111111111";
+
+    /// Settings kept in memory.
+    #[derive(Default)]
+    struct Settings(std::sync::Mutex<std::collections::HashMap<String, String>>);
+    impl SettingsStore for Settings {
+        fn setting_get(&self, key: &str) -> Result<Option<String>> {
+            Ok(self.0.lock().unwrap().get(key).cloned())
+        }
+        fn setting_set(&self, key: &str, value: &str) -> Result<()> {
+            self.0.lock().unwrap().insert(key.into(), value.into());
+            Ok(())
+        }
+    }
+
+    fn defaults() -> BrowserWaits {
+        BrowserWaits::load(&Settings::default()).unwrap()
+    }
+
+    #[test]
+    fn the_waits_default_to_the_old_constants() {
+        assert_eq!(
+            defaults(),
+            BrowserWaits {
+                endpoint: Duration::from_secs(15),
+                call: Duration::from_secs(30),
+            }
+        );
+    }
+
+    #[test]
+    fn the_call_limit_reaches_the_supervisor_as_an_argument() {
+        let settings = Settings::default();
+        settings.setting_set(BROWSER_CALL_SECONDS, "75").unwrap();
+        let runtime = ProcessRuntime::new(
+            Path::new("/d"),
+            Path::new("/kh"),
+            BrowserWaits::load(&settings).unwrap(),
+        );
+        let browser = ResolvedBrowser {
+            kind: BrowserKind::Chrome,
+            executable: "/bin/chrome".into(),
+        };
+        let options = LaunchOptions {
+            browser: &browser,
+            url: None,
+            cdp: false,
+            headless: true,
+        };
+        let id = SessionId::parse(ID).unwrap();
+        let generation = keyharbor_crypto::random::id::<Generation>();
+        let argv = runtime
+            .supervise_args(id, generation, &options)
+            .to_argv(Path::new("/d"));
+        let parsed = SuperviseArgs::parse(&argv[3..]).unwrap();
+        assert_eq!(parsed.call_timeout, Duration::from_secs(75));
+    }
+
+    #[test]
+    fn endpoint_gives_up_after_the_endpoint_setting() {
+        let data = tempfile::tempdir().unwrap();
+        let settings = Settings::default();
+        settings.setting_set(BROWSER_ENDPOINT_SECONDS, "5").unwrap();
+        let runtime = ProcessRuntime::new(
+            data.path(),
+            Path::new("unused"),
+            BrowserWaits::load(&settings).unwrap(),
+        );
+        let started = Instant::now();
+        assert!(
+            runtime
+                .debug_endpoint(SessionId::parse(ID).unwrap())
+                .is_err()
+        );
+        let waited = started.elapsed();
+        assert!(
+            waited >= Duration::from_secs(5) && waited < Duration::from_secs(10),
+            "{waited:?}"
+        );
+    }
     const PORT_FILE: &str = "12345\n/devtools/browser/11111111-1111-4111-8111-111111111111\n";
 
     #[test]
@@ -230,7 +341,7 @@ mod tests {
             thread::sleep(Duration::from_millis(200));
             std::fs::write(&file, PORT_FILE).unwrap();
         });
-        let runtime = ProcessRuntime::new(data.path(), Path::new("unused"));
+        let runtime = ProcessRuntime::new(data.path(), Path::new("unused"), defaults());
         let endpoint = runtime.debug_endpoint(id).unwrap();
         writer.join().unwrap();
         assert_eq!(

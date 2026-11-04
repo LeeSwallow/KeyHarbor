@@ -251,6 +251,8 @@ stateDiagram-v2
 |---|---|
 | ![설정: 브라우저와 파일 올리기 묶음](../assets/screenshots/settings-browser.png) | ![같은 화면, 다크](../assets/screenshots/settings-browser-dark.png) |
 
+**고급(#201, J-274)**: 상수였던 대기와 상한을 맨 아래 "고급" 묶음에 둔다. 세션 시작·멈춤을 기다리는 시간, CDP 주소를 기다리는 시간, 브라우저 응답을 기다리는 시간(새로 여는 세션부터), 정보 요청 만료, 같은 이름의 draft 수. 시간은 `15초`·`2분`처럼, 요청 만료는 `1시간`·`1일`처럼 보인다. 대기 시간은 늘려도 확인하지 않는다. 정보 요청 만료와 draft 수는 기본보다 크게 하면 확인하고, 그 문장의 숫자는 다른 약화 기준처럼 `SettingDto.weakening`에서 온다(J-203). 화면 표(`views/settings.ts`의 `SHOWN`)는 domain `SETTINGS`의 모든 키를 덮어야 한다. `vocabulary.json`의 `settings`가 그 목록이고, Rust 테스트와 UI 테스트가 같이 본다(J-175).
+
 ## 9.5 첫 실행
 
 ```mermaid

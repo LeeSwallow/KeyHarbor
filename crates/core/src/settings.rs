@@ -8,6 +8,7 @@ use keyharbor_domain::{
     ports::{Confirm, SettingsStore},
     settings::{SETTINGS, SettingSpec},
 };
+use std::time::Duration;
 
 fn spec(key: &str) -> Result<&'static SettingSpec> {
     SettingSpec::find(key).ok_or_else(|| {
@@ -22,6 +23,19 @@ pub fn get(store: &dyn SettingsStore, key: &str) -> Result<String> {
     Ok(store
         .setting_get(key)?
         .unwrap_or_else(|| spec.default.to_owned()))
+}
+
+/// A number setting's value (or default). A stored value out of its range is an error naming
+/// the setting, never the value.
+pub fn number(store: &dyn SettingsStore, key: &str) -> Result<u64> {
+    spec(key)?
+        .number(store.setting_get(key)?.as_deref())
+        .map_err(|e| anyhow!("invalid {key}: {e}"))
+}
+
+/// A setting counted in seconds, as a wait.
+pub fn seconds(store: &dyn SettingsStore, key: &str) -> Result<Duration> {
+    number(store, key).map(Duration::from_secs)
 }
 
 /// Checks and stores a value, asking a person first if it weakens a protection.

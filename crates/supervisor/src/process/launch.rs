@@ -73,6 +73,7 @@ pub(super) fn launch_for(
         cdp,
         kind,
         headless: asked_headless,
+        call_timeout,
         ..
     } = args;
     let is_ego = kind == BrowserKind::EgoLite;
@@ -93,6 +94,7 @@ pub(super) fn launch_for(
             space: ego_space(store, id)?,
             url,
             poll: ego_poll(store)?,
+            call_timeout,
         })
     } else {
         Launch::Chrome(ChromeLaunch {
@@ -101,6 +103,7 @@ pub(super) fn launch_for(
             url,
             debug_port: cdp,
             headless: headless || asked_headless,
+            call_timeout,
         })
     };
     Ok(Planned {

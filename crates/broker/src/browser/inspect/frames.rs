@@ -9,8 +9,9 @@ use keyharbor_domain::{
 };
 use serde_json::{Value, json};
 
-/// Iframes nested deeper than this are refused for substitution. Fixed: it only bounds the
-/// walk (one isolated world per level); sign-in forms are not nested anywhere near this deep.
+/// Iframes nested deeper than this are refused for substitution. Fixed, not a setting
+/// (J-274): it only bounds the walk (one isolated world per level) a hostile page could make
+/// endless; sign-in forms are not nested anywhere near this deep.
 const MAX_FRAME_DEPTH: usize = 16;
 
 /// The focused element of the document, followed through open shadow roots.

@@ -7,6 +7,7 @@ use anyhow::{Result, bail};
 use keyharbor_crypto::random;
 use keyharbor_domain::{
     password::PasswordRule,
+    settings::MAX_DRAFTS,
     vault::{DRAFT_MARK, FieldName, ItemKind, ItemName, Origin},
 };
 use zeroize::Zeroizing;
@@ -16,9 +17,6 @@ use zeroize::Zeroizing;
 pub fn generate_password(rule: &PasswordRule) -> Zeroizing<String> {
     random::password(rule)
 }
-
-/// Drafts of one name an agent may pile up before a person sorts them out.
-pub const MAX_DRAFTS: u32 = 20;
 
 /// An item an agent puts: chosen name, kind, values and origins.
 pub struct DraftItem {
@@ -101,16 +99,24 @@ impl Vault {
         if !taken(name)? {
             return Ok(name.clone());
         }
-        for n in 1..=MAX_DRAFTS {
+        let max = self.max_drafts()?;
+        for n in 1..=max {
             let draft = name.draft(n);
             if !taken(&draft)? {
                 return Ok(draft);
             }
         }
         bail!(
-            "{} already has {MAX_DRAFTS} drafts; confirm or discard some",
+            "{} already has {max} drafts; confirm or discard some",
             name.as_str()
         )
+    }
+
+    /// The `max_drafts` setting: drafts of one name an agent may pile up.
+    fn max_drafts(&self) -> Result<u32> {
+        let max = crate::settings::number(&*self.store, MAX_DRAFTS)?;
+        // The setting's range (1..=100) fits; a wider one would be a domain change.
+        Ok(u32::try_from(max)?)
     }
 }
 
@@ -184,7 +190,28 @@ mod tests {
         let e = env();
         let vault = init(&e);
         vault.add_draft(put("a", "v"), "claude").unwrap();
-        for _ in 0..MAX_DRAFTS {
+        for _ in 0..20 {
+            vault.add_draft(put("a", "v"), "claude").unwrap();
+        }
+        assert_eq!(
+            vault
+                .add_draft(put("a", "v"), "claude")
+                .unwrap_err()
+                .to_string(),
+            "a already has 20 drafts; confirm or discard some",
+            "20 by default"
+        );
+    }
+
+    #[test]
+    fn the_draft_cap_follows_the_setting() {
+        use keyharbor_domain::ports::SettingsStore;
+        let e = env();
+        let vault = init(&e);
+        crate::tests::open_store(&e.data)
+            .setting_set(MAX_DRAFTS, "2")
+            .unwrap();
+        for _ in 0..3 {
             vault.add_draft(put("a", "v"), "claude").unwrap();
         }
         assert!(vault.add_draft(put("a", "v"), "claude").is_err());

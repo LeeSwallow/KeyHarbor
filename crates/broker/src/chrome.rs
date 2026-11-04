@@ -8,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
+    time::Duration,
 };
 use tokio::process::Child;
 
@@ -70,6 +71,8 @@ pub struct ChromeLaunch {
     /// Also open a `--remote-debugging-port` (raw CDP, `open --cdp`).
     pub debug_port: bool,
     pub headless: bool,
+    /// How long one CDP call may go unanswered (setting `browser_call_seconds`).
+    pub call_timeout: Duration,
 }
 
 /// A started browser: its process and its CDP pipe.
@@ -184,7 +187,7 @@ pub fn spawn(launch: &ChromeLaunch) -> Result<Chrome> {
         tokio::net::unix::pipe::Receiver::from_owned_fd(OwnedFd::from(from_chrome_read))?;
     Ok(Chrome {
         process,
-        link: CdpLink(Arc::new(Cdp::new(sender, receiver))),
+        link: CdpLink(Arc::new(Cdp::new(sender, receiver, launch.call_timeout))),
     })
 }
 

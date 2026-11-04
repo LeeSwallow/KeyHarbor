@@ -33,4 +33,4 @@ pub fn ego_lite_answers(wait: std::time::Duration) -> bool {
 }
 pub use lock::lock_mcp_scope;
 pub use process::{Adapters, run};
-pub use runtime::ProcessRuntime;
+pub use runtime::{BrowserWaits, ProcessRuntime};

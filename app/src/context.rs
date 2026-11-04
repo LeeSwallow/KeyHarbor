@@ -10,7 +10,7 @@ use anyhow::{Result, anyhow};
 use keyharbor_core::Vault;
 use keyharbor_domain::ports::{Clock, KeyStore, SessionRuntime, Store};
 use keyharbor_sqlite::SqliteStore;
-use keyharbor_supervisor::ProcessRuntime;
+use keyharbor_supervisor::{BrowserWaits, ProcessRuntime};
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -107,8 +107,10 @@ impl Ctx {
             self.clock.clone(),
         )
     }
-    pub fn runtime(&self) -> Box<dyn SessionRuntime> {
-        Box::new(ProcessRuntime::new(&self.root, &self.cli))
+    /// Session supervisors, with the browser waits the settings hold now (#201).
+    pub fn runtime(&self) -> Result<Box<dyn SessionRuntime>> {
+        let waits = BrowserWaits::load(&SqliteStore::open(&self.root)?)?;
+        Ok(Box::new(ProcessRuntime::new(&self.root, &self.cli, waits)))
     }
 }
 
