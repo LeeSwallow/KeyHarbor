@@ -37,6 +37,7 @@ fn ctx_with(dir: &Path, board: Arc<Board>) -> Ctx {
         Arc::new(SystemClock),
         "keyharbor".into(),
         board,
+        Arc::new(keyharbor_app::auth::NoneAuth),
     )
 }
 fn ctx(dir: &Path) -> Ctx {

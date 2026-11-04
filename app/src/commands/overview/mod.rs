@@ -1,6 +1,6 @@
 //! The home screen (09 §9.4.1): counts, and the recent usage record.
 
-use crate::Ctx;
+use crate::{Ctx, auth::AuthScope};
 use anyhow::Result;
 use keyharbor_core::status;
 use serde::Serialize;
@@ -11,6 +11,8 @@ pub struct OverviewDto {
     pub sessions_open: usize,
     pub requests_pending: usize,
     pub drafts: usize,
+    /// The authentication method's name (`Authenticator::id`), shown on the sidebar and settings.
+    pub auth: &'static str,
 }
 
 pub fn overview(ctx: &Ctx) -> Result<OverviewDto> {
@@ -20,7 +22,13 @@ pub fn overview(ctx: &Ctx) -> Result<OverviewDto> {
         sessions_open: s.sessions_open,
         requests_pending: s.requests_pending,
         drafts: s.drafts,
+        auth: ctx.auth_id(),
     })
+}
+
+/// Before the main window is shown, at launch or from the menu bar (03 §3.10, `OpenApp`).
+pub fn open_app(ctx: &Ctx) -> Result<()> {
+    ctx.challenge(AuthScope::OpenApp)
 }
 
 /// One usage event: who, what, where, the outcome. Never a value.

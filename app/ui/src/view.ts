@@ -9,7 +9,7 @@ import { editor } from "./views/editor.js";
 import { form } from "./views/form.js";
 import { palette, paletteCommands } from "./views/palette.js";
 import { badge, btn, card, empty, glyph, heading, icon, screenIcon } from "./views/parts.js";
-import { auditWord, fieldWord, kindWord, sessionWord, siteWord, sourceWord } from "./words.js";
+import { auditWord, authWord, fieldWord, kindWord, sessionWord, siteWord, sourceWord } from "./words.js";
 
 import { esc } from "./html.js";
 
@@ -30,7 +30,9 @@ function side(s: State): string {
     const badge = n > 0 ? `<span class="kh-count">${n}</span>` : "";
     return `<button class="nav${s.view === view ? " is-on" : ""}" data-action="go" data-view="${view}">${icon(screenIcon(view))}${esc(label)}${badge}</button>`;
   }).join("");
-  return `<nav class="side" aria-label="KeyHarbor"><div class="brand"><img class="brand-icon" src="app-icon.svg" alt="">KeyHarbor</div>${links}<div class="group">인증 없음</div></nav>`;
+  // The method comes from the app's authenticator (overview), not from this file.
+  const auth = s.overview ? `<div class="group">${esc(authWord(s.overview.auth))}</div>` : "";
+  return `<nav class="side" aria-label="KeyHarbor"><div class="brand"><img class="brand-icon" src="app-icon.svg" alt="">KeyHarbor</div>${links}${auth}</nav>`;
 }
 
 /// `2026-10-29T05:02:00Z` → `10-29 05:02` (UTC as stored; the record is a glance, not a log).
@@ -234,7 +236,7 @@ export function render(s: State): string {
       : ["", {
           home, inbox, sessions, audit,
           policies: (x: State) => policies(x.policies),
-          settings: (x: State) => settings(x.settings, x.browsers),
+          settings: (x: State) => settings(x.settings, x.browsers, x.overview?.auth ?? null),
         }[s.view](s)];
   return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${notice}${main}</section>${undo}${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
 }

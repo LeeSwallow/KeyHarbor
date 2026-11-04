@@ -46,7 +46,11 @@ fn current(app: &AppHandle) -> Option<MenuText> {
         .map(|o| commands::menu_text(&o))
 }
 
+/// Shows the main window, past the `OpenApp` challenge.
 fn show_window(app: &AppHandle) {
+    if commands::open_app(&app.state::<Ctx>()).is_err() {
+        return;
+    }
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();

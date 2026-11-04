@@ -130,7 +130,7 @@ flowchart LR
 |---|---|
 | Tauri 앱 골격 | core·guard 직접 호출(`app/`, 별도 워크스페이스), 네트워크 listener 없음(`lsof` 확인), 금고 없으면 키를 만들지 않고 안내, 값 보기는 guard `reveal`만·기록됨, 다른 항목·화면으로 가면 보인 값이 DOM에서 사라짐, 변조 항목은 보기 없음 ✅ (`app/tests/commands.rs`, `app/ui/test`) |
 | 금고·세션·정책·기록·설정 화면 | 각 화면의 CRUD, 평문 보기, 비밀번호 생성 |
-| 인증 trait + `NoneAuth` | 설정 화면에 현재 방식과 안내 문구 |
+| 인증 trait + `NoneAuth` | 설정 화면에 현재 방식과 안내 문구 ✅ (`app/src/auth.rs`, 거절하는 대역이면 처리하지 않음: `app/tests/auth.rs`, 화면: `app/ui/test/settings.test.ts`) |
 | 대기 중인 인계 재개 | CLI `resume`과 같은 조건 ✅ (앱 확인 대기의 [재개]) |
 | 보안 입력 창 · `vault_request`/`vault_wait` | 요청 → 창 → 저장 → placeholder 반환, 거절 경로 ✅ (`app/tests/commands.rs`, 폼은 비밀 필드 password·자동 완성 끔, 닫으면 DOM에서 사라짐). 별도 항상 위 창(화면 녹화에서 제외) ✅ (`app/src/shell/request_window.rs`) |
 | 메뉴 막대 · 알림 · 명령 팔레트 | [09 §9.8](09-app-ux.md#98-전체-동작-목록)의 동작 목록을 체크리스트로 사용. 메뉴 막대(템플릿 아이콘, 확인 대기 개수, 상태·열기·종료, 창을 닫아도 남음) ✅. 알림(새 요청·인계·draft·거부, 종류별 끄기, 값·사유 없음) ✅ (`app/src/commands/overview/notices.rs`). 명령 팔레트(⌘K) ✅ (`app/ui/test/palette.test.ts`) |

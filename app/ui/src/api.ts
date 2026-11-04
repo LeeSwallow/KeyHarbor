@@ -1,7 +1,8 @@
 // The app's commands (app/src/main.rs), as the window calls them. One port, so views are
 // tested with a fake. Only `reveal` returns a value.
 
-export interface Overview { vault_ready: boolean; sessions_open: number; requests_pending: number; drafts: number }
+/// `auth` is the authentication method's name (`Authenticator::id`, 03 §3.10): `none` for now.
+export interface Overview { vault_ready: boolean; sessions_open: number; requests_pending: number; drafts: number; auth: string }
 export interface Item {
   name: string; kind: string; domain: string; status: string; source: string;
   description: string | null; fields: string[]; placeholders: string[];

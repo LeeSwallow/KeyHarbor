@@ -22,7 +22,7 @@ pub use manage::{
 };
 pub use overview::{
     AuditDto, MenuText, Notice, NoticeKinds, OverviewDto, Seen, Snapshot, audit, menu_text,
-    notice_kinds, notices, overview, snapshot,
+    notice_kinds, notices, open_app, overview, snapshot,
 };
 pub use sessions::{
     BrowsersDto, SessionDto, browsers, open_session, recover_session, remove_session, request_site,

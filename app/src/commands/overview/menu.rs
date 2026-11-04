@@ -41,6 +41,7 @@ mod tests {
             sessions_open: sessions,
             requests_pending: requests,
             drafts,
+            auth: "none",
         }
     }
 
