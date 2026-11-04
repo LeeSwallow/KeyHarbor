@@ -8,7 +8,7 @@ use crate::compose::App;
 use keyharbor_core::Vault;
 use keyharbor_domain::vault::{ItemName, Origin};
 use keyharbor_guard::{autofill, capture::CaptureOutcome};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use zeroize::Zeroizing;
 
@@ -31,6 +31,26 @@ struct SaveWire {
     username: Option<Zeroizing<String>>,
     #[serde(deserialize_with = "secret")]
     password: Zeroizing<String>,
+}
+
+/// The `filled` reply, borrowing the login so the only copy written is the wiped buffer
+/// ([`super::seal`], #157). Fields in key order, the order a `Value` writes them in.
+#[derive(Serialize)]
+struct FilledWire<'a> {
+    password: &'a str,
+    r#type: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    username: Option<&'a str>,
+    v: u64,
+}
+
+fn filled_reply(username: Option<&str>, password: &str) -> Result<Zeroizing<Vec<u8>>, Refusal> {
+    super::seal(&FilledWire {
+        password,
+        r#type: "filled",
+        username,
+        v: super::VERSION,
+    })
 }
 
 /// The string read moves into `Zeroizing` without a copy, so it is wiped when dropped.
@@ -66,7 +86,7 @@ pub(super) fn list(app: &App, body: &[u8]) -> Result<Value, Refusal> {
     Ok(json!({"type": "logins", "items": names}))
 }
 
-pub(super) fn fill(app: &App, body: &[u8]) -> Result<Value, Refusal> {
+pub(super) fn fill(app: &App, body: &[u8]) -> Result<Zeroizing<Vec<u8>>, Refusal> {
     let wire: FillWire = parse(body)?;
     let (origin, item) = (
         origin(&wire.origin)?,
@@ -90,11 +110,10 @@ pub(super) fn fill(app: &App, body: &[u8]) -> Result<Value, Refusal> {
     }
     let fill = autofill::fill(&*store, &vault, &*app.presence(), &origin, &item)
         .map_err(|_| Refusal::NotConfirmed)?;
-    let mut reply = json!({"type": "filled", "password": fill.password.as_str()});
-    if let Some(username) = &fill.username {
-        reply["username"] = json!(username.as_str());
-    }
-    Ok(reply)
+    filled_reply(
+        fill.username.as_ref().map(|name| name.as_str()),
+        fill.password.as_str(),
+    )
 }
 
 pub(super) fn save(app: &App, body: &[u8]) -> Result<Value, Refusal> {
@@ -111,5 +130,31 @@ pub(super) fn save(app: &App, body: &[u8]) -> Result<Value, Refusal> {
         CaptureOutcome::Known(item) => Ok(json!({"type": "known", "item": item.as_str()})),
         CaptureOutcome::Draft(item) => Ok(json!({"type": "saved", "item": item.as_str()})),
         CaptureOutcome::Off | CaptureOutcome::NotHandedOff => Err(Refusal::Failed),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::browser_cmd::host::VERSION;
+
+    /// The reply as it was built before #157: a `Value` with `v` added by `serve`.
+    fn as_value(username: Option<&str>, password: &str) -> Vec<u8> {
+        let mut reply = json!({"type": "filled", "password": password});
+        if let Some(username) = username {
+            reply["username"] = json!(username);
+        }
+        reply["v"] = json!(VERSION);
+        reply.to_string().into_bytes()
+    }
+
+    #[test]
+    fn filled_reply_keeps_its_bytes_in_a_wiped_buffer() {
+        for (username, password) in [(Some("me@example.com"), "p\"w\\d"), (None, "pw")] {
+            let body: Zeroizing<Vec<u8>> = filled_reply(username, password).unwrap();
+            assert_eq!(body.as_slice(), as_value(username, password).as_slice());
+            // Measured before writing: the buffer never grew, so no unwiped copy was left.
+            assert_eq!(body.capacity(), body.len());
+        }
     }
 }
