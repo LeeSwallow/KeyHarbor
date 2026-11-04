@@ -51,7 +51,7 @@ pub(crate) enum Command {
 /// The refusal of a request only a person may send, when it names an agent. The MCP server
 /// names its agent in every request, so no agent lifts a lock through it (#190, J-220).
 pub(crate) const PERSON_ONLY: &str =
-    "denied: only a person lifts a session's lock (keyharbor session unlock, or the admin app)";
+    "denied: only a person lifts a session's lock (keyharbor unlock, or the admin app)";
 
 impl Command {
     /// The document a command loads, if it names one.
