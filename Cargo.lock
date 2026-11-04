@@ -1444,6 +1444,7 @@ dependencies = [
  "anyhow",
  "clap",
  "keyharbor-core",
+ "keyharbor-crypto",
  "keyharbor-domain",
  "keyharbor-guard",
  "keyharbor-keystore",

@@ -370,7 +370,7 @@ fn secret_and_env_items_live_in_the_developer_domain() {
 fn one_time_codes_are_off_until_a_person_turns_them_on() {
     let c = Cli::new();
     let add = ["vault", "add", "bank", "--kind", "login", "--origin", "https://bank.example", "--stdin"];
-    let bad = c.synth("not-a-seed");
+    let bad = format!("{} not a seed!", c.synth("seed"));
     let out = c.run(&add, Some(&json!({"totp_seed": bad}).to_string()));
     let error = String::from_utf8_lossy(&out.stderr);
     assert!(!out.status.success());

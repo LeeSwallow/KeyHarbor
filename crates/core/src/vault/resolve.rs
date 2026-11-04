@@ -249,13 +249,13 @@ mod tests {
     fn a_seed_that_is_not_one_is_refused_without_its_value() {
         let e = env();
         let v = init(&e);
-        let error = v.add(with_seed("KH-SYNTH-not-a-seed")).unwrap_err().to_string();
+        let error = v.add(with_seed("KH-SYNTH-not a seed!")).unwrap_err().to_string();
         assert!(error.starts_with("field totp_seed: not a one-time code seed"), "{error}");
         assert!(!error.contains("KH-SYNTH"), "{error}");
         let uri = format!("otpauth://totp/Bank:me?secret={RFC_SEED}&issuer=Bank");
         v.add(with_seed(&uri)).unwrap();
         let change = crate::ItemChange {
-            set_fields: vec![crate::tests::field("totp_seed", "KH-SYNTH-123")],
+            set_fields: vec![crate::tests::field("totp_seed", "KH-SYNTH-1!")],
             ..Default::default()
         };
         let bank = ItemName::parse("bank").unwrap();
