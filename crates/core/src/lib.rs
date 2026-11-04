@@ -27,8 +27,8 @@ pub use keyharbor_crypto::export::Passphrase;
 pub use keyharbor_crypto::token::AccessToken;
 pub use transfer::{ImportReport, parse_dotenv};
 pub use vault::{
-    CatalogEntry, DEFAULT_ITEM_TTL, DraftItem, ExpiryChoice, GeneratedLogin, ItemChange,
-    ItemDetails, ItemFilter, ItemSource, ItemStatus, ItemSummary, ItemUse, MAX_DRAFTS,
+    CatalogEntry, DEFAULT_ITEM_TTL, DraftItem, ExpiryChoice, GeneratedDraft, GeneratedLogin,
+    ItemChange, ItemDetails, ItemFilter, ItemSource, ItemStatus, ItemSummary, ItemUse, MAX_DRAFTS,
     MAX_FIELD_BYTES, MaskValues, NO_TTL, NewItem, Vault, VaultBackend, catalog,
     effective_descriptions, fill_template, generate_password,
 };

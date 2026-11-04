@@ -6,6 +6,8 @@ mod navigate;
 mod tabs;
 mod wait;
 
+pub use wait::WAIT_TIMEOUT;
+
 use super::CdpBrowser;
 use anyhow::Result;
 use serde_json::Value;

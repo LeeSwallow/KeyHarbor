@@ -1,16 +1,15 @@
 //! Session tools: list, create, open, stop, hand to the user and wait, raw CDP endpoint.
 
-use crate::server::{Server, fail, outcome};
+use crate::server::{RAW_CDP_DISABLED, Server, fail, invalid, outcome};
 use keyharbor_core::grant;
 use keyharbor_core::session::{
-    self as lifecycle, OpenOptions, SessionView, poll, resume_check, wait_for_resume,
+    self as lifecycle, OpenOptions, SessionView, resume_check, wait_for_resume,
 };
 use keyharbor_domain::{
     RequestId, SessionName, State,
-    browser_choice::BrowserChoice,
     vault::{Description, Origin},
 };
-use keyharbor_guard::session::SessionOp;
+use keyharbor_guard::session::{SessionOp, parse_agent_browser};
 use rmcp::{
     handler::server::wrapper::Parameters, model::CallToolResult, schemars, tool, tool_router,
 };
@@ -119,7 +118,7 @@ impl Server {
                     .as_deref()
                     .map(Description::parse)
                     .transpose()
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    .map_err(invalid)?;
                 let session = lifecycle::create(&**inner.store()?, name, description.as_ref())?;
                 Ok(json!({"id": session.id.to_string(), "name": session.name.as_str(), "state": session.state.as_str()}))
             })
@@ -140,72 +139,56 @@ impl Server {
         }): Parameters<OpenSession>,
     ) -> CallToolResult {
         if cdp && !self.inner.allow_cdp {
-            return fail(
-                "raw CDP is disabled; the user must start the MCP server with --allow-cdp",
-            );
+            return fail(RAW_CDP_DISABLED);
         }
-        let id = match self.session(&id) {
-            Ok(id) => id,
-            Err(error) => return fail(error.to_string()),
-        };
-        outcome(
-            self.blocking(move |inner| {
-                let choice = match browser.as_deref() {
-                    Some(value) if value.starts_with('/') => {
-                        anyhow::bail!("only the person may name a browser executable")
-                    }
-                    Some(value) => Some(BrowserChoice::parse(value).map_err(|e| anyhow::anyhow!("{e}"))?),
-                    None => inner.browser.clone(),
-                };
-                let resolved = lifecycle::resolve_browser(
-                    &**inner.store()?,
-                    &*inner.runtime,
-                    choice.as_ref(),
-                )?;
-                inner.allow(SessionOp::Open { id, cdp, browser: resolved.kind })?;
-                let options = OpenOptions {
-                    url: url.as_deref(),
-                    cdp,
-                    browser: &resolved,
-                    headless: false,
-                    agent: inner.agent(),
-                };
-                lifecycle::open(
-                    &**inner.store()?,
-                    &*inner.runtime,
-                    &*inner.clock,
-                    id,
-                    &options,
-                )?;
-                let kind = resolved.kind;
-                Ok(json!({"id": id.to_string(), "state": State::Running.as_str(), "browser": kind.as_str(), "protection": kind.protection().as_str()}))
-            })
-            .await,
-        )
+        // The operation names the browser, so the policy is checked once it is resolved.
+        self.with_session(&id, move |inner, id| {
+            let choice = match browser.as_deref() {
+                Some(value) => Some(parse_agent_browser(value)?),
+                None => inner.browser.clone(),
+            };
+            let resolved =
+                lifecycle::resolve_browser(&**inner.store()?, &*inner.runtime, choice.as_ref())?;
+            inner.allow(SessionOp::Open {
+                id,
+                cdp,
+                browser: resolved.kind,
+            })?;
+            let options = OpenOptions {
+                url: url.as_deref(),
+                cdp,
+                browser: &resolved,
+                headless: false,
+                agent: inner.agent(),
+            };
+            lifecycle::open(
+                &**inner.store()?,
+                &*inner.runtime,
+                &*inner.clock,
+                id,
+                &options,
+            )?;
+            let kind = resolved.kind;
+            Ok(json!({"id": id.to_string(), "state": State::Running.as_str(), "browser": kind.as_str(), "protection": kind.protection().as_str()}))
+        })
+        .await
     }
 
     #[tool(
         description = "Close the session's browser and stop the session. This does not sign out of websites."
     )]
     async fn session_stop(&self, Parameters(Id { id }): Parameters<Id>) -> CallToolResult {
-        let id = match self.session(&id) {
-            Ok(id) => id,
-            Err(error) => return fail(error.to_string()),
-        };
-        outcome(
-            self.blocking(move |inner| {
-                inner.allow(SessionOp::Stop(id))?;
-                let state = lifecycle::stop(
-                    &**inner.store()?,
-                    &*inner.runtime,
-                    &*inner.clock,
-                    id,
-                    inner.agent(),
-                )?;
-                Ok(json!({"id": id.to_string(), "state": state.as_str()}))
-            })
-            .await,
-        )
+        self.in_session(&id, SessionOp::Stop, |inner, id| {
+            let state = lifecycle::stop(
+                &**inner.store()?,
+                &*inner.runtime,
+                &*inner.clock,
+                id,
+                inner.agent(),
+            )?;
+            Ok(json!({"id": id.to_string(), "state": state.as_str()}))
+        })
+        .await
     }
 
     #[tool(
@@ -215,21 +198,14 @@ impl Server {
         &self,
         Parameters(WaitAuth { id, origin }): Parameters<WaitAuth>,
     ) -> CallToolResult {
-        let id = match self.session(&id) {
-            Ok(id) => id,
-            Err(error) => return fail(error.to_string()),
-        };
-        outcome(
-            self.blocking(move |inner| {
-                inner.allow(SessionOp::WaitAuth(id))?;
-                let request = lifecycle::wait_auth(&**inner.store()?, &*inner.runtime, id, origin.as_deref(), inner.agent())?;
-                if !inner.is_watched() {
-                    return Ok(json!({"id": id.to_string(), "state": State::AwaitingUser.as_str(), "status": "needs_user", "request_id": request.to_string(), "note": "nobody is watching this run: record that a person must sign in, then stop; they will see it in KeyHarbor"}));
-                }
-                Ok(json!({"id": id.to_string(), "state": State::AwaitingUser.as_str(), "request_id": request.to_string()}))
-            })
-            .await,
-        )
+        self.in_session(&id, SessionOp::WaitAuth, move |inner, id| {
+            let request = lifecycle::wait_auth(&**inner.store()?, &*inner.runtime, id, origin.as_deref(), inner.agent())?;
+            if !inner.is_watched() {
+                return Ok(json!({"id": id.to_string(), "state": State::AwaitingUser.as_str(), "status": "needs_user", "request_id": request.to_string(), "note": "nobody is watching this run: record that a person must sign in, then stop; they will see it in KeyHarbor"}));
+            }
+            Ok(json!({"id": id.to_string(), "state": State::AwaitingUser.as_str(), "request_id": request.to_string()}))
+        })
+        .await
     }
 
     #[tool(
@@ -243,10 +219,6 @@ impl Server {
             timeout_seconds,
         }): Parameters<WaitForResume>,
     ) -> CallToolResult {
-        let id = match self.session(&id) {
-            Ok(id) => id,
-            Err(error) => return fail(error.to_string()),
-        };
         let Ok(request) = RequestId::parse(&request_id) else {
             return fail("invalid request_id");
         };
@@ -254,22 +226,19 @@ impl Server {
             Ok(wait) => wait,
             Err(error) => return fail(error.to_string()),
         };
-        outcome(
-            self.blocking(move |inner| {
-                inner.allow(SessionOp::WaitForResume(id))?;
-                // The store is held for one look at a time, not for the whole wait.
-                let check = || resume_check(&**inner.store()?, &*inner.runtime, id, request);
-                if !inner.is_watched() {
-                    if !check()? {
-                        return Ok(json!({"id": id.to_string(), "state": State::AwaitingUser.as_str(), "status": "needs_user", "request_id": request.to_string()}));
-                    }
-                } else {
-                    wait_for_resume(wait, check, std::thread::sleep)?;
+        self.in_session(&id, SessionOp::WaitForResume, move |inner, id| {
+            // The store is held for one look at a time, not for the whole wait.
+            let check = || resume_check(&**inner.store()?, &*inner.runtime, id, request);
+            if !inner.is_watched() {
+                if !check()? {
+                    return Ok(json!({"id": id.to_string(), "state": State::AwaitingUser.as_str(), "status": "needs_user", "request_id": request.to_string()}));
                 }
-                Ok(json!({"id": id.to_string(), "state": State::Running.as_str(), "note": "the user resumed; sign-in success is not verified"}))
-            })
-            .await,
-        )
+            } else {
+                wait_for_resume(wait, check, std::thread::sleep)?;
+            }
+            Ok(json!({"id": id.to_string(), "state": State::Running.as_str(), "note": "the user resumed; sign-in success is not verified"}))
+        })
+        .await
     }
 
     #[tool(
@@ -283,10 +252,6 @@ impl Server {
             timeout_seconds,
         }): Parameters<WaitSite>,
     ) -> CallToolResult {
-        let id = match self.session(&id) {
-            Ok(id) => id,
-            Err(error) => return fail(error.to_string()),
-        };
         let origin = match origin.map(|o| Origin::parse(&o)).transpose() {
             Ok(origin) => origin,
             Err(error) => return fail(error.to_string()),
@@ -295,19 +260,16 @@ impl Server {
             Ok(wait) => wait,
             Err(error) => return fail(error.to_string()),
         };
-        outcome(
-            self.blocking(move |inner| {
-                inner.allow(SessionOp::WaitSite(id))?;
-                let since = inner.clock.unix_seconds();
-                // The store is held for one look at a time, not for the whole wait.
-                let check = || grant::handed_off(&**inner.store()?, id, since, origin.as_ref());
-                Ok(match poll(wait, check, std::thread::sleep)? {
-                    Some(grant) => json!({"id": id.to_string(), "status": "received", "origin": grant.origin.as_str()}),
-                    None => json!({"id": id.to_string(), "status": "waiting"}),
-                })
+        self.in_session(&id, SessionOp::WaitSite, move |inner, id| {
+            let store = || inner.store();
+            let clock = &*inner.clock;
+            let handed = grant::wait_handed_off(store, clock, id, origin.as_ref(), wait, std::thread::sleep)?;
+            Ok(match handed {
+                Some(grant) => json!({"id": id.to_string(), "status": "received", "origin": grant.origin.as_str()}),
+                None => json!({"id": id.to_string(), "status": "waiting"}),
             })
-            .await,
-        )
+        })
+        .await
     }
 
     #[tool(
@@ -315,20 +277,11 @@ impl Server {
     )]
     async fn session_endpoint(&self, Parameters(Id { id }): Parameters<Id>) -> CallToolResult {
         if !self.inner.allow_cdp {
-            return fail(
-                "raw CDP is disabled; the user must start the MCP server with --allow-cdp",
-            );
+            return fail(RAW_CDP_DISABLED);
         }
-        let id = match self.session(&id) {
-            Ok(id) => id,
-            Err(error) => return fail(error.to_string()),
-        };
-        outcome(
-            self.blocking(move |inner| {
-                inner.allow(SessionOp::Endpoint(id))?;
-                Ok(json!({"endpoint": lifecycle::endpoint(&**inner.store()?, &*inner.runtime, id)?, "warning": "full browser control; KeyHarbor protections do not apply"}))
-            })
-            .await,
-        )
+        self.in_session(&id, SessionOp::Endpoint, |inner, id| {
+            Ok(json!({"endpoint": lifecycle::endpoint(&**inner.store()?, &*inner.runtime, id)?, "warning": "full browser control; KeyHarbor protections do not apply"}))
+        })
+        .await
     }
 }

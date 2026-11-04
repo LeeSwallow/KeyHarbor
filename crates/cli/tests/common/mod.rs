@@ -15,9 +15,11 @@ use std::{
 /// A fake browser: drains the CDP pipe (fd 3) and exits when the pipe closes, when
 /// `$TEST_DIR/close` appears, or when `$TEST_DIR` is gone. Records its arguments and its
 /// parent (the supervisor) pid, and writes `DevToolsActivePort` for `--remote-debugging-port=0`.
+/// `supervisor-pid` and `args` appear whole (written aside, then renamed): tests read them as
+/// soon as they exist, and `>` creates the file before it writes it (an empty pid).
 pub const FAKE_BROWSER: &str = r#"#!/bin/sh
-printf '%s' "$PPID" > "$TEST_DIR/supervisor-pid"
-printf '%s\n' "$@" > "$TEST_DIR/args"
+printf '%s' "$PPID" > "$TEST_DIR/supervisor-pid.part" && mv "$TEST_DIR/supervisor-pid.part" "$TEST_DIR/supervisor-pid"
+printf '%s\n' "$@" > "$TEST_DIR/args.part" && mv "$TEST_DIR/args.part" "$TEST_DIR/args"
 for arg in "$@"; do case "$arg" in --user-data-dir=*) profile=${arg#--user-data-dir=};; --remote-debugging-port=0) cdp=1;; esac; done
 if [ "$cdp" = 1 ]; then printf '12345\n/devtools/browser/11111111-1111-4111-8111-111111111111\n' > "$profile/DevToolsActivePort"; fi
 cat <&3 >/dev/null &
@@ -36,14 +38,69 @@ pub fn short_tempdir() -> tempfile::TempDir {
         .unwrap()
 }
 
+/// The Chrome to test against, started once (per test binary) before the first test uses it.
 pub fn chrome() -> Option<PathBuf> {
     match std::env::var_os("KEYHARBOR_TEST_CHROME") {
-        Some(path) if !path.is_empty() => Some(PathBuf::from(path)),
+        Some(path) if !path.is_empty() => {
+            let path = PathBuf::from(path);
+            static WARM: std::sync::Once = std::sync::Once::new();
+            WARM.call_once(|| warm_up(&path));
+            Some(path)
+        }
         _ => {
             eprintln!("skipped: set KEYHARBOR_TEST_CHROME to a Chrome executable to run");
             None
         }
     }
+}
+
+/// How long the warm-up launch may take before it is killed. Generous: on a fresh CI runner
+/// the first launch has to read Chrome from a cold disk.
+const WARM_UP_LIMIT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Runs Chrome once to completion so the tests' timeouts measure KeyHarbor, not a cold
+/// start. On a fresh ubuntu runner the first Chrome of the job sometimes did not answer for
+/// over 30 s: `browser_chrome` failed with "Target.getTargets timed out after 30 seconds" and
+/// "browser debugging endpoint is not ready" while later Chrome tests passed. A failed
+/// warm-up is only reported; the tests then fail with their own message.
+fn warm_up(chrome: &std::path::Path) {
+    use std::{
+        process::{Command, Stdio},
+        time::Instant,
+    };
+    let profile = short_tempdir();
+    let started = Instant::now();
+    let child = Command::new(chrome)
+        .arg(format!("--user-data-dir={}", profile.path().display()))
+        .args([
+            "--headless=new",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--dump-dom",
+            "about:blank",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    let mut child = match child {
+        Ok(child) => child,
+        Err(error) => return eprintln!("chrome warm-up did not start: {error}"),
+    };
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if started.elapsed() < WARM_UP_LIMIT => {
+                thread::sleep(std::time::Duration::from_millis(100))
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break;
+            }
+        }
+    }
+    eprintln!("chrome warm-up took {:.1?}", started.elapsed());
 }
 
 /// Whether to run the tests against a real ego lite (`KEYHARBOR_TEST_EGO=1`, ADR-0018).

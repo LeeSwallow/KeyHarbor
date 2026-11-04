@@ -4,4 +4,4 @@
 mod register;
 mod settle;
 
-pub use register::{DraftItem, GeneratedLogin, MAX_DRAFTS, generate_password};
+pub use register::{DraftItem, GeneratedDraft, GeneratedLogin, MAX_DRAFTS, generate_password};

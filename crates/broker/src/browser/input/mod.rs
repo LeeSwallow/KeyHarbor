@@ -195,6 +195,12 @@ impl KeySpec {
     }
 }
 
+/// The name of every key an agent may press (`" "` also means `Space`); the MCP
+/// `browser_press` schema lists the same keys.
+pub fn key_names() -> impl Iterator<Item = &'static str> {
+    KEYS.iter().map(|spec| spec.names[0])
+}
+
 /// `KEYS` as a list for people: "Enter, Tab, … or PageDown".
 fn supported_keys() -> String {
     let mut listed: Vec<&str> = KEYS.iter().map(|spec| spec.listed_as).collect();

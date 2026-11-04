@@ -248,6 +248,17 @@ impl ItemFilter {
                 .as_ref()
                 .is_none_or(|t| item.tags.iter().any(|x| x == t.as_str()))
     }
+
+    /// Whether a listing shows `entry`. A tampered item's tags are not trusted, so it shows
+    /// unless the prefix excludes it: hiding it by tag would hide that it was tampered with.
+    pub fn keeps_entry(&self, entry: &CatalogEntry) -> bool {
+        match entry {
+            CatalogEntry::Verified(item) => self.keeps(item),
+            CatalogEntry::Tampered { name } => {
+                self.prefix.as_deref().is_none_or(|p| name.starts_with(p))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -303,6 +314,24 @@ mod filter_tests {
             .unwrap();
         assert_eq!(item.tags, ["db", "prod"]);
         assert!(!item.tampered);
+    }
+
+    #[test]
+    fn a_tampered_entry_is_kept_unless_its_name_is_outside_the_prefix() {
+        let tampered = CatalogEntry::Tampered {
+            name: "myapp/db".into(),
+        };
+        let tagged = ItemFilter {
+            prefix: None,
+            tag: Some(Tag::parse("prod").unwrap()),
+        };
+        assert!(tagged.keeps_entry(&tampered), "its tags are not trusted");
+        let under = |prefix: &str| ItemFilter {
+            prefix: Some(prefix.into()),
+            tag: Some(Tag::parse("prod").unwrap()),
+        };
+        assert!(under("myapp/").keeps_entry(&tampered));
+        assert!(!under("other/").keeps_entry(&tampered));
     }
 
     #[test]

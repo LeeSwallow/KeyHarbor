@@ -9,6 +9,9 @@ mod inspect;
 mod navigation;
 mod receive;
 
+pub use input::key_names;
+pub use navigation::WAIT_TIMEOUT;
+
 use crate::cdp::Cdp;
 use anyhow::{Context, Result};
 use keyharbor_domain::{
