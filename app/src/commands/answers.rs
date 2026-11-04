@@ -2,14 +2,14 @@
 //! form, 09 §9.4.5) and a browser handed to them (resume).
 
 use super::ids::{self, item_name, request_id};
-use super::manage::FormField;
+use super::manage::{FormField, Saved, warning_dtos};
 use crate::{Ctx, auth::AuthScope};
 use anyhow::{Result, anyhow, bail};
 use keyharbor_core::{
     request::{self, Answer},
     session,
 };
-use keyharbor_domain::policy::LOCAL_AGENT;
+use keyharbor_domain::{policy::LOCAL_AGENT, vault::common_value_warnings};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
@@ -67,8 +67,8 @@ pub fn request_form(ctx: &Ctx, id: &str) -> Result<RequestForm> {
 }
 
 /// Stores the values the person typed as the requested item; returns its name. Empty values
-/// are left out; the values never come back.
-pub fn fulfill_request(ctx: &Ctx, id: &str, values: BTreeMap<String, String>) -> Result<String> {
+/// are left out; the values never come back, only warnings naming fields (J-230).
+pub fn fulfill_request(ctx: &Ctx, id: &str, values: BTreeMap<String, String>) -> Result<Saved> {
     ctx.challenge(AuthScope::Edit)?;
     let request = request::status(&*ctx.store()?, ctx.clock(), request_id(id)?)?;
     let mut fields = Vec::new();
@@ -83,6 +83,7 @@ pub fn fulfill_request(ctx: &Ctx, id: &str, values: BTreeMap<String, String>) ->
     if fields.is_empty() {
         bail!("nothing was entered");
     }
+    let warnings = common_value_warnings(&request.name, request.kind, &fields, &[]);
     let answer = Answer::Values(fields);
     let item = request::fulfill(
         &*ctx.store()?,
@@ -91,7 +92,10 @@ pub fn fulfill_request(ctx: &Ctx, id: &str, values: BTreeMap<String, String>) ->
         request.id,
         answer,
     )?;
-    Ok(item.as_str().to_owned())
+    Ok(Saved {
+        name: item.as_str().to_owned(),
+        warnings: warning_dtos(&warnings),
+    })
 }
 
 /// Answers a request with an item already in the vault.

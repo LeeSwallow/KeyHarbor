@@ -2,12 +2,15 @@
 //! fulfill with a hidden prompt or stdin JSON (or an existing item), decline. The rules are
 //! core's (`keyharbor_core::request`).
 
-use super::input::{FieldInput, collect_fields, item_name};
+use super::{
+    input::{FieldInput, collect_fields, item_name},
+    output::warn_common_values,
+};
 use crate::compose::App;
 use anyhow::{Context, Result};
 use clap::Subcommand;
 use keyharbor_core::request::{self, Answer};
-use keyharbor_domain::{RequestId, request::VaultRequest};
+use keyharbor_domain::{RequestId, request::VaultRequest, vault::common_value_warnings};
 
 #[derive(Subcommand)]
 pub enum RequestCmd {
@@ -58,13 +61,18 @@ pub fn run(app: &App, command: RequestCmd) -> Result<()> {
         } => {
             let id = request_id(&id)?;
             let asked = request::status(&*store, app.clock(), id)?;
-            let answer = match existing {
-                Some(name) => Answer::Existing(item_name(&name)?),
-                None => Answer::Values(collect_fields(asked.kind, &input, true)?),
+            let (answer, warnings) = match existing {
+                Some(name) => (Answer::Existing(item_name(&name)?), Vec::new()),
+                None => {
+                    let fields = collect_fields(asked.kind, &input, true)?;
+                    let warnings = common_value_warnings(&asked.name, asked.kind, &fields, &[]);
+                    (Answer::Values(fields), warnings)
+                }
             };
             let vault = app.vault()?;
             let item = request::fulfill(&*store, &vault, app.clock(), id, answer)?;
             println!("{id}\tfulfilled\t{}", item.as_str());
+            warn_common_values(&warnings);
         }
         RequestCmd::Decline { id } => {
             let id = request_id(&id)?;

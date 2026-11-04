@@ -453,3 +453,62 @@ fn an_item_is_moved_and_its_placeholder_change_is_named() {
     assert!(!refused.status.success());
     assert!(text(&refused).contains("policy rule(s) name this item"));
 }
+
+#[test]
+fn a_common_secret_value_warns_without_printing_it() {
+    let c = Cli::new();
+    c.ok(&["vault", "init"], None);
+    let out = c.run(
+        &["vault", "add", "me", "--kind", "identity", "--stdin"],
+        Some(r#"{"full_name":"Hong","military_service":"해당없음","veterans":"미필"}"#),
+    );
+    assert!(out.status.success(), "{}", text(&out));
+    let (stdout, stderr) = (
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(stdout.trim_end(), "added\tme");
+    // The test key store warns on every run; only the value warnings count here.
+    let lines: Vec<&str> = stderr.lines().filter(|l| l.contains("masked")).collect();
+    assert_eq!(lines.len(), 2, "{stderr}");
+    assert!(lines[0].contains("me.military_service") && lines[0].contains("common word"));
+    assert!(lines[1].contains("me.veterans") && lines[1].contains("never masked"));
+    assert!(stderr.contains("--plain military_service"), "{stderr}");
+    for value in ["해당없음", "미필", "Hong"] {
+        assert!(!text(&out).contains(value), "{value}: {}", text(&out));
+    }
+
+    let edited = c.run(
+        &["vault", "edit", "me", "--stdin"],
+        Some(r#"{"note":"None"}"#),
+    );
+    assert!(edited.status.success(), "{}", text(&edited));
+    let said = text(&edited);
+    assert!(said.contains("me.note") && !said.contains("None"), "{said}");
+}
+
+#[test]
+fn a_rare_or_plain_secret_value_is_quiet() {
+    let c = Cli::new();
+    c.ok(&["vault", "init"], None);
+    let rare = c.run(
+        &["vault", "add", "me", "--kind", "identity", "--stdin"],
+        Some(r#"{"military_service":"육군 병장 만기전역"}"#),
+    );
+    assert!(
+        rare.status.success() && !text(&rare).contains("masked"),
+        "{}",
+        text(&rare)
+    );
+    let plain = c.run(
+        &[
+            "vault", "add", "app", "--kind", "env", "--plain", "MODE", "--stdin",
+        ],
+        Some(r#"{"MODE":"none"}"#),
+    );
+    assert!(
+        plain.status.success() && !text(&plain).contains("masked"),
+        "{}",
+        text(&plain)
+    );
+}

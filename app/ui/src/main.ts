@@ -5,7 +5,7 @@
 // tables under events/ (#182); what carries a value stays here.
 
 import { type Api, tauriApi } from "./api.js";
-import { type State, alone, fail, hide, initial, show } from "./state.js";
+import { type State, alone, closeForm, fail, hide, initial, show, warned } from "./state.js";
 import { render } from "./view.js";
 import { formValues } from "./views/form.js";
 import { type Actions, windowActions } from "./events/actions.js";
@@ -54,7 +54,15 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
       const id = el.dataset.form;
       const values = formValues(data);
       el.reset();
-      void guard(() => api.fulfillRequest(id, values).then(answered));
+      // With warnings the window stays to show them (J-230); the secure input window closes
+      // on "닫기".
+      void guard(() =>
+        api.fulfillRequest(id, values).then((saved) => {
+          if (saved.warnings.length === 0) return answered();
+          set(warned(closeForm(state), saved.warnings));
+          return state.alone ? undefined : load(w);
+        }),
+      );
     }
   };
   listenClicks(w, { ...windowActions(w), ...valueActions });

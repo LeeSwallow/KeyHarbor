@@ -84,3 +84,14 @@ export const auditWords: Record<string, string> = {
   value_revealed: "값 보기", value_autofilled: "자동 완성",
 };
 export const auditWord = word(auditWords);
+
+/// Every `CommonValueReason` (test/vocabulary.test.ts checks it against Rust, J-230).
+export const valueWarningWords: Record<string, string> = {
+  too_short_to_mask: "4자 미만이라 가려지지 않습니다. 페이지에 그대로 보일 수 있습니다",
+  common_word: "흔한 말이라 페이지의 같은 글자까지 가려지고, 에이전트가 이 말을 입력하면 거부됩니다",
+  too_simple: "너무 단순한 값이라 페이지의 같은 글자까지 가려지고, 에이전트가 이 말을 입력하면 거부됩니다",
+};
+export const valueWarningWord = word(valueWarningWords);
+
+/// What to do about a warned value that is not really secret: plain fields are not masked.
+export const PLAIN_HINT = "비밀이 아닌 값이면 plain 필드로 두세요(keyharbor vault edit 항목 --plain 필드). plain 필드는 가리지 않습니다.";

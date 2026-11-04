@@ -53,6 +53,13 @@ export type SiteHandOff =
   | { outcome: "declined" | "no_permission" | "no_session" | "bad_site" | "timeout" | "failed" };
 /// A change that may need a person: done, or the question to put to them.
 export type Outcome = { outcome: "done" } | { outcome: "ask"; question: string };
+/// A secret value masking handles badly (Rust `ValueWarningDto`, J-230): the item, the field
+/// and why (`CommonValueReason`). It never carries the value.
+export interface ValueWarning { item: string; field: string; reason: string }
+/// A stored item: its name and the warnings for its values.
+export interface Saved { name: string; warnings: ValueWarning[] }
+/// A change: done or a question, and once done the warnings for the values it set.
+export type Edited = Outcome & { warnings: ValueWarning[] };
 
 export interface Api {
   overview(): Promise<Overview>;
@@ -65,7 +72,7 @@ export interface Api {
   confirmDraft(name: string): Promise<string>;
   discardDraft(name: string): Promise<void>;
   requestForm(id: string): Promise<RequestForm>;
-  fulfillRequest(id: string, values: Record<string, string>): Promise<string>;
+  fulfillRequest(id: string, values: Record<string, string>): Promise<Saved>;
   handoffs(): Promise<Handoff[]>;
   resumeHandoff(session: string, request: string): Promise<void>;
   settings(): Promise<Setting[]>;
@@ -83,8 +90,8 @@ export interface Api {
   stopSession(id: string): Promise<void>;
   recoverSession(id: string, browserClosed: boolean): Promise<void>;
   kinds(): Promise<KindForm[]>;
-  addItem(form: NewItemForm): Promise<string>;
-  editItem(name: string, form: ChangeForm, confirmed: boolean): Promise<Outcome>;
+  addItem(form: NewItemForm): Promise<Saved>;
+  editItem(name: string, form: ChangeForm, confirmed: boolean): Promise<Edited>;
   removeItem(name: string): Promise<void>;
   renameItem(from: string, to: string): Promise<string>;
   requestSite(session: string, url: string): Promise<SiteHandOff>;

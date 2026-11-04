@@ -8,5 +8,6 @@
     "first_use_origin", "site_state_changed", "vault_requested", "vault_request_answered",
     "credential_captured", "grant_changed", "navigation_denied", "site_handed_off", "value_revealed",
     "value_autofilled"
-  ]
+  ],
+  "value_warnings": ["too_short_to_mask", "common_word", "too_simple"]
 }

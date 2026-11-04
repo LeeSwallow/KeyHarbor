@@ -1,6 +1,7 @@
 //! Adding, changing and removing items from the app (09 §9.4, §9.8), through the guard's
 //! item path like the CLI: descriptions are checked for values, what a change weakens is
-//! confirmed by the person ([`crate::confirm`]), then it is stored.
+//! confirmed by the person ([`crate::confirm`]), then it is stored. A secret value masking
+//! handles badly comes back as a warning naming the field, never the value (J-230).
 
 use super::ids::{item_name, new_item_name};
 use crate::{
@@ -12,7 +13,7 @@ use anyhow::{Result, anyhow, bail};
 use keyharbor_core::{ItemChange, ItemDetails, ItemSource, ItemStatus, NewItem, generate_password};
 use keyharbor_domain::{
     password::PasswordRule,
-    vault::{FieldName, FieldSpec, ItemKind, KINDS, Origin},
+    vault::{CommonValueWarning, FieldName, FieldSpec, ItemKind, KINDS, Origin},
 };
 use keyharbor_guard::items;
 use serde::{Deserialize, Serialize};
@@ -65,6 +66,45 @@ pub fn kinds() -> Vec<KindForm> {
         .collect()
 }
 
+/// A secret value masking handles badly, as the window shows it: the item, the field and why
+/// (`CommonValueReason::as_str`). It has no value field, so it cannot carry one.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct ValueWarningDto {
+    pub item: String,
+    pub field: String,
+    pub reason: &'static str,
+}
+
+impl From<&CommonValueWarning> for ValueWarningDto {
+    fn from(warning: &CommonValueWarning) -> Self {
+        Self {
+            item: warning.item.as_str().to_owned(),
+            field: warning.field.as_str().to_owned(),
+            reason: warning.reason.as_str(),
+        }
+    }
+}
+
+pub(crate) fn warning_dtos(warnings: &[CommonValueWarning]) -> Vec<ValueWarningDto> {
+    warnings.iter().map(ValueWarningDto::from).collect()
+}
+
+/// What a stored item comes back as: its name and the warnings for its values.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct Saved {
+    pub name: String,
+    pub warnings: Vec<ValueWarningDto>,
+}
+
+/// What a change comes back as: done or a question ([`Outcome`]), and, once done, the
+/// warnings for the values it set.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct Edited {
+    #[serde(flatten)]
+    pub outcome: Outcome,
+    pub warnings: Vec<ValueWarningDto>,
+}
+
 /// A new item as the form sends it.
 #[derive(Debug, Deserialize)]
 pub struct NewItemForm {
@@ -108,7 +148,7 @@ fn origins(values: &[String]) -> Result<Vec<Origin>> {
         .collect()
 }
 
-pub fn add_item(ctx: &Ctx, form: NewItemForm) -> Result<String> {
+pub fn add_item(ctx: &Ctx, form: NewItemForm) -> Result<Saved> {
     let typed = wiped(form.values);
     ctx.challenge(AuthScope::Edit)?;
     let kind = ItemKind::parse(&form.kind).ok_or_else(|| anyhow!("unknown kind"))?;
@@ -137,8 +177,11 @@ pub fn add_item(ctx: &Ctx, form: NewItemForm) -> Result<String> {
         source: ItemSource::User,
         details: ItemDetails::default(),
     };
-    items::add(&ctx.vault()?, item, &[])?;
-    Ok(name.as_str().to_owned())
+    let warnings = items::add(&ctx.vault()?, item, &[])?;
+    Ok(Saved {
+        name: name.as_str().to_owned(),
+        warnings: warning_dtos(&warnings),
+    })
 }
 
 /// A change as the form sends it: values to replace (empty ones are left as they are) and,
@@ -151,7 +194,7 @@ pub struct ChangeForm {
     pub origins: Option<Vec<String>>,
 }
 
-pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Result<Outcome> {
+pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Result<Edited> {
     let typed = wiped(form.values);
     ctx.challenge(AuthScope::Edit)?;
     let name = item_name(name)?;
@@ -168,8 +211,14 @@ pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Re
             ..Default::default()
         })
     };
-    confirmed_by_dialog(confirmed, |confirm| {
-        items::edit(&vault, confirm, &name, change()?, &[])
+    let mut warnings = Vec::new();
+    let outcome = confirmed_by_dialog(confirmed, |confirm| {
+        warnings = items::edit(&vault, confirm, &name, change()?, &[])?;
+        Ok(())
+    })?;
+    Ok(Edited {
+        outcome,
+        warnings: warning_dtos(&warnings),
     })
 }
 
