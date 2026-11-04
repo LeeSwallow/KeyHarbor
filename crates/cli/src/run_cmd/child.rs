@@ -1,6 +1,6 @@
 //! Starting the child: its environment, arguments and limits.
 
-use super::signals::forwarded_set;
+use super::signals::blocked_set;
 use anyhow::{Context, Result};
 use std::{
     ffi::OsString,
@@ -23,7 +23,7 @@ pub(super) fn spawn(
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let set = forwarded_set();
+    let set = blocked_set();
     // SAFETY: pthread_sigmask and setrlimit are async-signal-safe; the set is built before fork.
     unsafe {
         use std::os::unix::process::CommandExt;

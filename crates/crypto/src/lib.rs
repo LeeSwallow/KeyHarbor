@@ -7,6 +7,7 @@
 //! - [`kdf`] — keys derived from the root key, one [`kdf::KeyPurpose`] each.
 //! - [`mac`] — HMAC-SHA256 and its constant-time check.
 //! - [`random`] — keys and nonces from the OS generator.
+//! - [`token`] — random bearer tokens checked in constant time.
 //! - [`export`] — passphrase encryption in the age format.
 
 pub mod aead;
@@ -15,5 +16,6 @@ pub mod export;
 pub mod kdf;
 pub mod mac;
 pub mod random;
+pub mod token;
 
 pub use keyharbor_domain::secret::{SecretKey, VaultError};

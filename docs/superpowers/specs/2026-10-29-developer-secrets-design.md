@@ -1,6 +1,6 @@
 # 개발자 비밀 도메인 설계 (R-40)
 
-> 상태: 초안 2판, 사용자 검토 대기. 도메인 분리(`secret`·`env` → `developer`, 키 `DK_dev`, 기존 금고 이전)는 사용자가 결정했고 3단계 강화 브랜치에서 구현 중이다.
+> 상태: 초안 2판. §8의 ①–⑤를 구현했다(통로 ④는 J-122). 도메인 분리(`secret`·`env` → `developer`, 키 `DK_dev`, 기존 금고 이전)는 사용자가 결정했고 3단계 강화 브랜치에서 구현 중이다.
 > 1판은 Spring Boot 프로필 파일, Spring 설정 가져오기처럼 쓰는 방법까지 정해 두었다. 사용자 지적: "환경 변수를 어떻게 쓸지(실행 스크립트에 넣을지, 명령에 붙일지)는 쓰는 사람 나름이다." 그래서 2판은 **값을 맡기고 꺼내는 범용 저장소**로 다시 잡았다. Python keyring과 AWS Secrets Manager를 기준으로 삼았다.
 
 ## 1. 참고한 것
@@ -44,7 +44,7 @@ flowchart LR
 | ① 환경 변수 `run --env <item>` | ECS secrets → env | `./gradlew bootRun`, `pytest`, MCP 서버 감싸기 | 있음. 키 이름 바꾸기 `--env item:KEY=NEWNAME` 추가 |
 | ② 파일 `run --file VAR=<item>.<key>` | EKS CSI 파일 마운트 | `GOOGLE_APPLICATION_CREDENTIALS`, keystore, kubeconfig | 새로. 0700 임시 폴더 안 0600 파일, 끝나면 삭제 |
 | ③ 참조 치환 | CloudFormation `{{resolve:…}}` | `run -- curl -H 'Authorization: Bearer {{secret:openai.value}}' …`, `run --template app.yml:/tmp/app.yml` | `--env-file`에는 있음. 인자와 임의 템플릿 파일로 넓힌다 |
-| ④ 실행 중 로컬 조회 | Lambda 확장 로컬 엔드포인트, keyring 백엔드 | 프로그램 코드에서 `keyring.get_password("myapp/dev/db", "password")` | 새로. `run`이 자식에게만 보이는 일회용 Unix socket과 토큰을 연다. Python keyring 백엔드(`keyrings.keyharbor`)는 그 socket에 묻는다. `run` 밖에서는 socket이 없으니 실패한다 |
+| ④ 실행 중 로컬 조회 | Lambda 확장 로컬 엔드포인트, keyring 백엔드 | 프로그램 코드에서 `keyring.get_password("myapp/dev/db", "password")` | 있음(J-122). `run`이 자식에게만 보이는 일회용 Unix socket과 토큰을 연다(`KEYHARBOR_LOOKUP_SOCKET`·`KEYHARBOR_LOOKUP_TOKEN`). Python keyring 백엔드(`keyrings.keyharbor`, [integrations/python-keyring](../../../integrations/python-keyring/README.md))는 그 socket에 묻는다. `run` 밖에서는 socket이 없으니 실패한다 |
 
 - 넷 모두 `run` 안에서만 열리므로 guard 검사(정책·`run_allowed`·만료·origin 바인딩 없음)와 출력 마스킹을 똑같이 거친다. 새 평문 경로가 생기지 않는다.
 - ④에서 묻는 이름도 guard가 검사하고 사용 기록을 남긴다. 미리 `run --allow myapp/dev/*`로 범위를 정해 둘 수 있다(기본은 `run`에 준 항목만).

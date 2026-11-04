@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `keyharbor run`의 통로 ④ 실행 중 로컬 조회: 자식에게만 알려 주는 일회용 Unix socket과 토큰(`KEYHARBOR_LOOKUP_SOCKET`·`KEYHARBOR_LOOKUP_TOKEN`). 범위는 `run`에 준 항목이고 `--allow <패턴>`으로 넓힌다. 요청마다 같은 guard 검사와 사용 기록을 거친다. Python keyring 백엔드는 `integrations/python-keyring/`(배포하지 않음).
+
+### Fixed
+
+- Ctrl-C에 `keyharbor run`이 바로 죽지 않고 자식이 끝난 뒤 임시 파일과 socket을 지운다.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added

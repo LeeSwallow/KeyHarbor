@@ -1,6 +1,7 @@
 //! `keyharbor run`: hand vault values to one child process and mask its output (ADR-0010,
 //! developer secrets spec §3). Values go as variables (`--env`, `--env-file`), as files
-//! (`--file`, `--template`, [`files`]) or into the command's arguments (`{{secret:…}}`).
+//! (`--file`, `--template`, [`files`]) or into the command's arguments (`{{secret:…}}`); while
+//! it runs, the child may ask for more by name over a private socket ([`lookup`], `--allow`).
 //!
 //! Every referenced item is checked first (exists, not discarded, allowed for the agent, not
 //! origin-bound, `run_allowed`); a refusal is recorded and the command is not started. The
@@ -9,6 +10,7 @@
 
 mod child;
 mod files;
+mod lookup;
 mod output;
 mod signals;
 
@@ -17,11 +19,17 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
 use files::SecretFiles;
 use keyharbor_domain::{
+    item_pattern::ItemPattern,
     policy::AgentName,
     vault::{FieldName, PlaceholderRef, has_placeholder, parse_placeholders, placeholder},
 };
 use keyharbor_guard::run as guard_run;
-use std::{ffi::OsString, path::PathBuf};
+use lookup::LookupSocket;
+use std::{
+    ffi::OsString,
+    path::PathBuf,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use zeroize::Zeroizing;
 
 #[derive(Args)]
@@ -42,6 +50,10 @@ pub struct RunArgs {
     /// Fill the placeholders in a file into a private copy and put its path in VAR
     #[arg(long = "template", value_name = "VAR=PATH")]
     templates: Vec<String>,
+    /// Let the program also ask for items matching this name or `prefix*` while it runs,
+    /// through the lookup socket (by default only the items given to this run)
+    #[arg(long = "allow", value_name = "PATTERN")]
+    allow: Vec<String>,
     /// The command and its arguments, after `--`. Arguments may hold placeholders (other
     /// processes of yours can read arguments, so prefer --env or --file)
     #[arg(last = true, required = true, value_name = "COMMAND")]
@@ -104,6 +116,64 @@ fn arguments(command: &[OsString]) -> Result<Vec<String>> {
         .collect()
 }
 
+/// `--allow` patterns.
+fn patterns(allow: &[String]) -> Result<Vec<ItemPattern>> {
+    allow
+        .iter()
+        .map(|a| ItemPattern::parse(a).map_err(|e| anyhow!("--allow {a}: {e}")))
+        .collect()
+}
+
+/// Adds the lookup socket's path and the run's token to the child's variables.
+fn lookup_vars(vars: &mut files::Vars, socket: &LookupSocket, token: &str) -> Result<()> {
+    let path = socket
+        .path()
+        .to_str()
+        .context("temporary folder path is not UTF-8")?;
+    for (var, value) in [(lookup::SOCKET_VAR, path), (lookup::TOKEN_VAR, token)] {
+        if vars.iter().any(|(v, _)| v == var) {
+            bail!("variable {var} is set by keyharbor run");
+        }
+        vars.push((var.to_owned(), Zeroizing::new(value.to_owned())));
+    }
+    Ok(())
+}
+
+/// Shows the child's output masked and answers its lookups until it exits. The store and
+/// vault stay on this thread (they are not `Send`), so requests are answered here, one by one.
+fn supervise(
+    mut child: std::process::Child,
+    masker: &keyharbor_guard::pep::mask::Masker,
+    socket: &LookupSocket,
+    answer: impl Fn(&guard_run::Ask<'_>) -> Result<Zeroizing<String>, guard_run::Refusal>,
+) -> Result<std::process::ExitStatus> {
+    let (out, err) = (
+        child.stdout.take().context("child stdout")?,
+        child.stderr.take().context("child stderr")?,
+    );
+    let stop = AtomicBool::new(false);
+    let status = std::thread::scope(|scope| {
+        scope.spawn(|| output::pump(out, std::io::stdout().lock(), masker));
+        scope.spawn(|| output::pump(err, std::io::stderr().lock(), masker));
+        let waiter = scope.spawn(|| {
+            let status = child.wait();
+            stop.store(true, Ordering::SeqCst);
+            socket.wake();
+            status
+        });
+        socket.serve(&stop, |request| {
+            let ask = guard_run::Ask {
+                token: &request.token,
+                item: &request.item,
+                field: &request.field,
+            };
+            answer(&ask).map_err(|refusal| refusal.to_string())
+        });
+        waiter.join().expect("the waiting thread does not panic")
+    })?;
+    Ok(status)
+}
+
 /// Runs the command and returns the exit code to pass on (128 + signal if it was killed).
 pub fn run(app: &App, args: RunArgs) -> Result<i32> {
     let agent = AgentName::parse(&args.agent).map_err(|e| anyhow!("{e}"))?;
@@ -112,10 +182,14 @@ pub fn run(app: &App, args: RunArgs) -> Result<i32> {
         && args.files.is_empty()
         && args.secret_files.is_empty()
         && args.templates.is_empty()
+        && args.allow.is_empty()
         && !command_args.iter().any(|a| has_placeholder(a));
     if nothing_given {
-        bail!("give --env, --env-file, --file, --template or a placeholder in an argument");
+        bail!(
+            "give --env, --env-file, --file, --template, --allow or a placeholder in an argument"
+        );
     }
+    let allow = patterns(&args.allow)?;
     let files = read_env_files(&args.files)?;
     let secret_files = args
         .secret_files
@@ -149,22 +223,22 @@ pub fn run(app: &App, args: RunArgs) -> Result<i32> {
     let (held_files, paths) = SecretFiles::write(&std::mem::take(&mut injection.files))?;
     let mut vars = std::mem::take(&mut injection.vars);
     vars.extend(paths);
+    let socket = LookupSocket::open()?;
+    let lookup = injection.lookup(allow);
+    lookup_vars(&mut vars, &socket, lookup.token())?;
     let child_args = std::mem::take(&mut injection.args);
     signals::block_forwarded()?;
-    let mut child = child::spawn(&args.command[0], &child_args, &vars)?;
+    let child = child::spawn(&args.command[0], &child_args, &vars)?;
     signals::forward_signals(child.id());
     drop((vars, child_args));
     injection.record_injected(&*store);
-    let (out, err) = (
-        child.stdout.take().context("child stdout")?,
-        child.stderr.take().context("child stderr")?,
-    );
-    let status = std::thread::scope(|scope| {
-        scope.spawn(|| output::pump(out, std::io::stdout().lock(), &injection.masker));
-        scope.spawn(|| output::pump(err, std::io::stderr().lock(), &injection.masker));
-        child.wait()
-    })?;
-    drop(held_files);
+    let status = supervise(
+        child,
+        &injection.masker,
+        &socket,
+        |ask: &guard_run::Ask<'_>| lookup.answer(&*store, &vault, ask),
+    )?;
+    drop((socket, held_files));
     use std::os::unix::process::ExitStatusExt;
     Ok(status
         .code()

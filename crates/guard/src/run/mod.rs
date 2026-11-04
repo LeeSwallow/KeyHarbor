@@ -2,7 +2,12 @@
 //! its output. Starting the process and pumping its output stay in the CLI.
 //!
 //! Every referenced item is checked first (exists, not discarded, allowed for the agent, not
-//! origin-bound, `run_allowed`); a refusal is recorded and nothing is resolved.
+//! origin-bound, `run_allowed`); a refusal is recorded and nothing is resolved. While the
+//! child runs, it may ask for more values by name through [`lookup`] (channel ④).
+
+mod lookup;
+
+pub use lookup::{Ask, Lookup, Refusal};
 
 use crate::{
     audit,
@@ -10,10 +15,11 @@ use crate::{
     pep::{mask, mask::Masker},
 };
 use anyhow::{Result, anyhow, bail};
-use keyharbor_core::{PlaintextAccess, Vault, fill_template, parse_dotenv};
+use keyharbor_core::{ItemUse, PlaintextAccess, Vault, fill_template, parse_dotenv};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     denial::DenialReason,
+    item_pattern::ItemPattern,
     policy::Rule,
     ports::Store,
     vault::{FieldName, ItemKind, ItemName, PlaceholderRef, parse_placeholders},
@@ -51,6 +57,14 @@ pub struct Injection {
 }
 
 impl Injection {
+    /// What the child may ask for while it runs (channel ④): the items this run was given,
+    /// and those matching `allow` (`run --allow`).
+    pub fn lookup(&self, allow: Vec<ItemPattern>) -> Lookup {
+        Lookup::new(&self.agent, self.items.clone(), allow)
+    }
+}
+
+impl Injection {
     /// Records `env_injected` for every item used, once the child has started.
     pub fn record_injected(&self, store: &dyn Store) {
         for item in &self.items {
@@ -70,33 +84,47 @@ struct Checker<'a> {
     checked: Vec<ItemName>,
 }
 
-impl Checker<'_> {
-    fn deny(&self, item: &ItemName, reason: DenialReason) -> anyhow::Error {
+impl<'a> Checker<'a> {
+    fn new(store: &'a dyn Store, vault: &'a Vault, agent: &'a str) -> Result<Self> {
+        Ok(Self {
+            vault,
+            store,
+            rules: store.policy_rules()?,
+            agent,
+            checked: Vec::new(),
+        })
+    }
+
+    /// Records a refusal and passes its reason on.
+    fn deny(&self, item: &ItemName, reason: DenialReason) -> DenialReason {
         audit::record(
             self.store,
             &audit::denied(self.agent, None, item, None, reason),
         );
-        audit::denial_error(item, reason)
+        reason
     }
 
-    /// Checks one use of `item` (naming `fields`, none for the whole item) through the
-    /// process chain (`pdp::checks::PROCESS`); returns the item's field names.
-    fn check(&mut self, item: &ItemName, fields: &[&str], env_only: bool) -> Result<Vec<String>> {
-        let info = match self.vault.item_use(item) {
-            Ok(Some(info)) => info,
-            Ok(None) => return Err(self.deny(item, DenialReason::NotFound)),
-            Err(_) => return Err(self.deny(item, DenialReason::Tampered)),
-        };
-        if env_only && info.kind != ItemKind::Env {
-            bail!(
-                "{} is not an env item; use --env-file with placeholders",
-                item.as_str()
-            );
+    /// The item's metadata, verified; a missing or tampered item is a recorded refusal.
+    fn item_use(&self, item: &ItemName) -> Result<ItemUse, DenialReason> {
+        match self.vault.item_use(item) {
+            Ok(Some(info)) => Ok(info),
+            Ok(None) => Err(self.deny(item, DenialReason::NotFound)),
+            Err(_) => Err(self.deny(item, DenialReason::Tampered)),
         }
+    }
+
+    /// Runs one use of `item` (naming `fields`, none for the whole item) through the process
+    /// chain (`pdp::checks::PROCESS`); a refusal is recorded.
+    fn pass(
+        &mut self,
+        item: &ItemName,
+        info: &ItemUse,
+        fields: &[&str],
+    ) -> Result<(), DenialReason> {
         let ctx = UseContext {
             agent: self.agent,
             item,
-            info: &info,
+            info,
             rules: &self.rules,
             fields,
             to: Target::Process,
@@ -105,6 +133,21 @@ impl Checker<'_> {
         if !self.checked.contains(item) {
             self.checked.push(item.clone());
         }
+        Ok(())
+    }
+
+    /// Checks one use of `item` for the channels given when the child starts; returns the
+    /// item's field names. `env_only`: `--env` takes env items only.
+    fn check(&mut self, item: &ItemName, fields: &[&str], env_only: bool) -> Result<Vec<String>> {
+        let denied = |reason| audit::denial_error(item, reason);
+        let info = self.item_use(item).map_err(denied)?;
+        if env_only && info.kind != ItemKind::Env {
+            bail!(
+                "{} is not an env item; use --env-file with placeholders",
+                item.as_str()
+            );
+        }
+        self.pass(item, &info, fields).map_err(denied)?;
         Ok(info.fields)
     }
 }
@@ -123,13 +166,7 @@ fn add_var(
 
 /// Checks everything before resolving anything, then resolves and builds the masker.
 pub fn prepare(store: &dyn Store, vault: &Vault, request: &Request<'_>) -> Result<Injection> {
-    let mut checker = Checker {
-        vault,
-        store,
-        rules: store.policy_rules()?,
-        agent: request.agent,
-        checked: Vec::new(),
-    };
+    let mut checker = Checker::new(store, vault, request.agent)?;
     let mut item_vars: Vec<(ItemName, Vec<String>)> = Vec::new();
     for name in request.items {
         let item = ItemName::parse(name).map_err(|e| anyhow!("{e}"))?;
