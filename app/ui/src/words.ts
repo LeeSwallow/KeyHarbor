@@ -4,6 +4,9 @@
 
 const word = (table: Record<string, string>) => (value: string) => table[value] ?? value;
 
+/// The sidebar's security line, by authentication method (03 §3.10, R-21).
+export const authWord = word({ none: "인증 없음" });
+
 export const kindWord = word({
   login: "로그인", secret: "API 키", env: "환경 변수", card: "카드", identity: "신원", address: "주소",
 });
