@@ -229,7 +229,7 @@ fn main() -> anyhow::Result<()> {
             // Closing the window keeps KeyHarbor in the menu bar (09 §9.2).
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                shell::log_ignored("hide the window", window.hide());
             }
         })
         .invoke_handler(tauri::generate_handler![

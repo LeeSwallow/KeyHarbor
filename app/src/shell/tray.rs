@@ -3,6 +3,7 @@
 //! new. The text comes from `commands::menu_text` and `commands::notices`; this file only
 //! builds Tauri menus and posts.
 
+use super::log_ignored;
 use keyharbor_app::{
     Ctx,
     commands::{self, MenuText, Seen},
@@ -67,12 +68,18 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .build(app)?;
-    let _ = tray.set_title(text.badge.as_deref());
+    log_ignored(
+        "set the menu bar count",
+        tray.set_title(text.badge.as_deref()),
+    );
     let handle = app.clone();
     std::thread::spawn(move || {
         // The bundle identifier (tauri.conf.json): notices come from KeyHarbor, not from Terminal.
         #[cfg(target_os = "macos")]
-        let _ = mac_notification_sys::set_application("io.github.leeswallow.keyharbor");
+        log_ignored(
+            "name the app for notifications",
+            mac_notification_sys::set_application(&handle.config().identifier),
+        );
         let mut seen = Seen::default();
         notify(&handle, &mut seen);
         loop {
@@ -87,9 +94,12 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
 fn refresh(app: &AppHandle, tray: &TrayIcon) {
     let Some(text) = current(app) else { return };
     if let Ok(menu) = menu(app, &text) {
-        let _ = tray.set_menu(Some(menu));
+        log_ignored("refresh the menu", tray.set_menu(Some(menu)));
     }
-    let _ = tray.set_title(text.badge.as_deref());
+    log_ignored(
+        "set the menu bar count",
+        tray.set_title(text.badge.as_deref()),
+    );
 }
 
 /// Posts a notification for what is new since the last look (`commands::notices`). A failed
@@ -101,7 +111,10 @@ fn notify(app: &AppHandle, seen: &mut Seen) {
     };
     for notice in commands::notices(seen, &now, kinds) {
         #[cfg(target_os = "macos")]
-        let _ = mac_notification_sys::send_notification(&notice.title, None, &notice.body, None);
+        log_ignored(
+            "post a notification",
+            mac_notification_sys::send_notification(&notice.title, None, &notice.body, None),
+        );
         #[cfg(not(target_os = "macos"))]
         let _ = notice;
     }
@@ -111,6 +124,9 @@ fn notify(app: &AppHandle, seen: &mut Seen) {
 fn answer(app: &AppHandle) {
     let ctx = app.state::<Ctx>();
     if let Ok(Some(path)) = commands::request_window_path(&ctx, None) {
-        let _ = super::request_window::open(app, path);
+        log_ignored(
+            "open the secure input window",
+            super::request_window::open(app, path),
+        );
     }
 }
