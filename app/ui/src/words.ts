@@ -41,9 +41,11 @@ export const sessionWord = word({
 
 export const siteWord = word({ logged_in: "로그인됨", expired: "로그인 만료", unknown: "확인 안 됨" });
 
-export const resourceWord = word({
-  item: "항목", domain: "도메인", session: "세션", create_session: "세션 만들기", raw_cdp: "raw CDP",
-});
+/// Every `Resource` (test/vocabulary.test.ts checks it against Rust, J-175).
+export const resourceWords: Record<string, string> = {
+  item: "항목", domain: "도메인", session: "세션", create_session: "세션 만들기", raw_cdp: "raw CDP", browser: "브라우저",
+};
+export const resourceWord = word(resourceWords);
 
 export const effectWord = word({ allow: "허용", deny: "거부" });
 
@@ -51,12 +53,15 @@ export const domainWord = word({
   credentials: "자격 증명", payment: "결제", personal: "개인정보", developer: "개발자", "*": "모두",
 });
 
-export const auditWord = word({
+/// Every `AuditKind` (test/vocabulary.test.ts checks it against Rust, J-175).
+export const auditWords: Record<string, string> = {
   secret_used: "값 사용", secret_denied: "사용 거부", secret_denied_suppressed: "사용 거부(반복)",
   origin_changed_after_fill: "입력 뒤 사이트 바뀜", session_opened: "세션 열림", session_stopped: "세션 멈춤",
+  session_removed: "세션 지움", file_uploaded: "파일 올림",
   handoff_requested: "인계 요청", handoff_resumed: "인계 재개", policy_changed: "정책 변경", vault_item_changed: "항목 변경",
   env_injected: "변수 주입", substitution_locked: "치환 잠김", mask_probe: "마스킹 탐지", first_use_origin: "처음 쓰는 사이트",
   site_state_changed: "로그인 상태 바뀜", vault_requested: "정보 요청", vault_request_answered: "요청 답함",
   credential_captured: "로그인 포착", grant_changed: "grant 변경", navigation_denied: "이동 거부", site_handed_off: "사이트 넘김",
   value_revealed: "값 보기", value_autofilled: "자동 완성",
-});
+};
+export const auditWord = word(auditWords);
