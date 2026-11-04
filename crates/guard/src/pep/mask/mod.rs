@@ -65,7 +65,11 @@ impl Masker {
         }
     }
 
-    pub fn build(values: impl IntoIterator<Item = (PlaceholderRef, Zeroizing<String>)>) -> Self {
+    /// A masker for `values` and their common forms. Fails when the automaton cannot be built;
+    /// callers then withhold what they would have masked (fail-closed).
+    pub fn build(
+        values: impl IntoIterator<Item = (PlaceholderRef, Zeroizing<String>)>,
+    ) -> Result<Self> {
         let mut patterns: Vec<(Zeroizing<String>, String)> = Vec::new();
         for (reference, value) in values {
             let placeholder = reference.to_string();
@@ -74,7 +78,7 @@ impl Masker {
             }
         }
         if patterns.is_empty() {
-            return Self::empty();
+            return Ok(Self::empty());
         }
         // The first value to produce a pattern names it (the sort is stable).
         patterns.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
@@ -86,18 +90,14 @@ impl Masker {
             .iter()
             .flat_map(|k| (MIN_HELD_PREFIX..k.len()).map(|n| hasher.hash_one(&k.as_bytes()[..n])))
             .collect();
-        let automaton = AhoCorasick::builder()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(keys.iter().map(|k| k.as_bytes()))
-            .expect("patterns build an automaton");
-        Self {
-            automaton: Some(automaton),
+        Ok(Self {
+            automaton: Some(automaton(&keys)?),
             longest,
             prefixes,
             hasher,
             replacements,
             version: None,
-        }
+        })
     }
 
     pub fn with_version(mut self, version: i64) -> Self {
@@ -179,13 +179,48 @@ impl Masker {
     }
 }
 
+/// The leftmost-longest automaton over `keys`. Fails only past aho-corasick's own limits
+/// (state or pattern ids, pattern length); the error never names a pattern.
+fn automaton(keys: &[Zeroizing<String>]) -> Result<AhoCorasick> {
+    #[cfg(test)]
+    if fail::take() {
+        anyhow::bail!(AUTOMATON_FAILED);
+    }
+    AhoCorasick::builder()
+        .match_kind(MatchKind::LeftmostLongest)
+        .build(keys.iter().map(|k| k.as_bytes()))
+        .map_err(|_| anyhow::anyhow!(AUTOMATON_FAILED))
+}
+
+/// Why a masker could not be built. Callers withhold what they would have masked.
+const AUTOMATON_FAILED: &str = "the masking automaton could not be built";
+
+/// Test-only: makes the next automaton built on this thread fail, as one past aho-corasick's
+/// limits would (those limits are out of reach of a test's memory).
+#[cfg(test)]
+pub(crate) mod fail {
+    use std::cell::Cell;
+
+    thread_local! {
+        static NEXT_BUILD: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub(crate) fn next_build() {
+        NEXT_BUILD.set(true);
+    }
+
+    pub(super) fn take() -> bool {
+        NEXT_BUILD.replace(false)
+    }
+}
+
 /// A masker for every field value in the vault, whatever its status or policy (an item an
 /// agent may not use must not leak either), tagged with the vault version it was read at.
 /// Fails if any value cannot be decrypted, so callers can withhold responses rather than send
 /// them unmasked. The value list never leaves this function; only the automaton does (J-37).
 pub fn masker(vault: &Vault) -> Result<Masker> {
     let values = vault.mask_values(&PlaintextAccess::issue())?;
-    Ok(Masker::build(values.values).with_version(values.version))
+    Ok(Masker::build(values.values)?.with_version(values.version))
 }
 
 #[cfg(test)]
@@ -201,6 +236,19 @@ mod tests {
                 .iter()
                 .map(|(i, f, v)| (pref(i, f), Zeroizing::new((*v).to_owned()))),
         )
+        .unwrap()
+    }
+
+    #[test]
+    fn an_automaton_that_cannot_be_built_is_an_error_not_a_panic() {
+        fail::next_build();
+        let err = Masker::build([(
+            pref("github", "password"),
+            Zeroizing::new("hunter22".into()),
+        )])
+        .unwrap_err();
+        assert_eq!(err.to_string(), "the masking automaton could not be built");
+        assert!(!format!("{err:?}").contains("hunter22"));
     }
 
     #[test]
