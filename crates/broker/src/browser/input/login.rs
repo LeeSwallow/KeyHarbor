@@ -1,34 +1,13 @@
 //! Finding a page's sign-in inputs for `browser_login` (R-39): in the top document and in
 //! frames of the same origin, from the DOM agent's view (attributes, not page script).
 
-use super::{CdpBrowser, frames::element_of};
+use crate::browser::{
+    CdpBrowser,
+    dom::{Frames, attribute, element_of, walk},
+};
 use anyhow::Result;
 use keyharbor_domain::ports::browser::{Element, LoginFields};
-use serde_json::{Value, json};
-
-/// `scheme://host:port` of a URL, or the URL itself if it has no path.
-fn origin_of(url: &str) -> &str {
-    let after_scheme = url.find("://").map_or(0, |i| i + 3);
-    match url[after_scheme..].find('/') {
-        Some(i) => &url[..after_scheme + i],
-        None => url,
-    }
-}
-
-fn attribute<'a>(node: &'a Value, name: &str) -> &'a str {
-    node["attributes"]
-        .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or_default()
-        .chunks(2)
-        .find(|pair| {
-            pair[0]
-                .as_str()
-                .is_some_and(|n| n.eq_ignore_ascii_case(name))
-        })
-        .and_then(|pair| pair.get(1).and_then(Value::as_str))
-        .unwrap_or_default()
-}
+use serde_json::Value;
 
 /// How well an input looks like a username field (higher is better), if at all.
 fn username_rank(node: &Value, element: &Element) -> Option<u8> {
@@ -42,7 +21,8 @@ fn username_rank(node: &Value, element: &Element) -> Option<u8> {
         return Some(2);
     }
     let named = [attribute(node, "name"), attribute(node, "id")]
-        .iter()
+        .into_iter()
+        .flatten()
         .any(|v| {
             let v = v.to_ascii_lowercase();
             ["user", "email", "login"]
@@ -52,34 +32,14 @@ fn username_rank(node: &Value, element: &Element) -> Option<u8> {
     named.then_some(1)
 }
 
-/// Every input of the top document and its same-origin frames, in document order.
-fn inputs<'a>(root: &'a Value, out: &mut Vec<&'a Value>) {
-    let origin = origin_of(root["documentURL"].as_str().unwrap_or_default());
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if node["localName"] == "input" {
-            out.push(node);
-        }
-        let mut next: Vec<&Value> = Vec::new();
-        for key in ["children", "shadowRoots"] {
-            if let Some(children) = node[key].as_array() {
-                next.extend(children);
-            }
-        }
-        let document = &node["contentDocument"];
-        let same_origin = document["documentURL"]
-            .as_str()
-            .is_some_and(|url| origin_of(url) == origin);
-        if document.is_object() && same_origin {
-            next.push(document);
-        }
-        stack.extend(next.into_iter().rev());
-    }
-}
-
-pub(super) fn pick(root: &Value) -> LoginFields {
+fn pick(root: &Value) -> LoginFields {
+    // Inputs of the top document and its same-origin frames, in document order.
     let mut found = Vec::new();
-    inputs(root, &mut found);
+    walk(root, Frames::SameOrigin, |node| {
+        if node["localName"] == "input" {
+            found.push(node);
+        }
+    });
     let mut fields = LoginFields::default();
     let mut best = 0;
     for node in found {
@@ -98,21 +58,15 @@ pub(super) fn pick(root: &Value) -> LoginFields {
 }
 
 impl CdpBrowser {
-    pub(super) async fn find_login_fields(&self, session: &str) -> Result<LoginFields> {
-        let document = self
-            .call(
-                "DOM.getDocument",
-                json!({"depth": -1, "pierce": true}),
-                session,
-            )
-            .await?;
-        Ok(pick(&document["root"]))
+    pub(crate) async fn find_login_fields(&self, session: &str) -> Result<LoginFields> {
+        Ok(pick(&self.full_document(session).await?))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn input(id: u64, attributes: &[&str]) -> Value {
         json!({"localName": "input", "backendNodeId": id, "attributes": attributes})

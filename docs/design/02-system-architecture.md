@@ -121,7 +121,7 @@ flowchart TB
 | `keyharbor-crypto` | crypto | domain | 모든 암호 원시 연산과 난수, v4 id(`random::{uuid_v4, id}`) ([ADR-0016](adr/0016-crypto-crate.md)) |
 | `keyharbor-vault` | 안쪽 (형식) | domain, crypto | 레코드 seal/open, 키 분리, 메타 MAC, 키 ID(I/O 없음) |
 | `keyharbor-keystore` | adapter | domain | `KeyStore` 구현: `KeychainKeyStore`(macOS login keychain, 다른 OS는 오류만 내는 자리), 테스트용 `FileKeyStore`, `test_keystore_dir`(기능 `insecure-test-keystore`일 때만). security-framework는 여기에만(규칙 G) |
-| `keyharbor-core` | application | domain, vault(레코드 함수만), crypto | `Vault` 유스케이스(`vault/{open, items, summary, resolve}`, 에이전트용 `catalog`), `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `rotate`, `transfer`, `PlaintextAccess` |
+| `keyharbor-core` | application | domain, vault(레코드 함수만), crypto | `Vault` 유스케이스(`vault/{items, summary, resolve}`, 키 `vault/keys/{open, developer, rotate}`, 초안 `vault/drafts`, 에이전트용 `catalog`), `session/{manage, lifecycle, handoff}`, `policy`, `audit`, `settings`, `transfer/{backup, chrome, dotenv}`, `PlaintextAccess` |
 | `keyharbor-guard` | security | domain, core | `pdp::decide`, `pep::substitute`, `pep::mask::Masker`, `pep::origin`, `audit`, `run`, `items`(항목 add/edit 순서), `session`(세션 작업 → 정책 Action 표), `Guard`, `GuardedBrowser` |
 | `keyharbor-sqlite` | adapter | domain, crypto(id 난수만) | `SqliteStore`(저장소 포트 전부, `RotationLock` = 데이터 폴더의 `vault.lock`), `SqliteStores`(`StoreFactory`), 컨텍스트 레지스트리 |
 | `keyharbor-broker` | adapter (Chrome) | domain | `chrome`(Chrome 실행, CDP pipe `CdpLink`, `DevToolsActivePort` 해석), `CdpBrowser`(`BrowserPort`·`PageInput`·`FrameInspector`). supervisor만 의존한다(규칙 B) |

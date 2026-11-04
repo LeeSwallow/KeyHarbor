@@ -1,5 +1,10 @@
 //! Navigation tracking (I4): which frames of each attached page are navigating, and a count
-//! of navigation events per page, from the `Page.*` events CDP sends for every attached page.
+//! of navigation events per page, from the `Page.*` events CDP sends for every attached page;
+//! and the page operations that move between documents ([`navigate`], [`tabs`], [`wait`]).
+
+mod navigate;
+mod tabs;
+mod wait;
 
 use super::CdpBrowser;
 use anyhow::Result;
@@ -16,7 +21,8 @@ use tokio::sync::broadcast;
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long after a click or key press a navigation it caused may take to be reported.
 const INPUT_QUIET: Duration = Duration::from_millis(250);
-const POLL: Duration = Duration::from_millis(50);
+/// How often `settle` looks at the tracked state (no browser call, so it can be short).
+const SETTLE_POLL: Duration = Duration::from_millis(50);
 
 #[derive(Default)]
 pub(super) struct PageNavigation {
@@ -132,7 +138,7 @@ impl CdpBrowser {
             if Instant::now() >= deadline {
                 return Ok(false);
             }
-            tokio::time::sleep(POLL).await;
+            tokio::time::sleep(SETTLE_POLL).await;
         }
     }
 

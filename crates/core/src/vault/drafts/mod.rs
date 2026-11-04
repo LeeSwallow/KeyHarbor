@@ -1,0 +1,7 @@
+//! Drafts (08 §8.2–8.3): items an agent adds without seeing a value ([`register`]) and how a
+//! person or a sign-in settles them ([`settle`]).
+
+mod register;
+mod settle;
+
+pub use register::{DraftItem, GeneratedLogin, MAX_DRAFTS, generate_password};

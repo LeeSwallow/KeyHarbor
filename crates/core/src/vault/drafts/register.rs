@@ -2,12 +2,12 @@
 //! put. They are drafts until a person or a sign-in confirms them, and they never replace an
 //! existing item: a taken name gets the next free `<name>~draft-N` (08 §8.3).
 
-use super::{ItemDetails, ItemSource, ItemStatus, NewItem, Vault};
+use crate::vault::{ItemDetails, ItemSource, ItemStatus, NewItem, Vault};
 use anyhow::{Result, bail};
 use keyharbor_crypto::random;
 use keyharbor_domain::{
     password::PasswordRule,
-    vault::{FieldName, ItemKind, ItemName, Origin},
+    vault::{DRAFT_MARK, FieldName, ItemKind, ItemName, Origin},
 };
 use zeroize::Zeroizing;
 
@@ -42,7 +42,7 @@ impl Vault {
     /// if free, else the first free `~draft-N`. Nothing existing is changed.
     pub fn add_draft(&self, item: DraftItem, agent: &str) -> Result<ItemName> {
         if item.name.is_draft() {
-            bail!("a name with ~draft- is reserved for drafts");
+            bail!("a name with {DRAFT_MARK} is reserved for drafts");
         }
         let name = self.free_draft_name(&item.name)?;
         let domain = item.kind.domain();

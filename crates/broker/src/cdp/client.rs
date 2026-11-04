@@ -20,6 +20,11 @@ use tokio::{
 };
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+/// How many events a subscriber may fall behind before it misses some (`RecvError::Lagged`).
+/// What a miss means is up to each subscriber (`pages::watch_pages`, `navigation::track`).
+const EVENT_BACKLOG: usize = 1024;
+/// The error of every call once the browser's side of the pipe is gone.
+pub(crate) const CONNECTION_CLOSED: &str = "browser connection closed";
 
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Reply>>>>;
 
@@ -40,51 +45,11 @@ impl Cdp {
         W: AsyncWrite + Unpin + Send + 'static,
         R: AsyncRead + Unpin + Send + 'static,
     {
-        let (outgoing, mut queue) = mpsc::unbounded_channel::<Vec<u8>>();
-        tokio::spawn(async move {
-            let mut writer = writer;
-            while let Some(message) = queue.recv().await {
-                if writer.write_all(&message).await.is_err() || writer.flush().await.is_err() {
-                    break;
-                }
-            }
-            let _ = writer.shutdown().await;
-        });
+        let outgoing = spawn_writer(writer);
         let pending: Pending = Arc::default();
-        let (events, _) = broadcast::channel(1024);
+        let (events, _) = broadcast::channel(EVENT_BACKLOG);
         let closed = Arc::new(AtomicBool::new(false));
-        let (pending_reader, events_reader, closed_reader) =
-            (pending.clone(), events.clone(), closed.clone());
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(reader);
-            let mut buffer = Vec::new();
-            loop {
-                buffer.clear();
-                match reader.read_until(0, &mut buffer).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => (),
-                }
-                let Some(message) = protocol::decode(&mut buffer) else {
-                    continue;
-                };
-                match message {
-                    Incoming::Reply { id, reply } => {
-                        let waiter = pending_reader.lock().ok().and_then(|mut p| p.remove(&id));
-                        if let Some(waiter) = waiter {
-                            let _ = waiter.send(reply);
-                        }
-                    }
-                    Incoming::Event(event) => {
-                        let _ = events_reader.send(event);
-                    }
-                }
-            }
-            // The browser is gone: wake every caller with an error.
-            closed_reader.store(true, Ordering::SeqCst);
-            if let Ok(mut pending) = pending_reader.lock() {
-                pending.clear();
-            }
-        });
+        spawn_reader(reader, pending.clone(), events.clone(), closed.clone());
         Self {
             outgoing: Mutex::new(Some(outgoing)),
             pending,
@@ -108,7 +73,7 @@ impl Cdp {
             .map_err(|_| anyhow!("CDP lock poisoned"))?;
         match outgoing.as_ref() {
             Some(sender) if sender.send(bytes).is_ok() => Ok(()),
-            _ => bail!("browser connection closed"),
+            _ => bail!(CONNECTION_CLOSED),
         }
     }
 
@@ -122,7 +87,7 @@ impl Cdp {
             .insert(id, reply);
         if self.closed.load(Ordering::SeqCst) {
             self.forget(id);
-            bail!("browser connection closed");
+            bail!(CONNECTION_CLOSED);
         }
         if let Err(error) = self.enqueue(protocol::encode(id, method, params, session)) {
             self.forget(id);
@@ -131,7 +96,7 @@ impl Cdp {
         match tokio::time::timeout(self.timeout, response).await {
             Ok(Ok(Ok(result))) => Ok(result),
             Ok(Ok(Err(message))) => bail!("{method}: {message}"),
-            Ok(Err(_)) => bail!("browser connection closed"),
+            Ok(Err(_)) => bail!(CONNECTION_CLOSED),
             Err(_) => {
                 self.forget(id);
                 bail!(
@@ -160,6 +125,64 @@ impl Cdp {
     pub fn events(&self) -> broadcast::Receiver<Value> {
         self.events.subscribe()
     }
+}
+
+/// Writes queued messages to the browser until the queue closes, then shuts the pipe.
+fn spawn_writer<W>(mut writer: W) -> mpsc::UnboundedSender<Vec<u8>>
+where
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    let (outgoing, mut queue) = mpsc::unbounded_channel::<Vec<u8>>();
+    tokio::spawn(async move {
+        while let Some(message) = queue.recv().await {
+            if writer.write_all(&message).await.is_err() || writer.flush().await.is_err() {
+                break;
+            }
+        }
+        let _ = writer.shutdown().await;
+    });
+    outgoing
+}
+
+/// Hands each reply to its waiting caller and broadcasts each event, until the browser
+/// closes its side; then marks the connection closed and wakes every caller with an error.
+fn spawn_reader<R>(
+    reader: R,
+    pending: Pending,
+    events: broadcast::Sender<Value>,
+    closed: Arc<AtomicBool>,
+) where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(reader);
+        let mut buffer = Vec::new();
+        loop {
+            buffer.clear();
+            match reader.read_until(0, &mut buffer).await {
+                Ok(0) | Err(_) => break,
+                Ok(_) => (),
+            }
+            let Some(message) = protocol::decode(&mut buffer) else {
+                continue;
+            };
+            match message {
+                Incoming::Reply { id, reply } => {
+                    let waiter = pending.lock().ok().and_then(|mut p| p.remove(&id));
+                    if let Some(waiter) = waiter {
+                        let _ = waiter.send(reply);
+                    }
+                }
+                Incoming::Event(event) => {
+                    let _ = events.send(event);
+                }
+            }
+        }
+        closed.store(true, Ordering::SeqCst);
+        if let Ok(mut pending) = pending.lock() {
+            pending.clear();
+        }
+    });
 }
 
 #[cfg(test)]

@@ -1,7 +1,8 @@
-//! `.env` parsing for `vault import-env`. Error messages name lines, never values.
+//! `.env` parsing and `vault import-env`. Error messages name lines, never values.
 
+use crate::{ItemSource, ItemStatus, NewItem, Vault};
 use anyhow::{Result, anyhow, bail};
-use keyharbor_domain::vault::FieldName;
+use keyharbor_domain::vault::{FieldName, ItemKind, ItemName};
 use std::collections::BTreeSet;
 use zeroize::Zeroizing;
 
@@ -77,9 +78,28 @@ pub fn parse_dotenv(text: &str) -> Result<Vec<(FieldName, Zeroizing<String>)>> {
     Ok(out)
 }
 
+impl Vault {
+    pub fn import_env(&self, name: ItemName, text: &str) -> Result<usize> {
+        let fields = parse_dotenv(text)?;
+        let count = fields.len();
+        self.add(NewItem {
+            name,
+            kind: ItemKind::Env,
+            fields,
+            origins: Vec::new(),
+            origin_binding: Some(false),
+            status: ItemStatus::Active,
+            source: ItemSource::Import,
+            details: Default::default(),
+        })?;
+        Ok(count)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::{env, init, pref};
 
     fn pairs(text: &str) -> Vec<(String, String)> {
         parse_dotenv(text)
@@ -122,5 +142,22 @@ mod tests {
     fn errors_never_echo_values() {
         let err = parse_dotenv("A=\"KH-SYNTH-secret").unwrap_err().to_string();
         assert!(!err.contains("KH-SYNTH"), "{err}");
+    }
+
+    #[test]
+    fn import_env_creates_env_item() {
+        let e = env();
+        let v = init(&e);
+        let n = v
+            .import_env(
+                ItemName::parse("app").unwrap(),
+                "API_KEY=abc\nexport DB_URL=\"postgres://x\"\n",
+            )
+            .unwrap();
+        assert_eq!(n, 2);
+        let list = v.list().unwrap();
+        assert_eq!(list[0].kind, ItemKind::Env);
+        assert_eq!(list[0].source, ItemSource::Import);
+        assert_eq!(&*v.resolve(&pref("app", "DB_URL")).unwrap(), "postgres://x");
     }
 }

@@ -3,7 +3,10 @@
 //! guard marked (they received a vault value) show `[redacted]` for their value and for the
 //! text of everything inside them.
 
-use super::CdpBrowser;
+use crate::browser::{
+    CdpBrowser,
+    dom::{Frames, attribute, walk},
+};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -12,7 +15,7 @@ const MAX_SNAPSHOT_LINES: usize = 2000;
 const REDACTED: &str = "[redacted]";
 
 impl CdpBrowser {
-    pub(super) async fn take_snapshot(&mut self, redacted: &BTreeSet<u64>) -> Result<Value> {
+    pub(crate) async fn take_snapshot(&mut self, redacted: &BTreeSet<u64>) -> Result<Value> {
         let session = self.active_page().await?;
         let tree = self
             .call("Accessibility.getFullAXTree", json!({}), &session)
@@ -66,41 +69,16 @@ impl CdpBrowser {
     /// Backend ids of every `<input type=password>` in the page and its same-process frames.
     /// Their values never appear in a snapshot, whether or not they came from the vault.
     async fn password_inputs(&self, session: &str) -> Result<HashSet<u64>> {
-        let document = self
-            .call(
-                "DOM.getDocument",
-                json!({"depth": -1, "pierce": true}),
-                session,
-            )
-            .await?;
+        let document = self.full_document(session).await?;
         let mut found = HashSet::new();
-        let mut stack = vec![&document["root"]];
-        while let Some(node) = stack.pop() {
-            if node["localName"] == "input" {
-                let attributes = node["attributes"]
-                    .as_array()
-                    .map(Vec::as_slice)
-                    .unwrap_or_default();
-                let password = attributes.chunks(2).any(|pair| {
-                    pair[0] == "type"
-                        && pair
-                            .get(1)
-                            .and_then(Value::as_str)
-                            .is_some_and(|t| t.trim().eq_ignore_ascii_case("password"))
-                });
-                if let (true, Some(id)) = (password, node["backendNodeId"].as_u64()) {
-                    found.insert(id);
-                }
+        walk(&document, Frames::All, |node| {
+            let password = node["localName"] == "input"
+                && attribute(node, "type")
+                    .is_some_and(|t| t.trim().eq_ignore_ascii_case("password"));
+            if let (true, Some(id)) = (password, node["backendNodeId"].as_u64()) {
+                found.insert(id);
             }
-            for key in ["children", "shadowRoots"] {
-                if let Some(children) = node[key].as_array() {
-                    stack.extend(children);
-                }
-            }
-            if node["contentDocument"].is_object() {
-                stack.push(&node["contentDocument"]);
-            }
-        }
+        });
         Ok(found)
     }
 }
@@ -136,41 +114,21 @@ pub(crate) fn render_ax_tree(
             lines.push(format!("… truncated at {MAX_SNAPSHOT_LINES} lines"));
             break;
         }
-        let role = node["role"]["value"].as_str().unwrap_or("");
         let backend = node["backendDOMNodeId"].as_u64();
         let marked = backend.is_some_and(|id| redacted.contains(&id));
-        let name = match node["name"]["value"].as_str().unwrap_or("") {
-            "" => "",
-            _ if inside => REDACTED,
-            name => name,
-        };
-        let skip = node["ignored"] == true
-            || role == "InlineTextBox"
-            || (matches!(role, "generic" | "none" | "") && name.is_empty());
-        let child_depth = if skip {
-            depth
+        let value = if backend.is_some_and(|id| hidden.contains(&id)) {
+            ValueShown::Never
+        } else if marked || inside {
+            ValueShown::Redacted
         } else {
-            let reference = node["backendDOMNodeId"]
-                .as_u64()
-                .map_or_else(|| "-".to_owned(), |r| r.to_string());
-            let mut line = format!(
-                "{}[{reference}] {role} {}",
-                "  ".repeat(depth),
-                serde_json::to_string(name).unwrap_or_default()
-            );
-            let secret = backend.is_some_and(|id| hidden.contains(&id));
-            if let Some(value) = node["value"]["value"]
-                .as_str()
-                .filter(|v| !v.is_empty() && !secret)
-            {
-                let value = if marked || inside { REDACTED } else { value };
-                line.push_str(&format!(
-                    " value={}",
-                    serde_json::to_string(value).unwrap_or_default()
-                ));
+            ValueShown::AsIs
+        };
+        let child_depth = match ax_line(node, depth, inside, value) {
+            Some(line) => {
+                lines.push(line);
+                depth + 1
             }
-            lines.push(line);
-            depth + 1
+            None => depth,
         };
         if let Some(children) = node["childIds"].as_array() {
             for child in children.iter().rev() {
@@ -181,6 +139,55 @@ pub(crate) fn render_ax_tree(
         }
     }
     lines.join("\n")
+}
+
+/// How a node's value shows in its line.
+enum ValueShown {
+    AsIs,
+    /// The node received a vault value, or is inside one that did.
+    Redacted,
+    /// A password input: no value at all, marked or not.
+    Never,
+}
+
+/// The line of one node at `depth`, or `None` for a node left out (ignored, an inline text
+/// box, or an unnamed generic container). Inside a redacted element a name reads `[redacted]`.
+fn ax_line(node: &Value, depth: usize, inside: bool, value: ValueShown) -> Option<String> {
+    let role = node["role"]["value"].as_str().unwrap_or("");
+    let name = match node["name"]["value"].as_str().unwrap_or("") {
+        "" => "",
+        _ if inside => REDACTED,
+        name => name,
+    };
+    if node["ignored"] == true
+        || role == "InlineTextBox"
+        || (matches!(role, "generic" | "none" | "") && name.is_empty())
+    {
+        return None;
+    }
+    let reference = node["backendDOMNodeId"]
+        .as_u64()
+        .map_or_else(|| "-".to_owned(), |r| r.to_string());
+    let mut line = format!(
+        "{}[{reference}] {role} {}",
+        "  ".repeat(depth),
+        serde_json::to_string(name).unwrap_or_default()
+    );
+    let shown = node["value"]["value"]
+        .as_str()
+        .filter(|v| !v.is_empty())
+        .and_then(|v| match value {
+            ValueShown::AsIs => Some(v),
+            ValueShown::Redacted => Some(REDACTED),
+            ValueShown::Never => None,
+        });
+    if let Some(shown) = shown {
+        line.push_str(&format!(
+            " value={}",
+            serde_json::to_string(shown).unwrap_or_default()
+        ));
+    }
+    Some(line)
 }
 
 #[cfg(test)]
