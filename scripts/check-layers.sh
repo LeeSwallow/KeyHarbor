@@ -137,8 +137,10 @@ hits="$(grep -rn 'rusqlite' --include='*.rs' . || true)"
 $hits"
 # Prints file:line for matches of $1 outside items marked #[cfg(test)] or
 # #[cfg(feature = "test-support")] (the marked item's brace block is skipped).
+# A module file named tests.rs is a test module moved out of its parent
+# (`#[cfg(test)] mod tests;`), so it is skipped like tests/ directories.
 outside_tests() {
-	find . -name '*.rs' -not -path '*/tests/*' -not -path '*/target/*' | while read -r f; do
+	find . -name '*.rs' -not -name tests.rs -not -path '*/tests/*' -not -path '*/target/*' | while read -r f; do
 		PAT="$1" awk -v file="$f" '
 			BEGIN { pat = ENVIRON["PAT"] }
 			/#\[cfg\((test|feature = "test-support")\)\]/ { pending = 1 }

@@ -4,7 +4,7 @@
 //! the focus, and its frame must be a site the session's grants allow. The usage record keeps
 //! file names and the origin, never contents.
 
-use crate::GuardedBrowser;
+use super::GuardedBrowser;
 use anyhow::{Result, anyhow, bail};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
@@ -14,6 +14,12 @@ use keyharbor_domain::{
     vault::Origin,
 };
 use serde_json::{Value, json};
+
+/// The refusals of an upload. They name the reason only, never a file or a path.
+const NOT_A_FILE_INPUT: &str = "browser_upload needs an <input type=file>";
+const DENIED_FOCUS: &str = "denied: upload (focus)";
+const DENIED_FRAME: &str = "denied: upload (frame)";
+const DENIED_OUT_OF_GRANT: &str = "denied: upload (out-of-grant)";
 
 impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
     /// Puts `files` into the file input `target`, if `policy` and the page allow it.
@@ -41,17 +47,17 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         let page = self.inner.page().await?;
         let node = self.inner.focus_element(&page, target).await?;
         if !self.inner.element(&page, node).await?.is_file_input() {
-            bail!("browser_upload needs an <input type=file>");
+            bail!(NOT_A_FILE_INPUT);
         }
         let focus = self.inner.focus(&page).await?;
         if focus.node != node {
-            bail!("denied: upload (focus)");
+            bail!(DENIED_FOCUS);
         }
         let Some(origin) = self.inner.frame_origin(&page, &focus.frame).await else {
-            bail!("denied: upload (frame)");
+            bail!(DENIED_FRAME);
         };
         if !self.in_grants(&origin)? {
-            bail!("denied: upload (out-of-grant)");
+            bail!(DENIED_OUT_OF_GRANT);
         }
         let paths: Vec<_> = files.iter().map(|f| f.resolved.clone()).collect();
         self.inner.set_files(&page, node, &paths).await?;
