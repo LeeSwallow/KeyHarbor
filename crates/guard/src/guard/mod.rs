@@ -1,5 +1,9 @@
 //! `Guard`: the enforcement state of one session supervisor — the store it records to, and
 //! the vault (reopened whenever its version moves) with the masker built from it.
+//!
+//! - [`denials`] — the per-second cap on recorded refusals.
+//! - [`probes`] — refusing requests that carry a vault value, and locking the session.
+//! - [`redact`] — masking every result and error before it leaves the supervisor.
 
 use crate::{
     GuardedBrowser, audit,
@@ -8,24 +12,31 @@ use crate::{
         substitute::{Destination, Prepared, Request, references, resolve_checked},
     },
 };
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use keyharbor_core::{ItemUse, Vault};
 use keyharbor_domain::{
     SessionId,
     audit::{AuditEvent, AuditKind},
     denial::DenialReason,
     ports::{Clock, Store},
-    vault::{Domain, ItemName, Origin, placeholder},
+    vault::{Domain, ItemName, Origin},
 };
-use serde_json::Value;
 use std::{
     collections::BTreeSet,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32},
     },
 };
 use zeroize::Zeroizing;
+
+mod denials;
+mod probes;
+mod redact;
+
+#[cfg(test)]
+pub(crate) use denials::MAX_DENIALS_PER_SECOND;
+pub(crate) use probes::LockReason;
 
 /// The store a supervisor shares between its control connections and the guard.
 pub type SharedStore = Arc<Mutex<Box<dyn Store>>>;
@@ -40,6 +51,18 @@ pub(crate) struct Loaded {
     masker: Option<Masker>,
 }
 
+impl Loaded {
+    /// The masker for this vault version, built on first use. A failed build is returned (the
+    /// caller withholds) and tried again next time; it never panics while the vault is locked.
+    pub(crate) fn masker(&mut self) -> Result<&Masker> {
+        let built = match self.masker.take() {
+            Some(built) => built,
+            None => masker(&self.vault)?,
+        };
+        Ok(self.masker.insert(built))
+    }
+}
+
 pub struct Guard {
     session: SessionId,
     store: SharedStore,
@@ -51,31 +74,15 @@ pub struct Guard {
     tainted: Mutex<BTreeSet<u64>>,
     /// Once set, nothing more is substituted in this session (C2, I1).
     locked: AtomicBool,
-    /// Requests that carried a vault value (I1). At [`MAX_PROBES`] the session stops
+    /// Requests that carried a vault value (I1). At [`probes::MAX_PROBES`] the session stops
     /// substituting and refuses every request that carries agent text.
     probes: AtomicU32,
     /// Refusals recorded in the current second, and those left out (Minor: a flood of
     /// refused requests must not flood the record).
-    denials: Mutex<Denials>,
+    denials: Mutex<denials::Denials>,
     /// For the per-second refusal cap.
     clock: Arc<dyn Clock>,
 }
-
-/// Refusals a session records per second; the rest become one counter event. Fixed: it only
-/// bounds the record's growth, every refusal is still counted.
-pub const MAX_DENIALS_PER_SECOND: u32 = 10;
-
-#[derive(Default)]
-struct Denials {
-    second: u64,
-    recorded: u32,
-    suppressed: u32,
-}
-
-/// Requests carrying a vault value a session tolerates before it locks (I1). Fixed, not a
-/// setting: raising it gives a guessing agent more answers, and an agent cannot be trusted
-/// to set it.
-pub const MAX_PROBES: u32 = 3;
 
 impl Guard {
     pub fn new(
@@ -92,48 +99,9 @@ impl Guard {
             tainted: Mutex::new(BTreeSet::new()),
             locked: AtomicBool::new(false),
             probes: AtomicU32::new(0),
-            denials: Mutex::new(Denials::default()),
+            denials: Mutex::new(denials::Denials::default()),
             clock,
         }
-    }
-
-    /// Records a refusal unless this second's cap is reached; a new second first records how
-    /// many were left out of the last one.
-    fn record_denial(&self, agent: &str, event: &AuditEvent) {
-        let now = self.clock.unix_seconds();
-        let (flush, record) = {
-            let Ok(mut d) = self.denials.lock() else {
-                return;
-            };
-            let flush = if d.second != now {
-                let left_out = std::mem::take(&mut d.suppressed);
-                d.second = now;
-                d.recorded = 0;
-                left_out
-            } else {
-                0
-            };
-            let record = d.recorded < MAX_DENIALS_PER_SECOND;
-            if record {
-                d.recorded += 1;
-            } else {
-                d.suppressed += 1;
-            }
-            (flush, record)
-        };
-        if flush > 0 {
-            self.record_suppressed(agent, flush);
-        }
-        if record {
-            self.record(event);
-        }
-    }
-
-    fn record_suppressed(&self, agent: &str, count: u32) {
-        self.record(
-            &AuditEvent::new(agent, AuditKind::DeniedSuppressed, &count.to_string())
-                .session(self.session),
-        );
     }
 
     /// The decorator through which `agent`'s request reaches `browser`.
@@ -249,59 +217,6 @@ impl Guard {
         }
     }
 
-    /// Stops all substitution for the rest of the session and records why.
-    pub(crate) fn lock(&self, agent: &str, reason: &str) {
-        if !self.locked.swap(true, Ordering::SeqCst) {
-            self.record(
-                &AuditEvent::new(agent, AuditKind::SubstitutionLocked, reason)
-                    .session(self.session),
-            );
-        }
-    }
-
-    pub fn is_locked(&self) -> bool {
-        self.locked.load(Ordering::SeqCst)
-    }
-
-    /// Refuses a request whose agent-written text (URL, typed text, selector, tab id) holds a
-    /// vault value in any masked form: answering it would let the masker confirm a guess
-    /// (I1). Each such request is recorded as `mask_probe` without naming the item; after
-    /// [`MAX_PROBES`] the session locks and refuses every request that carries text.
-    pub fn check_literals(&self, agent: &str, literals: &[&str]) -> Result<()> {
-        if literals.iter().all(|l| l.is_empty()) {
-            return Ok(());
-        }
-        if self.probes.load(Ordering::SeqCst) >= MAX_PROBES {
-            bail!("denied: this session sent vault values in requests; it accepts no more text");
-        }
-        let probed = self.with_vault(|loaded| -> Result<bool> {
-            let Some(loaded) = loaded else {
-                return Ok(false);
-            };
-            if loaded.masker.is_none() {
-                loaded.masker = Some(masker(&loaded.vault)?);
-            }
-            let masker = loaded.masker.as_ref().expect("built");
-            Ok(literals.iter().any(|l| masker.redact(l) != *l))
-        });
-        match probed {
-            Ok(Ok(false)) => Ok(()),
-            Ok(Ok(true)) => {
-                self.record(
-                    &AuditEvent::new(agent, AuditKind::MaskProbe, "denied").session(self.session),
-                );
-                if self.probes.fetch_add(1, Ordering::SeqCst) + 1 >= MAX_PROBES {
-                    self.lock(agent, "mask_probe");
-                }
-                bail!(
-                    "denied: the request contains a vault value; write its {} placeholder instead",
-                    placeholder("item", "field")
-                )
-            }
-            _ => bail!("request withheld: vault values could not be loaded for checking"),
-        }
-    }
-
     /// The elements snapshots must redact.
     pub(crate) fn tainted(&self) -> BTreeSet<u64> {
         self.tainted.lock().map(|t| t.clone()).unwrap_or_default()
@@ -360,68 +275,5 @@ impl Guard {
             items,
             domains: resolved.domains,
         })
-    }
-
-    /// Every result before it leaves the supervisor: each vault value becomes its placeholder.
-    /// If the values cannot be loaded the response is withheld, never sent unmasked.
-    pub fn redact(&self, value: Value) -> Result<Value> {
-        let masked = self.with_vault(|loaded| -> Result<Value> {
-            let Some(loaded) = loaded else {
-                return Ok(value);
-            };
-            if loaded.masker.is_none() {
-                loaded.masker = Some(masker(&loaded.vault)?);
-            }
-            Ok(loaded.masker.as_ref().expect("built").redact_json(value))
-        });
-        match masked {
-            Ok(Ok(value)) => Ok(value),
-            _ => bail!("response withheld: vault values could not be loaded for masking"),
-        }
-    }
-
-    /// Text before it leaves the supervisor, masked like [`Guard::redact`].
-    pub fn redact_text(&self, text: String) -> Result<String> {
-        match self.redact(Value::String(text))? {
-            Value::String(text) => Ok(text),
-            _ => bail!("operation failed"),
-        }
-    }
-
-    /// A whole outcome, masked exactly once: the value, or the error's message.
-    pub fn redact_outcome(&self, outcome: Result<Value>) -> Result<Value> {
-        match outcome {
-            Ok(value) => self.redact(value),
-            Err(error) => Err(self.redact_failure(error)),
-        }
-    }
-
-    /// An outcome whose value holds no page text ([`FillOutcome`], `()`): only an error's
-    /// message is masked.
-    ///
-    /// [`FillOutcome`]: keyharbor_domain::ports::browser::FillOutcome
-    pub fn redact_error<T>(&self, outcome: Result<T>) -> Result<T> {
-        outcome.map_err(|error| self.redact_failure(error))
-    }
-
-    fn redact_failure(&self, error: anyhow::Error) -> anyhow::Error {
-        match self.redact_text(format!("{error:#}")) {
-            Ok(message) => anyhow!(message),
-            Err(withheld) => withheld,
-        }
-    }
-}
-
-impl Drop for Guard {
-    /// The supervisor is ending: the refusals left out of the last second are counted.
-    fn drop(&mut self) {
-        let left_out = self
-            .denials
-            .get_mut()
-            .map(|d| std::mem::take(&mut d.suppressed))
-            .unwrap_or(0);
-        if left_out > 0 {
-            self.record_suppressed(keyharbor_domain::policy::LOCAL_AGENT, left_out);
-        }
     }
 }

@@ -9,33 +9,30 @@
 //! - [`describe`] — descriptions must not hold vault values.
 //! - [`items`] — adding and changing items in the safe order (values, then weakening).
 //! - [`session`] — which policy actions each session operation needs.
+//! - [`Guard`] — one supervisor's enforcement state: refusal cap, vault and masker, probe
+//!   lock, masking on the way out.
+//! - [`GuardedBrowser`] — a `BrowserPort` decorator: input goes through `substitute`, every
+//!   result and error through `mask`. The supervisor hands control requests only to it.
 //! - [`capture`] — storing a sign-in the user typed during a handoff as a draft.
 //! - [`reveal`] — a person looking at a value in the admin app (recorded).
 //! - [`autofill`] — filling a login into the person's own browser after Touch ID (recorded).
-//! - [`GuardedBrowser`] — a `BrowserPort` decorator: input goes through `substitute`, every
-//!   result and error through `mask`. The supervisor hands control requests only to it.
 //!
 //! This crate is the only one that issues [`keyharbor_core::PlaintextAccess`] (besides
 //! core's own export), which `Vault::resolve` and `Vault::mask_values` demand.
 
 pub mod audit;
-pub mod autofill;
 mod browser;
-pub mod capture;
 pub mod describe;
 mod guard;
 pub mod items;
-mod login;
 pub mod pdp;
 pub mod pep;
-pub mod reveal;
+mod person;
 pub mod run;
-mod select;
 pub mod session;
 #[cfg(test)]
 mod test_support;
-mod upload;
 
-pub use browser::GuardedBrowser;
+pub use browser::{GuardedBrowser, LoginOutcome};
 pub use guard::{Guard, SharedStore, VaultOpener};
-pub use login::LoginOutcome;
+pub use person::{autofill, capture, reveal};
