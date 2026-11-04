@@ -10,8 +10,8 @@ pub use gate::DocumentRule;
 
 use crate::{cdp::Cdp, chrome::CdpLink};
 use keyharbor_domain::ports::browser::CapturedLogin;
-use serde_json::json;
-use std::{collections::HashSet, sync::Arc};
+use serde_json::{Value, json};
+use std::{collections::HashSet, ops::ControlFlow, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 
 /// How documents outside the session's grants are kept out (R-43, ADR-0018).
@@ -45,55 +45,101 @@ impl CdpLink {
         {
             return;
         }
-        let mut ours = HashSet::new();
+        let mut watch = Watch {
+            cdp: cdp.clone(),
+            hooks,
+            ours: HashSet::new(),
+        };
         loop {
             let event = match events.recv().await {
                 Ok(event) => event,
+                // Events past `EVENT_BACKLOG` were dropped. That fails closed: a missed
+                // `Fetch.requestPaused` is never answered, so its page waits on that request
+                // instead of loading it, and a missed `Target.attachedToTarget` leaves its
+                // target paused at start. A missed sign-in report is only not offered.
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => return,
             };
-            let session = event["sessionId"].as_str().unwrap_or_default();
-            match event["method"].as_str() {
-                Some("Target.attachedToTarget") => {
-                    let params = &event["params"];
-                    let Some(page) = params["sessionId"].as_str() else {
-                        continue;
-                    };
-                    if params["targetInfo"]["type"] == "page" {
-                        ours.insert(page.to_owned());
-                        tokio::spawn(instrument(cdp.clone(), page.to_owned(), hooks.gate));
-                    } else {
-                        tokio::spawn(resume(cdp.clone(), page.to_owned()));
-                    }
-                }
-                Some("Page.frameNavigated")
-                    if hooks.gate == Gate::AfterCommit && ours.contains(session) =>
-                {
-                    let url = event["params"]["frame"]["url"].as_str().unwrap_or_default();
-                    let (rule, url) = (hooks.documents.clone(), url.to_owned());
-                    tokio::spawn(gate::after_commit(
-                        cdp.clone(),
-                        rule,
-                        session.to_owned(),
-                        url,
-                    ));
-                }
-                Some("Fetch.requestPaused") if ours.contains(session) => {
-                    let (rule, params) = (hooks.documents.clone(), event["params"].clone());
-                    tokio::spawn(gate::answer(cdp.clone(), rule, session.to_owned(), params));
-                }
-                Some("Runtime.bindingCalled")
-                    if ours.contains(session) && event["params"]["name"] == capture::BINDING =>
-                {
-                    if let Some(login) = capture::parse(&event["params"]["payload"])
-                        && hooks.captured.send(login).await.is_err()
-                    {
-                        return;
-                    }
-                }
-                _ => {}
+            if watch.handle(&event).await.is_break() {
+                return;
             }
         }
+    }
+}
+
+/// `watch_pages`'s state: where reports go and which sessions are pages it instrumented.
+struct Watch {
+    cdp: Arc<Cdp>,
+    hooks: PageHooks,
+    ours: HashSet<String>,
+}
+
+impl Watch {
+    /// Handles one event; breaks once captured sign-ins have nowhere to go.
+    async fn handle(&mut self, event: &Value) -> ControlFlow<()> {
+        let session = event["sessionId"].as_str().unwrap_or_default();
+        let params = &event["params"];
+        let ours = self.ours.contains(session);
+        match event["method"].as_str() {
+            Some("Target.attachedToTarget") => self.attached(params),
+            Some("Page.frameNavigated") if ours && self.hooks.gate == Gate::AfterCommit => {
+                self.navigated(session, params);
+            }
+            Some("Fetch.requestPaused") if ours => self.paused(session, params),
+            Some("Runtime.bindingCalled") if ours && params["name"] == capture::BINDING => {
+                return self.signed_in(params).await;
+            }
+            _ => {}
+        }
+        ControlFlow::Continue(())
+    }
+
+    /// A new target: a page is gated and instrumented, anything else just resumed.
+    fn attached(&mut self, params: &Value) {
+        let Some(target) = params["sessionId"].as_str() else {
+            return;
+        };
+        if params["targetInfo"]["type"] == "page" {
+            self.ours.insert(target.to_owned());
+            tokio::spawn(instrument(
+                self.cdp.clone(),
+                target.to_owned(),
+                self.hooks.gate,
+            ));
+        } else {
+            tokio::spawn(resume(self.cdp.clone(), target.to_owned()));
+        }
+    }
+
+    /// A committed document, checked against the grants after the fact (`Gate::AfterCommit`).
+    fn navigated(&self, session: &str, params: &Value) {
+        let url = params["frame"]["url"].as_str().unwrap_or_default();
+        tokio::spawn(gate::after_commit(
+            self.cdp.clone(),
+            self.hooks.documents.clone(),
+            session.to_owned(),
+            url.to_owned(),
+        ));
+    }
+
+    /// A held document request, answered by the rule (`Gate::Intercept`).
+    fn paused(&self, session: &str, params: &Value) {
+        tokio::spawn(gate::answer(
+            self.cdp.clone(),
+            self.hooks.documents.clone(),
+            session.to_owned(),
+            params.clone(),
+        ));
+    }
+
+    /// A sign-in the user submitted.
+    async fn signed_in(&self, params: &Value) -> ControlFlow<()> {
+        if let Some(login) = capture::parse(&params["payload"])
+            && self.hooks.captured.send(login).await.is_err()
+        {
+            return ControlFlow::Break(());
+        }
+        ControlFlow::Continue(())
     }
 }
 
