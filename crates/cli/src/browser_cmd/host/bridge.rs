@@ -4,16 +4,19 @@
 //! extension asks the person in the browser before it hands anything over, so a process that
 //! writes to the socket (an agent) cannot take a site without them. No value crosses here.
 
-use super::{VERSION, read_message, write_message};
+use super::{
+    read_message,
+    wire::{ExtensionMessageWire, HostReplyWire},
+    write_reply,
+};
 use crate::compose::App;
 use anyhow::Result;
 use keyharbor_domain::{SessionName, vault::Origin};
 use keyharbor_supervisor::bridge::{BRIDGE_WAIT, SiteAnswer, SiteAsk, bridge_socket, listen};
-use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
-    io::{BufRead, BufReader, Write},
-    os::unix::net::UnixStream,
+    io::{BufRead, BufReader, StdoutLock, Write},
+    os::unix::net::{UnixListener, UnixStream},
     sync::mpsc,
 };
 
@@ -21,28 +24,25 @@ enum Event {
     /// The app connected with one ask.
     Ask(UnixStream),
     /// A message from the extension, or `None` when it closed the connection.
-    Extension(Option<Value>),
+    Extension(Option<ExtensionMessageWire>),
+}
+
+/// Whether the bridge goes on after an ask.
+enum Served {
+    Next,
+    /// The extension is gone: the bridge ends.
+    Closed,
 }
 
 /// The `request_site` for `ask`, or the answer when it is not a site and a session name.
-fn request(id: u64, ask: &SiteAsk) -> Result<Value, SiteAnswer> {
+fn request(id: u64, ask: &SiteAsk) -> Result<HostReplyWire, SiteAnswer> {
     let origin = Origin::of_page(&ask.url).map_err(|_| SiteAnswer::BadSite)?;
     let session = SessionName::parse(&ask.session).map_err(|_| SiteAnswer::NoSession)?;
-    Ok(
-        json!({"v": VERSION, "type": "request_site", "id": id, "session": session.as_str(), "origin": origin.as_str()}),
-    )
-}
-
-/// The extension's answer to `id`, if `message` is it.
-fn answer_to(id: u64, message: &Value) -> Option<SiteAnswer> {
-    if message["type"] != "request_answer" || message["id"].as_u64() != Some(id) {
-        return None;
-    }
-    let mut answer = message.clone();
-    answer
-        .as_object_mut()?
-        .retain(|k, _| k == "outcome" || k == "cookies");
-    Some(serde_json::from_value(answer).unwrap_or(SiteAnswer::Failed))
+    Ok(HostReplyWire::RequestSite {
+        id,
+        session: session.as_str().to_owned(),
+        origin: origin.as_str().to_owned(),
+    })
 }
 
 fn reply(stream: &UnixStream, answer: SiteAnswer) {
@@ -52,13 +52,15 @@ fn reply(stream: &UnixStream, answer: SiteAnswer) {
     }
 }
 
-/// Serves the bridge until the extension disconnects; then removes the socket.
-pub(super) fn run(app: &App) -> Result<()> {
-    let socket = bridge_socket(app.root());
-    let listener = listen(app.root())?;
-    let mut out = std::io::stdout().lock();
-    write_message(&mut out, &json!({"v": VERSION, "type": "bridge_ready"}))?;
+/// The one ask an app connection carries, if it sent one.
+fn read_ask(stream: &UnixStream) -> Option<SiteAsk> {
+    let mut line = String::new();
+    BufReader::new(stream).read_line(&mut line).ok()?;
+    serde_json::from_str(line.trim()).ok()
+}
 
+/// Feeds app connections and extension messages into one channel, each from its own thread.
+fn events(listener: UnixListener) -> mpsc::Receiver<Event> {
     let (tx, rx) = mpsc::channel();
     let asks = tx.clone();
     std::thread::spawn(move || {
@@ -73,78 +75,109 @@ pub(super) fn run(app: &App) -> Result<()> {
         loop {
             let message = read_message(&mut input)
                 .ok()
-                .and_then(|body| serde_json::from_slice::<Value>(&body).ok());
+                .and_then(|body| ExtensionMessageWire::parse(&body));
             let closed = message.is_none();
             if tx.send(Event::Extension(message)).is_err() || closed {
                 break;
             }
         }
     });
+    rx
+}
 
-    let mut waiting: VecDeque<UnixStream> = VecDeque::new();
-    let mut next_id = 0u64;
-    let result = loop {
-        let stream = match waiting.pop_front() {
-            Some(stream) => stream,
-            None => match rx.recv() {
-                Ok(Event::Ask(stream)) => stream,
+/// One bridge: the extension's stdout and the asks waiting their turn.
+struct Bridge<'a> {
+    out: StdoutLock<'a>,
+    events: mpsc::Receiver<Event>,
+    waiting: VecDeque<UnixStream>,
+    next_id: u64,
+}
+
+impl Bridge<'_> {
+    /// The next ask to serve, or `None` once the extension is gone.
+    fn next_ask(&mut self) -> Option<UnixStream> {
+        if let Some(stream) = self.waiting.pop_front() {
+            return Some(stream);
+        }
+        loop {
+            match self.events.recv() {
+                Ok(Event::Ask(stream)) => return Some(stream),
                 Ok(Event::Extension(Some(_))) => continue,
-                Ok(Event::Extension(None)) | Err(_) => break Ok(()),
-            },
+                Ok(Event::Extension(None)) | Err(_) => return None,
+            }
+        }
+    }
+
+    /// Passes one ask to the extension and its answer back to the app.
+    fn serve_ask(&mut self, stream: &UnixStream) -> Served {
+        let Some(ask) = read_ask(stream) else {
+            reply(stream, SiteAnswer::Failed);
+            return Served::Next;
         };
-        let mut line = String::new();
-        let ask = BufReader::new(&stream)
-            .read_line(&mut line)
-            .ok()
-            .and_then(|_| serde_json::from_str::<SiteAsk>(line.trim()).ok());
-        let Some(ask) = ask else {
-            reply(&stream, SiteAnswer::Failed);
-            continue;
-        };
-        next_id += 1;
-        let message = match request(next_id, &ask) {
+        self.next_id += 1;
+        let message = match request(self.next_id, &ask) {
             Ok(message) => message,
             Err(answer) => {
-                reply(&stream, answer);
-                continue;
+                reply(stream, answer);
+                return Served::Next;
             }
         };
-        if write_message(&mut out, &message).is_err() {
-            reply(&stream, SiteAnswer::Failed);
-            break Ok(());
+        if write_reply(&mut self.out, &message).is_err() {
+            reply(stream, SiteAnswer::Failed);
+            return Served::Closed;
         }
-        // One ask at a time: others wait their turn; the extension's answer ends this one.
-        let answer = loop {
-            match rx.recv_timeout(BRIDGE_WAIT) {
-                Ok(Event::Ask(other)) => waiting.push_back(other),
+        match self.await_answer(self.next_id) {
+            Some(answer) => {
+                reply(stream, answer);
+                Served::Next
+            }
+            None => {
+                reply(stream, SiteAnswer::Failed);
+                Served::Closed
+            }
+        }
+    }
+
+    /// The extension's answer to `id`; `None` if it closed first. One ask at a time: others
+    /// wait their turn.
+    fn await_answer(&mut self, id: u64) -> Option<SiteAnswer> {
+        loop {
+            match self.events.recv_timeout(BRIDGE_WAIT) {
+                Ok(Event::Ask(other)) => self.waiting.push_back(other),
                 Ok(Event::Extension(Some(message))) => {
-                    if let Some(answer) = answer_to(next_id, &message) {
-                        break Some(answer);
+                    if let Some(answer) = message.answer_to(id) {
+                        return Some(answer);
                     }
                 }
                 Ok(Event::Extension(None)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    break None;
+                    return None;
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => break Some(SiteAnswer::Timeout),
-            }
-        };
-        match answer {
-            Some(answer) => reply(&stream, answer),
-            None => {
-                reply(&stream, SiteAnswer::Failed);
-                break Ok(());
+                Err(mpsc::RecvTimeoutError::Timeout) => return Some(SiteAnswer::Timeout),
             }
         }
+    }
+}
+
+/// Serves the bridge until the extension disconnects; then removes the socket.
+pub(super) fn run(app: &App) -> Result<()> {
+    let socket = bridge_socket(app.root());
+    let listener = listen(app.root())?;
+    let mut out = std::io::stdout().lock();
+    write_reply(&mut out, &HostReplyWire::BridgeReady)?;
+    let mut bridge = Bridge {
+        out,
+        events: events(listener),
+        waiting: VecDeque::new(),
+        next_id: 0,
     };
-    for stream in waiting {
+    while let Some(stream) = bridge.next_ask() {
+        if let Served::Closed = bridge.serve_ask(&stream) {
+            break;
+        }
+    }
+    for stream in bridge.waiting {
         reply(&stream, SiteAnswer::Failed);
     }
     let _ = std::fs::remove_file(&socket);
-    result
-}
-
-/// Whether the first message opens a bridge rather than asking one thing.
-pub(super) fn is_bridge(message: &[u8]) -> bool {
-    serde_json::from_slice::<Value>(message)
-        .is_ok_and(|m| m["v"] == VERSION && m["type"] == "bridge")
+    Ok(())
 }

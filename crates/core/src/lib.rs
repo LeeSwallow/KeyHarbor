@@ -30,7 +30,7 @@ pub use vault::{
     CatalogEntry, DEFAULT_ITEM_TTL, DraftItem, ExpiryChoice, GeneratedDraft, GeneratedLogin,
     ItemChange, ItemDetails, ItemFilter, ItemSource, ItemStatus, ItemSummary, ItemUse,
     MAX_FIELD_BYTES, MaskValues, NO_TTL, NewItem, Vault, VaultBackend, catalog,
-    effective_descriptions, fill_template, generate_password,
+    effective_descriptions, fill_template, generate_password, open_existing,
 };
 
 /// The agent name recorded for changes made by the local user through the CLI.
