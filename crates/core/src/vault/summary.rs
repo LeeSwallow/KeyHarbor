@@ -139,10 +139,7 @@ impl Vault {
 
     /// Whether the item is origin-bound, and its origins once its metadata verifies.
     pub fn item_origins_verified(&self, name: &ItemName) -> Result<(bool, Vec<Origin>)> {
-        let (row, _) = self
-            .store
-            .item_get(name.as_str())?
-            .context("item not found")?;
+        let (row, _) = self.load_item_row(name)?;
         let (_, _, origins) = self.verified(&row)?;
         Ok((row.origin_binding, origins))
     }

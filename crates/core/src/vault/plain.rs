@@ -32,7 +32,7 @@ impl Vault {
                 field: &field.field,
             };
             let bytes =
-                open_field(&self.domain_keys[&domain].1, &ad, &field.sealed).map_err(vault_err)?;
+                open_field(&self.domain_key(domain)?.1, &ad, &field.sealed).map_err(vault_err)?;
             let text = String::from_utf8(bytes.to_vec()).context("stored field is not UTF-8")?;
             out.insert(field.field.clone(), text);
         }
