@@ -123,9 +123,13 @@ fn frames_behind_shadow_roots_and_objects_do_not_count_as_the_page() {
     h.add("site", "login", &[&outer], json!({"username": user}));
     h.open(&browser);
     h.ok_call(json!({"op": "navigate", "url": format!("{outer}/")}));
-    h.ok_call(json!({"op": "wait", "ms": 1000}));
-    let snapshot = h.snapshot();
-    let hosts = refs_with_role(&snapshot, &["Iframe", "PluginObject", "embeddedobject"]);
+    // Wait until both hosts are there and both framed inputs have loaded.
+    let host_roles = ["Iframe", "PluginObject", "embeddedobject"];
+    let snapshot = h.snapshot_once(|text| {
+        refs_with_role(text, &host_roles).len() >= 2
+            && text.matches("textbox \"Inner\"").count() >= 2
+    });
+    let hosts = refs_with_role(&snapshot, &host_roles);
     assert!(hosts.len() >= 2, "{snapshot}");
     let mut tried = 0;
     for reference in hosts {
@@ -173,9 +177,9 @@ fn the_masker_is_no_oracle_and_escaped_values_stay_masked() {
     h.ok_call(json!({"op": "navigate", "url": format!("{base}/")}));
     h.fill("#user", "{{secret:site.username}}").unwrap();
     h.ok_call(json!({"op": "click", "target": {"selector": "#go"}}));
-    h.ok_call(json!({"op": "wait", "ms": 500}));
+    // The form went out: the URL now carries the escaped value, which every result masks.
+    h.tabs_once_at("/next?");
     h.snapshot();
-    h.ok_call(json!({"op": "tabs"}));
 
     // A URL listing every candidate PIN is refused as a whole, never answered with a
     // placeholder at the right position; the third such request locks the session.
