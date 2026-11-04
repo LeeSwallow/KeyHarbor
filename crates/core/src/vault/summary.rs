@@ -165,7 +165,7 @@ impl Vault {
 
     /// The vault's change counter; it moves on every write and key rotation.
     pub fn version(&self) -> Result<i64> {
-        self.store.vault_version()
+        Ok(self.store.vault_version()?)
     }
 }
 

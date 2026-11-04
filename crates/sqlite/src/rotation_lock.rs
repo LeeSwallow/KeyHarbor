@@ -1,9 +1,9 @@
 //! The `RotationLock` port: an exclusive OS lock on `<data dir>/vault.lock`, next to the
 //! database whose keys it protects.
 
-use crate::SqliteStore;
+use crate::{SqliteStore, error::store_error};
 use anyhow::{Context, Result};
-use keyharbor_domain::ports::{RotationGuard, RotationLock};
+use keyharbor_domain::ports::{RotationGuard, RotationLock, StoreError};
 use std::fs::{File, TryLockError};
 
 impl SqliteStore {
@@ -19,18 +19,22 @@ impl SqliteStore {
 }
 
 impl RotationLock for SqliteStore {
-    fn lock_rotation(&self) -> Result<RotationGuard> {
-        let file = self.rotation_file()?;
-        file.lock().context("cannot take the vault rotation lock")?;
+    fn lock_rotation(&self) -> Result<RotationGuard, StoreError> {
+        let file = self.rotation_file().map_err(store_error)?;
+        file.lock()
+            .context("cannot take the vault rotation lock")
+            .map_err(store_error)?;
         Ok(Box::new(file))
     }
 
-    fn try_lock_rotation(&self) -> Result<Option<RotationGuard>> {
-        let file = self.rotation_file()?;
+    fn try_lock_rotation(&self) -> Result<Option<RotationGuard>, StoreError> {
+        let file = self.rotation_file().map_err(store_error)?;
         match file.try_lock() {
             Ok(()) => Ok(Some(Box::new(file))),
             Err(TryLockError::WouldBlock) => Ok(None),
-            Err(TryLockError::Error(e)) => Err(e).context("cannot take the vault rotation lock"),
+            Err(TryLockError::Error(e)) => Err(e)
+                .context("cannot take the vault rotation lock")
+                .map_err(store_error),
         }
     }
 }

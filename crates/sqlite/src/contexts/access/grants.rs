@@ -5,18 +5,20 @@ use super::{
     models::GrantModel,
     schema::grants,
 };
-use crate::SqliteStore;
-use anyhow::{Context, Result};
+use crate::{SqliteStore, error::store_error};
+use anyhow::Context;
 use diesel::prelude::*;
 use keyharbor_domain::{
     SessionId,
     grant::{Grant, GrantId},
-    ports::GrantStore,
+    ports::{GrantStore, StoreError},
 };
+
+type Result<T, E = StoreError> = std::result::Result<T, E>;
 
 impl GrantStore for SqliteStore {
     fn grant_add(&self, value: &Grant) -> Result<()> {
-        let model = grant_model(value)?;
+        let model = grant_model(value).map_err(store_error)?;
         self.read(|conn| {
             diesel::insert_into(grants::table)
                 .values(&model)
@@ -52,7 +54,9 @@ impl GrantStore for SqliteStore {
     }
 
     fn grant_revoke(&self, id: GrantId, at: u64) -> Result<bool> {
-        let at = i64::try_from(at).context("grant time out of range")?;
+        let at = i64::try_from(at)
+            .context("grant time out of range")
+            .map_err(store_error)?;
         self.read(|conn| {
             let changed = diesel::update(
                 grants::table

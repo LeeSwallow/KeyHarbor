@@ -21,7 +21,7 @@ pub fn create(
     name: SessionName,
     description: Option<&Description>,
 ) -> Result<Session> {
-    store.create_described(name, description)
+    Ok(store.create_described(name, description)?)
 }
 
 /// Sets or clears a session's description.

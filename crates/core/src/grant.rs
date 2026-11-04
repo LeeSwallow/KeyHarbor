@@ -148,7 +148,7 @@ where
 
 pub fn list(store: &dyn Store, id: SessionId) -> Result<Vec<Grant>> {
     session(store, id)?;
-    store.grants_for(id)
+    Ok(store.grants_for(id)?)
 }
 
 /// Ends a grant now; the session's supervisor then clears its cookies.

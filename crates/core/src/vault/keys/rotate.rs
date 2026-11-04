@@ -84,8 +84,9 @@ impl Vault {
             .collect::<Result<Vec<_>>>()
             .and_then(|metas| {
                 hook();
-                self.store
-                    .rekey_domain_keys(version, *kek_id.as_bytes(), &dks, &metas)
+                Ok(self
+                    .store
+                    .rekey_domain_keys(version, *kek_id.as_bytes(), &dks, &metas)?)
             });
         if let Err(e) = committed {
             self.keys = old_keys;

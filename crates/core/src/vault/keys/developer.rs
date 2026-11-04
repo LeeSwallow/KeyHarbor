@@ -8,7 +8,7 @@
 use crate::vault::{Vault, vault_err};
 use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
-    ports::{DomainKeyRow, FieldRow, ItemRow},
+    ports::{DomainKeyRow, FieldRow, ItemRow, StoreError},
     vault::{Domain, ItemKind},
 };
 use keyharbor_vault::{
@@ -38,7 +38,7 @@ impl Vault {
             }
             match self.move_developer_items() {
                 Ok(()) => return Ok(()),
-                Err(e) if e.to_string().contains("vault changed") => continue,
+                Err(e) if lost_a_race(&e) => continue,
                 Err(e) => return Err(e),
             }
         }
@@ -110,6 +110,14 @@ impl Vault {
         self.domain_keys.insert(Domain::Developer, (dk_id, dk));
         Ok(())
     }
+}
+
+/// The store refused the move because the vault moved meanwhile: decided by the variant, not
+/// by the store's words (#200).
+fn lost_a_race(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<StoreError>()
+        .is_some_and(StoreError::is_stale)
 }
 
 #[cfg(test)]
@@ -216,5 +224,171 @@ mod tests {
         assert_eq!(open_store(&e.data).domain_keys().unwrap().len(), 4);
         assert_eq!(open_store(&e.data).item_list().unwrap()[0].domain, 4);
         assert_eq!(&*v.resolve(&pref("api", "value")).unwrap(), "KH-SYNTH-new");
+    }
+
+    /// A store that refuses `add_domain` with `refusal` the first `refusals` times and
+    /// otherwise passes every call to the real store.
+    mod refusing {
+        use keyharbor_domain::{
+            audit::{AuditEvent, AuditRecord},
+            ports::{
+                AuditStore, DomainKeyRow, FieldRow, ItemRow, KeyGuard, RotationGuard, RotationLock,
+                SettingsStore, StoreError, VaultRow, VaultStore,
+            },
+        };
+        use keyharbor_sqlite::SqliteStore;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        type Result<T, E = StoreError> = std::result::Result<T, E>;
+
+        pub struct RefusingStore {
+            pub inner: SqliteStore,
+            pub refusals: usize,
+            pub refusal: fn() -> StoreError,
+            pub add_domain_calls: Arc<AtomicUsize>,
+        }
+
+        impl VaultStore for RefusingStore {
+            fn add_domain(
+                &self,
+                expected_version: i64,
+                dk: &DomainKeyRow,
+                items: &[(ItemRow, Vec<FieldRow>)],
+            ) -> Result<()> {
+                let call = self.add_domain_calls.fetch_add(1, Ordering::SeqCst);
+                if call < self.refusals {
+                    return Err((self.refusal)());
+                }
+                self.inner.add_domain(expected_version, dk, items)
+            }
+            fn vault_get(&self) -> Result<Option<VaultRow>> {
+                self.inner.vault_get()
+            }
+            fn vault_create(&self, vault: &VaultRow, dks: &[DomainKeyRow]) -> Result<()> {
+                self.inner.vault_create(vault, dks)
+            }
+            fn domain_keys(&self) -> Result<Vec<DomainKeyRow>> {
+                self.inner.domain_keys()
+            }
+            fn item_insert(&self, g: &KeyGuard, item: &ItemRow, f: &[FieldRow]) -> Result<()> {
+                self.inner.item_insert(g, item, f)
+            }
+            fn item_update(&self, g: &KeyGuard, item: &ItemRow, f: &[FieldRow]) -> Result<()> {
+                self.inner.item_update(g, item, f)
+            }
+            fn item_replace(
+                &self,
+                g: &KeyGuard,
+                replaced: &str,
+                item: &ItemRow,
+                f: &[FieldRow],
+            ) -> Result<()> {
+                self.inner.item_replace(g, replaced, item, f)
+            }
+            fn item_delete(&self, name: &str) -> Result<bool> {
+                self.inner.item_delete(name)
+            }
+            fn item_get(&self, name: &str) -> Result<Option<(ItemRow, Vec<FieldRow>)>> {
+                self.inner.item_get(name)
+            }
+            fn item_list(&self) -> Result<Vec<ItemRow>> {
+                self.inner.item_list()
+            }
+            fn rekey_domain_keys(
+                &self,
+                version: i64,
+                kek: [u8; 16],
+                dks: &[DomainKeyRow],
+                metas: &[([u8; 16], Vec<u8>)],
+            ) -> Result<()> {
+                self.inner.rekey_domain_keys(version, kek, dks, metas)
+            }
+            fn replace_domain(
+                &self,
+                version: i64,
+                dk: &DomainKeyRow,
+                fields: &[([u8; 16], FieldRow)],
+            ) -> Result<()> {
+                self.inner.replace_domain(version, dk, fields)
+            }
+            fn vault_version(&self) -> Result<i64> {
+                self.inner.vault_version()
+            }
+        }
+        impl RotationLock for RefusingStore {
+            fn lock_rotation(&self) -> Result<RotationGuard> {
+                self.inner.lock_rotation()
+            }
+            fn try_lock_rotation(&self) -> Result<Option<RotationGuard>> {
+                self.inner.try_lock_rotation()
+            }
+        }
+        impl AuditStore for RefusingStore {
+            fn record(&self, event: &AuditEvent) -> Result<bool> {
+                self.inner.record(event)
+            }
+            fn list_audit(&self, limit: Option<usize>) -> Result<Vec<AuditRecord>> {
+                self.inner.list_audit(limit)
+            }
+        }
+        impl SettingsStore for RefusingStore {
+            fn setting_get(&self, key: &str) -> anyhow::Result<Option<String>> {
+                self.inner.setting_get(key)
+            }
+            fn setting_set(&self, key: &str, value: &str) -> anyhow::Result<()> {
+                self.inner.setting_set(key, value)
+            }
+        }
+    }
+
+    fn open_refusing(
+        e: &crate::tests::Env,
+        refusal: fn() -> keyharbor_domain::ports::StoreError,
+    ) -> (
+        anyhow::Result<crate::Vault>,
+        std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) {
+        let calls = std::sync::Arc::default();
+        let store = refusing::RefusingStore {
+            inner: open_store(&e.data),
+            refusals: 1,
+            refusal,
+            add_domain_calls: std::sync::Arc::clone(&calls),
+        };
+        let opened = crate::Vault::open(
+            store,
+            Box::new(keyharbor_keystore::FileKeyStore::new(e.keys.clone())),
+            crate::tests::test_clock(),
+        );
+        (opened, calls)
+    }
+
+    #[test]
+    fn a_stale_store_error_retries_the_move() {
+        use keyharbor_domain::ports::{Staleness, StoreError};
+        let e = env();
+        legacy_vault(&e);
+        let (opened, calls) = open_refusing(&e, || StoreError::Stale(Staleness::VersionMoved));
+        let v = crate::tests::TestVault(opened.unwrap());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(open_store(&e.data).domain_keys().unwrap().len(), 4);
+        assert_eq!(&*v.resolve(&pref("api", "value")).unwrap(), "KH-SYNTH-api");
+    }
+
+    #[test]
+    fn the_words_vault_changed_alone_do_not_retry() {
+        use keyharbor_domain::ports::StoreError;
+        let e = env();
+        legacy_vault(&e);
+        let (opened, calls) = open_refusing(&e, || {
+            StoreError::backend(std::io::Error::other("vault changed, but not a race"))
+        });
+        let err = opened.err().expect("a backend error is not retried");
+        assert_eq!(err.to_string(), "vault changed, but not a race");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(open_store(&e.data).domain_keys().unwrap().len(), 3);
     }
 }

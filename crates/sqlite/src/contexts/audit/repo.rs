@@ -2,12 +2,13 @@
 
 use super::{mappers::record, models::AuditModel, schema::audit};
 use crate::{SqliteStore, contexts::config};
-use anyhow::Result;
 use diesel::{prelude::*, sql_types::Text};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditRecord},
-    ports::AuditStore,
+    ports::{AuditStore, StoreError},
 };
+
+type Result<T, E = StoreError> = std::result::Result<T, E>;
 
 diesel::define_sql_function! {
     /// SQLite's `strftime(format, time)`.
@@ -48,7 +49,7 @@ impl AuditStore for SqliteStore {
                 .load(conn)?
                 .into_iter()
                 .map(record)
-                .collect::<Result<Vec<_>>>()
+                .collect::<anyhow::Result<Vec<_>>>()
         })?;
         records.reverse();
         Ok(records)

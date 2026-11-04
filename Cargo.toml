@@ -12,6 +12,8 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 aho-corasick = "1"
 anyhow = "1"
+# Typed errors at port and crate boundaries (J-260); `anyhow` stays at binary boundaries.
+thiserror = "2"
 # No `v4` feature: v4 ids are built from keyharbor-crypto's random bytes (ADR-0016).
 uuid = "1"
 diesel = { version = "2.3", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }

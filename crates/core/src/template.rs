@@ -10,7 +10,7 @@ use keyharbor_domain::{
 
 /// Every template, by name.
 pub fn list(store: &dyn TemplateStore) -> Result<Vec<CredentialTemplate>> {
-    store.template_list()
+    Ok(store.template_list()?)
 }
 
 /// Adds `template`; refused if one of that name exists (remove it first).

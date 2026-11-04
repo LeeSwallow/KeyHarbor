@@ -249,7 +249,7 @@ impl Vault {
         };
         let mut plaintext = WipingBuffer::new();
         serde_json::to_writer(&mut plaintext, &doc)?;
-        encrypt_age(passphrase, &plaintext.0)
+        Ok(encrypt_age(passphrase, &plaintext.0)?)
     }
 
     /// Adds every item of the age file `encrypted` whose name is free; existing names are left

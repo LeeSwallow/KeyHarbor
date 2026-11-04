@@ -11,7 +11,7 @@ use keyharbor_domain::{
 
 /// Every rule, ordered by agent, resource and target.
 pub fn list(store: &dyn PolicyStore) -> Result<Vec<Rule>> {
-    store.policy_rules()
+    Ok(store.policy_rules()?)
 }
 
 /// Adds or changes a rule. Any allow rule widens access, so it needs a person (R-35).

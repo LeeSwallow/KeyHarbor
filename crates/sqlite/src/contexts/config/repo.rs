@@ -1,4 +1,4 @@
-//! `SettingsStore` for the config context.
+//! `SettingsStore` for the config context. The port still speaks `anyhow` (J-260).
 
 use super::{models::NewSetting, schema::settings};
 use crate::SqliteStore;
@@ -24,11 +24,11 @@ pub(crate) fn audit_enabled(conn: &mut SqliteConnection) -> QueryResult<bool> {
 
 impl SettingsStore for SqliteStore {
     fn setting_get(&self, key: &str) -> Result<Option<String>> {
-        self.read(|conn| Ok(get(conn, key)?))
+        Ok(self.read(|conn| Ok(get(conn, key)?))?)
     }
 
     fn setting_set(&self, key: &str, value: &str) -> Result<()> {
-        self.read(|conn| {
+        Ok(self.read(|conn| {
             diesel::insert_into(settings::table)
                 .values(NewSetting { key, value })
                 .on_conflict(settings::key)
@@ -36,6 +36,6 @@ impl SettingsStore for SqliteStore {
                 .set(settings::value.eq(excluded(settings::value)))
                 .execute(conn)?;
             Ok(())
-        })
+        })?)
     }
 }
