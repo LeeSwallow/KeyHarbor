@@ -84,7 +84,7 @@ fn fulfill_request(
     ctx: State<'_, Ctx>,
     id: String,
     values: BTreeMap<String, String>,
-) -> Reply<String> {
+) -> Reply<commands::Saved> {
     commands::fulfill_request(&ctx, &id, values).map_err(message)
 }
 #[tauri::command]
@@ -160,7 +160,7 @@ fn kinds() -> Vec<KindForm> {
     commands::kinds()
 }
 #[tauri::command]
-fn add_item(ctx: State<'_, Ctx>, form: NewItemForm) -> Reply<String> {
+fn add_item(ctx: State<'_, Ctx>, form: NewItemForm) -> Reply<commands::Saved> {
     commands::add_item(&ctx, form).map_err(message)
 }
 #[tauri::command]
@@ -169,7 +169,7 @@ fn edit_item(
     name: String,
     form: ChangeForm,
     confirmed: bool,
-) -> Reply<Outcome> {
+) -> Reply<commands::Edited> {
     commands::edit_item(&ctx, &name, form, confirmed).map_err(message)
 }
 #[tauri::command]

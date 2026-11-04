@@ -5,7 +5,9 @@
 use super::{
     Toggle,
     input::{FieldInput, collect_fields, field_name, item_name, origins},
-    kind_parser, status_parser,
+    kind_parser,
+    output::warn_common_values,
+    status_parser,
 };
 use crate::{
     args::{DescriptionArgs, ExpiryArgs},
@@ -122,8 +124,9 @@ pub fn add(app: &App, args: &AddArgs) -> Result<()> {
             plain_fields: field_names(kind, &args.plain)?,
         },
     };
-    items::add(&vault, item, &args.about.texts())?;
+    let warnings = items::add(&vault, item, &args.about.texts())?;
     println!("added\t{}", name.as_str());
+    warn_common_values(&warnings);
     Ok(())
 }
 
@@ -153,8 +156,9 @@ pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
         make_plain: field_names(kind, &args.plain)?,
         make_secret: field_names(kind, &args.secret)?,
     };
-    items::edit(&vault, &TtyConfirm, &name, change, &args.about.texts())?;
+    let warnings = items::edit(&vault, &TtyConfirm, &name, change, &args.about.texts())?;
     println!("updated\t{}", name.as_str());
+    warn_common_values(&warnings);
     Ok(())
 }
 

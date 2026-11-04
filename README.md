@@ -67,6 +67,8 @@ printf '{"username":"me","password":"…"}' | \
   keyharbor vault add github --kind login --origin https://github.com --stdin
 ```
 
+비밀 필드에 "해당없음"·"none" 같은 흔한 말이나 4자 미만 값을 넣으면 페이지에서 오탐이 나거나 가려지지 않으므로 항목·필드·이유만 담아 경고합니다(값은 출력하지 않고, 저장은 됩니다).
+
 Chrome에 저장된 비밀번호가 있으면 한 번에 가져올 수 있습니다: Chrome 설정 → 비밀번호 관리자 → 내보내기 → `keyharbor vault import-chrome ~/Downloads/passwords.csv`.
 
 **3. 에이전트를 연결합니다.** Claude Code에서:

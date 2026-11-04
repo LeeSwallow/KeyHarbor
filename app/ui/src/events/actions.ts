@@ -54,6 +54,7 @@ export function windowActions(w: Win): Actions {
     "open-form": ({ id }) => {
       if (id) void guard(async () => w.set(openForm(w.state, await api.requestForm(id))));
     },
+    "close-window": () => void guard(() => api.closeRequestWindow()),
     decline: ({ id }) => {
       if (id) void guard(() => api.declineRequest(id).then(() => finishRequest(w)));
     },

@@ -2,7 +2,9 @@
 // `revealed` and every move away (another screen, another item, hiding) drops it (09 §9.12,
 // Review Focus 1).
 
-import type { AuditEvent, Browsers, Handoff, Inbox, Item, KindForm, Overview, RequestForm, Rule, Session, Setting } from "./api.js";
+import type {
+  AuditEvent, Browsers, Handoff, Inbox, Item, KindForm, Overview, RequestForm, Rule, Session, Setting, ValueWarning,
+} from "./api.js";
 
 export type View = "home" | "inbox" | "sessions" | "items" | "audit" | "policies" | "settings";
 
@@ -55,6 +57,9 @@ export interface State {
   filter: Filter;
   /// A short note of how something ended (a dropped site), shown until the next move.
   notice: string | null;
+  /// Secret values just saved that masking handles badly: which field and why, never the
+  /// value (J-230). Shown until the next move to another screen or item.
+  warnings: ValueWarning[];
   /// An item removed a moment ago and hidden; it is deleted only when the undo time runs out.
   removing: string | null;
   /// A session removed a moment ago, the same way (#123).
@@ -88,6 +93,7 @@ export const initial: State = {
   removingSession: null,
   browsers: { ego_lite: false },
   notice: null,
+  warnings: [],
   alone: false,
   selected: null,
   revealed: null,
@@ -95,7 +101,7 @@ export const initial: State = {
 };
 
 export const go = (s: State, view: View): State =>
-  ({ ...s, view, selected: null, revealed: null, form: null, ask: null, editor: null, error: null, notice: null, filter: NO_FILTER });
+  ({ ...s, view, selected: null, revealed: null, form: null, ask: null, editor: null, error: null, notice: null, warnings: [], filter: NO_FILTER });
 export const removing = (s: State, name: string): State => ({ ...s, removing: name, selected: null, editor: null, revealed: null });
 export const undoRemove = (s: State): State => ({ ...s, removing: null });
 export const removingSession = (s: State, id: string, name: string): State => ({ ...s, removingSession: { id, name } });
@@ -112,7 +118,8 @@ export const openForm = (s: State, form: RequestForm): State => ({ ...s, view: "
 export const alone = (s: State, form: RequestForm | null): State => ({ ...s, alone: true, form });
 export const closeForm = (s: State): State => ({ ...s, form: null });
 export const asking = (s: State, ask: Ask | null): State => ({ ...s, ask });
-export const select = (s: State, name: string): State => ({ ...s, selected: name, revealed: null, editor: null });
+export const select = (s: State, name: string): State => ({ ...s, selected: name, revealed: null, editor: null, warnings: [] });
+export const warned = (s: State, warnings: ValueWarning[]): State => ({ ...s, warnings });
 export const edit = (s: State, editor: Editor | null): State => ({ ...s, editor, revealed: null });
 /// The new item form for the first kind; nothing until the kinds have loaded (no form to show).
 export const editNew = (s: State): State => {

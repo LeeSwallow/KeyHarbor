@@ -23,8 +23,8 @@ pub use answers::{
 pub use inbox::{InboxDto, confirm_draft, decline_request, discard_draft, inbox};
 pub use items::{ItemDto, copy_placeholder, copy_value, items, reveal};
 pub use manage::{
-    ChangeForm, FormField, KindForm, NewItemForm, add_item, edit_item, kinds, remove_item,
-    rename_item,
+    ChangeForm, Edited, FormField, KindForm, NewItemForm, Saved, ValueWarningDto, add_item,
+    edit_item, kinds, remove_item, rename_item,
 };
 pub use overview::{AuditDto, OverviewDto, audit, open_app, overview};
 pub use presence::{

@@ -2,7 +2,7 @@
 // (#182). The secure input form's handler is not here: main.ts keeps it as it was.
 
 import { ANY } from "../api.js";
-import { edit, select } from "../state.js";
+import { edit, select, warned } from "../state.js";
 import { editorValues } from "../views/editor.js";
 import { joinFolders, parseFolders } from "../views/settings.js";
 import { type Win, change, load } from "./window.js";
@@ -41,14 +41,17 @@ export function windowForms(w: Win): Omit<Forms, "request"> {
       const { values, origins } = editorValues(data);
       const item = { name: text(data, "name"), kind, origins, values, generate_password: data.get("generate") === "on" };
       el.reset();
-      void guard(() => api.addItem(item).then(selectAfterLoad));
+      void guard(() => api.addItem(item).then((saved) => selectAfterLoad(saved.name).then(() => w.set(warned(w.state, saved.warnings)))));
     },
     "edit-item": (el, data) => {
       const name = el.dataset.name;
       if (!name) return;
       const { values, origins } = editorValues(data);
       el.reset();
-      void change(w, (confirmed) => api.editItem(name, { values, origins }, confirmed)).then(() => w.set(edit(w.state, null)));
+      // The warnings land with the answer that stored the change, the confirmed resend too.
+      const send = (confirmed: boolean) =>
+        api.editItem(name, { values, origins }, confirmed).then((edited) => (w.set(warned(w.state, edited.warnings)), edited));
+      void change(w, send).then(() => w.set(edit(w.state, null)));
     },
     "rename-item": (el, data) => {
       const from = el.dataset.name;

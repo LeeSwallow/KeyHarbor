@@ -1,6 +1,7 @@
 //! How items are printed: a tab-separated line or a JSON object, never a value.
 
 use keyharbor_core::ItemSummary;
+use keyharbor_domain::vault::CommonValueWarning;
 
 pub fn summary_line(item: &ItemSummary) -> String {
     format!(
@@ -54,4 +55,20 @@ pub fn summary_json(item: &ItemSummary) -> serde_json::Value {
         "updated_at": item.updated_at,
         "tampered": item.tampered,
     })
+}
+
+/// One stderr line per secret value masking handles badly: the field and why, and how to
+/// leave it unmasked. Never the value (J-230).
+pub fn warn_common_values(warnings: &[CommonValueWarning]) {
+    for warning in warnings {
+        eprintln!("{}", warning_line(warning));
+    }
+}
+
+fn warning_line(warning: &CommonValueWarning) -> String {
+    format!(
+        "warning: {warning} (keyharbor vault edit {} --plain {})",
+        warning.item.as_str(),
+        warning.field.as_str()
+    )
 }

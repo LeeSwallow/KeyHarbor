@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "../src/api.js";
-import { alone, asking, closeForm, edit, go, hide, initial, openForm, select, show } from "../src/state.js";
+import { alone, asking, closeForm, edit, go, hide, initial, openForm, select, show, warned } from "../src/state.js";
 import { editorValues } from "../src/views/editor.js";
 import { formValues } from "../src/views/form.js";
 import { esc, render } from "../src/view.js";
@@ -181,5 +181,26 @@ describe("what Rust decides, the window only shows", () => {
   it("offers generation only for the field a kind names", () => {
     const kinds = [{ kind: "secret", domain: "developer", fields: [{ name: "value", secret: true }], free_fields: false, custom_fields: false, generates: "value" }];
     expect(render(edit({ ...initial, view: "items", kinds }, { mode: "new", kind: "secret" }))).toContain("값 생성");
+  });
+});
+
+describe("value warnings (J-230)", () => {
+  const warnings = [{ item: "me", field: "military_service", reason: "common_word" }];
+
+  it("name the item, the field and why, with the plain hint, until the next move", () => {
+    const html = render(warned(select(withItems, "github"), warnings));
+    expect(html).toContain("me · 병역");
+    expect(html).toContain("흔한 말이라");
+    expect(html).toContain("plain 필드는 가리지 않습니다");
+    for (const away of [go(warned(withItems, warnings), "home"), select(warned(withItems, warnings), "other")]) {
+      expect(away.warnings).toEqual([]);
+    }
+  });
+
+  it("keep the secure input window open with a close button", () => {
+    const html = render(warned(alone(initial, null), warnings));
+    expect(html).toContain("병역");
+    expect(html).toContain('data-action="close-window"');
+    expect(html).not.toContain("이 요청은 이미 끝났습니다");
   });
 });

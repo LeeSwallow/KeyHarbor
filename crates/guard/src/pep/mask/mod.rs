@@ -21,7 +21,8 @@ mod variants;
 
 pub use stream::StreamMasker;
 
-pub const MIN_MASKED_CHARS: usize = 4;
+/// Defined with the vault's vocabulary, where saving a short secret warns about it (J-230).
+pub use keyharbor_domain::vault::MIN_MASKED_CHARS;
 /// A paused stream holds back a trailing piece of this many bytes or more that a value starts
 /// with. One: showing even two characters would leave the rest of the value unmatched, and so
 /// unmasked, when it follows (J-83). The cost is that a prompt ending in a character some
