@@ -220,7 +220,9 @@ fn no_command_prints_plaintext() {
     );
     run(
         &["vault", "add", "visa", "--kind", "card", "--stdin"],
-        Some(&format!(r#"{{"number":"{s}-card","cvc":"9876"}}"#)),
+        // A short secret, with characters a vault id (hex) or a temporary path never holds, so
+        // a random id in the transcript cannot be mistaken for a leak.
+        Some(&format!(r#"{{"number":"{s}-card","cvc":"9#7%"}}"#)),
     );
     run(
         &["vault", "add", "me", "--kind", "identity", "--stdin"],
@@ -300,7 +302,10 @@ fn no_command_prints_plaintext() {
     for v in variants(s) {
         assert!(!transcript.contains(&v), "leaked {v:?} in:\n{transcript}");
     }
-    assert!(!transcript.contains("9876"));
+    assert!(
+        !transcript.contains("9#7%"),
+        "leaked the card code in:\n{transcript}"
+    );
 }
 
 #[test]
