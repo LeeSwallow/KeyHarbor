@@ -4,8 +4,8 @@
 
 ```mermaid
 flowchart LR
-  UI["ui/ (TypeScript)<br/>state · view · main"] -- "invoke" --> M["src/main.rs<br/>Tauri 명령 (전달만)"]
-  M --> C["src/commands/<br/>overview · items · sessions · inbox · presence"]
+  UI["ui/ (TypeScript)<br/>state · view · views · events · main"] -- "invoke" --> M["src/main.rs<br/>Tauri 명령 (전달만)"]
+  M --> C["src/commands/<br/>overview · items · manage · sessions<br/>inbox · answers · admin · presence"]
   C --> core["keyharbor-core"]
   C --> guard["keyharbor-guard<br/>reveal (값 보기, 기록)"]
   C -- "처리 전에 challenge(scope)" --> A["src/auth.rs<br/>Authenticator · NoneAuth"]

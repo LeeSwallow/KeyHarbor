@@ -46,7 +46,7 @@ flowchart LR
 
 - CLI와 MCP는 같은 유스케이스를 부르는 두 얼굴이다. 같은 규칙이 CLI와 MCP에 따로 있으면 하나가 틀린 것이다. 둘 다 core·guard를 부르고, 자기 일은 인자 파싱과 출력 모양뿐이다.
 - 네트워크·IPC(MCP stdio, control socket, CDP 파이프, Native Messaging)의 메시지 형식은 어댑터의 wire 타입(`*Wire`, `*Request`, `*Response`)이다. 안쪽 타입에 wire 필드 이름이 보이면 누수다.
-- 어댑터는 이름을 번역만 한다. 판정하지 않고, 오류를 우리 말(`VaultError`, `Denial`)로 옮긴다.
+- 어댑터는 이름을 번역만 한다. 판정하지 않고, 오류를 우리 말(`VaultError`, `DenialReason`)로 옮긴다.
 - 유스케이스는 결과 값을 돌려주고, 출력·로그·사용 기록 그리기는 바깥이 한다.
 
 ## 새 코드를 어디에 둘지
@@ -79,9 +79,9 @@ flowchart TD
 | 사람 확인 (터미널, 관리 앱) | Port + Adapter (`trait Confirm`) | 어댑터 하나. 약화 작업 목록은 `WeakeningOp` 표 한 곳 |
 | 브라우저 연결 (전용 프로필, 이후 다른 방식) | Port + Adapter (`BrowserPort`, `FrameInspector`, `PageInput`) | 어댑터 하나 |
 | 평문을 다루는 브라우저 호출 | Decorator (`GuardedBrowser`) | guard가 감싸고 어댑터는 모른다 |
-| 저장 | Repository + Data Mapper, 바운디드 컨텍스트(vault·session·access·audit·config) | 컨텍스트 안에 `schema`·`models`·`mappers`·`repo`·새 마이그레이션. 컨텍스트끼리 models·repo를 가져다 쓰지 않는다 |
+| 저장 | Repository + Data Mapper, 바운디드 컨텍스트(vault·session·site·request·access·audit·config) | 컨텍스트 안에 `schema`·`models`·`mappers`·`repo`·새 마이그레이션. 컨텍스트끼리 models·repo를 가져다 쓰지 않는다 |
 | 암호 용도 | 용도 enum (`KeyPurpose`) + suite 표 | 한 줄 |
-| 디자인 검사 규칙 | Strategy + Registry (`trait Rule`) | `rules/<규칙>.rs` 하나 + 등록 |
+| 디자인 검사 규칙 | Strategy + Registry (`trait Rule`) | `rules/<묶음>/<규칙>.rs` 하나 + 등록 |
 | 브라우저 확장 대상 (Chrome, Firefox, 이후 Edge) | Ports + Adapters, manifest base + 오버레이 | 어댑터 폴더 + 오버레이 + 빌드 대상 등록 |
 
 **값은 만들 때 검사한다.** 이름 있는 값은 newtype(`ItemName`, `Origin`, `Description`, `Expiry`)으로 만들고 생성자에서 불변식을 검사한다. 어긴 값은 존재하지 않아야 뒤 단계가 다시 확인하지 않는다.
@@ -135,13 +135,13 @@ flowchart LR
 | 무엇 | 규칙 | 예 |
 |---|---|---|
 | port | 역할 명사. 기술을 말하지 않는다 | `Store`, `BrowserPort`, `FrameInspector`, `Confirm` |
-| 구현 | 기술 접두사 + 역할 | `SqliteStore`, `CdpBrowser`, `TtyConfirm`, `KeychainKeystore` |
-| wire 모양 | 바깥 형식임을 접미사로 | `ReceiveSiteWire`, `CdpCookieParam`, `ToolResponse` |
-| 안쪽 타입 | 접미사 없이 우리 말 | `Item`, `Origin`, `Grant`, `Denial` |
-| 동작 메서드 | 동사 + 목적어 | `seal_field`, `record_denial`, `hand_off_site` |
-| 읽기 메서드 | I/O가 있으면 `load_`·`find_`·`read_`, 순수 계산이면 명사 | `load_item`, `find_grant`, `masker` |
+| 구현 | 기술 접두사 + 역할 | `SqliteStore`, `CdpBrowser`, `TtyConfirm`, `KeychainKeyStore` |
+| wire 모양 | 바깥 형식임을 접미사로 | `ReceiveSiteWire`, `CookieWire`, `ControlResponse` |
+| 안쪽 타입 | 접미사 없이 우리 말 | `ItemName`, `Origin`, `Grant`, `DenialReason` |
+| 동작 메서드 | 동사 + 목적어 | `seal_field`, `record_denial`, `receive_site` |
+| 읽기 메서드 | I/O가 있으면 `load_`·`find_`·`read_`, 순수 계산이면 명사 | `load_item_row`, `find_handoff`, `masker` |
 | 판정 메서드 | `is_`·`has_`·`can_`·`allows_` | `allows_frame`, `is_expired` |
-| 변환 | `to_x` · `from_x` · `parse_x` · `as_x` | `to_cookie_param`, `parse_agent` |
+| 변환 | `to_x` · `from_x` · `parse_x` · `as_x` | `to_argv`, `from_cdp`, `parse_agent` |
 
 한 관심사의 이름은 하나다. 같은 것을 두 이름으로 부르지 않는다(`item`과 `entry`, `origin`과 `site`를 섞지 않는다. 사이트는 사람에게 보이는 말, origin은 코드의 말).
 

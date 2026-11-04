@@ -83,7 +83,7 @@ flowchart LR
 | 사용 기록 | 이벤트 종류별 기록, 기록 끄기 ✅. 끄면 거부·경고를 포함해 아무것도 기록하지 않는다 |
 | `keyharbor run --env` / `--env-file` | 주입, stdout·stderr 마스킹, 종료 코드 전달, 정책 거부 시 실행 안 함 ✅ |
 | 카드 입력 | 같은 프로세스의 교차 출처 iframe에서 등록된 origin만 입력 ✅. **다른 사이트 iframe(OOPIF, 예: 실제 결제사 도메인)은 미완**: 그 iframe은 별도 CDP target이라 snapshot·ref가 닿지 않는다 |
-| 등록 경로 ([08](08-registration-flows.md)) | **미완**: 이번 계획 범위 밖. `vault_generate`·`vault_put`·로그인 포착은 이후 단계에서 |
+| 등록 경로 ([08](08-registration-flows.md)) | 이번 계획 범위 밖. `vault_generate`·`vault_put`·로그인 포착은 4단계에서 구현했다 ✅ (아래 4단계) |
 | 메타데이터 MAC ([07 §7.6.3](07-cryptography-design.md#763-메타데이터-mac)) | DB에서 origin 목록을 바꾸면 입력 거부 ✅ (`denied: <item> (tampered)`) |
 | Keychain 접근 확인창 실험 (1단계에서 이월) | **미완**: 자동화 테스트는 파일 키 저장소를 쓴다. 실제 Keychain으로 감독자의 첫 치환·마스킹 때 창이 뜨는지는 사람이 확인해야 한다 |
 
@@ -116,7 +116,7 @@ flowchart LR
 | 범위 | 완료 조건 |
 |---|---|
 | `SITE_STATE` 테이블, `site_state_get/set` | 세션·origin별 왕복, 잘못된 origin 거부 ✅ (`tests/site_state.rs`) |
-| `session_account` 대체 | 기존 도구 제거와 README 이전 안내 |
+| `session_account` 대체 | 재구현의 MCP 도구에는 없다 ✅ (`vault_list`·`site_state`로 대체, [02 §2.9](02-system-architecture.md#29-mcp-도구-표면)). README 이전 안내는 쓰지 않았다 |
 | `vault_generate`·`vault_put` | draft로만 저장, 같은 이름은 `~draft-N`, 응답에 값 없음, draft를 placeholder로 바로 입력 ✅ (`tests/vault_drafts.rs`) |
 | `vault_request`·`vault_wait`, CLI `vault requests/fulfill/decline` | 시간이 다 된 대기는 요청을 남기고, 거절은 `declined`, 답에는 값이 없다 ✅ (`tests/vault_requests.rs`) |
 | draft 확정·폐기·정리 | 생성 draft는 `logged_in`에서 확정, 에이전트가 put한 draft는 확정되지 않음, 번호 draft 확정은 원래 항목 대체, `prune-drafts`와 `draft_ttl` ✅ (`tests/vault_drafts.rs`) |
@@ -129,11 +129,11 @@ flowchart LR
 | 범위 | 완료 조건 |
 |---|---|
 | Tauri 앱 골격 | core·guard 직접 호출(`app/`, 별도 워크스페이스), 네트워크 listener 없음(`lsof` 확인), 금고 없으면 키를 만들지 않고 안내, 값 보기는 guard `reveal`만·기록됨, 다른 항목·화면으로 가면 보인 값이 DOM에서 사라짐, 변조 항목은 보기 없음 ✅ (`app/tests/commands.rs`, `app/ui/test`) |
-| 금고·세션·정책·기록·설정 화면 | 각 화면의 CRUD, 평문 보기, 비밀번호 생성 |
+| 금고·세션·정책·기록·설정 화면 | 각 화면의 CRUD, 평문 보기, 비밀번호 생성 ✅ (`app/src/commands/`, `app/tests/commands.rs`, `app/ui/test/screens.test.ts`) |
 | 인증 trait + `NoneAuth` | 설정 화면에 현재 방식과 안내 문구 ✅ (`app/src/auth.rs`, 거절하는 대역이면 처리하지 않음: `app/tests/auth.rs`, 화면: `app/ui/test/settings.test.ts`) |
 | 대기 중인 인계 재개 | CLI `resume`과 같은 조건 ✅ (앱 확인 대기의 [재개]) |
 | 보안 입력 창 · `vault_request`/`vault_wait` | 요청 → 창 → 저장 → placeholder 반환, 거절 경로 ✅ (`app/tests/commands.rs`, 폼은 비밀 필드 password·자동 완성 끔, 닫으면 DOM에서 사라짐). 별도 항상 위 창(화면 녹화에서 제외) ✅ (`app/src/shell/request_window.rs`) |
-| 메뉴 막대 · 알림 · 명령 팔레트 | [09 §9.8](09-app-ux.md#98-전체-동작-목록)의 동작 목록을 체크리스트로 사용. 메뉴 막대(템플릿 아이콘, 확인 대기 개수, 상태·열기·종료, 창을 닫아도 남음) ✅. 알림(새 요청·인계·draft·거부, 종류별 끄기, 값·사유 없음) ✅ (`app/src/commands/overview/notices.rs`). 명령 팔레트(⌘K) ✅ (`app/ui/test/palette.test.ts`) |
+| 메뉴 막대 · 알림 · 명령 팔레트 | [09 §9.8](09-app-ux.md#98-전체-동작-목록)의 동작 목록을 체크리스트로 사용. 메뉴 막대(템플릿 아이콘, 확인 대기 개수, 상태·열기·종료, 창을 닫아도 남음) ✅. 알림(새 요청·인계·draft·거부, 종류별 끄기, 값·사유 없음) ✅ (`app/src/commands/presence/notices.rs`). 명령 팔레트(⌘K) ✅ (`app/ui/test/palette.test.ts`) |
 | 클립보드 | ConcealedType 표시, 30초 자동 지우기 ✅ (`app/src/clipboard.rs`, 실제 NSPasteboard 테스트는 CI의 macOS `app` job에서 `--ignored`로) |
 
 ### 6단계 — 플러그인·문서
