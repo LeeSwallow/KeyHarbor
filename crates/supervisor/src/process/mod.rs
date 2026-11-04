@@ -1,15 +1,17 @@
 //! The per-session supervisor process: holds the OS lock, prepares the profile and socket
-//! ([`prepare`]), starts Chrome through the broker, wraps it in the guard, serves the control
-//! socket and records the session state (through `core::session::supervision`) when the
-//! browser exits.
+//! ([`prepare`]), starts the browser ([`launch`]), wraps it in the guard, serves the control
+//! socket beside the page watcher ([`watch`]) and records the session state (through
+//! `core::session::supervision`) when the browser exits.
 
+mod launch;
 mod prepare;
+mod watch;
 
 use crate::{argv::SuperviseArgs, control, lock::acquire_lock_within, ops::Ops, paths};
 use anyhow::{Context, Result, bail};
 use keyharbor_broker::{
     chrome::{self, ChromeLaunch},
-    ego::{self, EgoLaunch},
+    ego::EgoLaunch,
 };
 use keyharbor_core::{
     grant,
@@ -21,7 +23,8 @@ use keyharbor_domain::{
     ports::{Clock, Store, StoreFactory},
     settings::EGO_POLL_MS,
 };
-use keyharbor_guard::{Guard, SharedStore, VaultOpener};
+use keyharbor_guard::{Guard, SharedStore, VaultOpener, lock_store};
+use launch::Launch;
 use prepare::{bind, prepare};
 use std::{
     fs,
@@ -31,6 +34,7 @@ use std::{
     time::Duration,
 };
 use tokio::{net::UnixListener, process::Child, time::Instant};
+use watch::{sweep_ended_grants, watch_pages};
 
 /// What a supervisor runs with, chosen by the binary's composition root.
 pub struct Adapters {
@@ -42,31 +46,20 @@ pub struct Adapters {
     pub headless: bool,
 }
 
-/// The browser a run starts: Chrome over its pipe, or ego lite through the relay.
-enum Launch {
-    Chrome(ChromeLaunch),
-    Ego(EgoLaunch),
-}
-
-impl Launch {
-    /// How this browser keeps out-of-grant documents out.
-    fn gate(&self) -> keyharbor_broker::Gate {
-        match self {
-            Self::Chrome(_) => keyharbor_broker::Gate::Intercept,
-            Self::Ego(_) => keyharbor_broker::Gate::AfterCommit,
-        }
-    }
-
-    async fn spawn(&self) -> Result<chrome::Chrome> {
-        match self {
-            Self::Chrome(launch) => chrome::spawn(launch),
-            Self::Ego(launch) => ego::spawn(launch).await,
-        }
-    }
-}
-
 /// How long the browser gets to exit after `close` before it is killed.
 const CLOSE_GRACE: Duration = Duration::from_secs(10);
+
+/// After the kill is sent the deadline moves this far out of the way: the kill is sent once,
+/// and the browser's exit (`child.wait()`) ends the loop long before.
+const AFTER_KILL: Duration = Duration::from_secs(3600);
+
+/// How many times the browser's exit is written before giving up, and the wait between
+/// tries: about ten seconds through a busy database.
+const EXIT_RECORD_ATTEMPTS: u32 = 40;
+const EXIT_RECORD_BACKOFF: Duration = Duration::from_millis(250);
+
+/// How long the supervisor waits for `open` to finish handing the session lock over.
+const LOCK_HANDOFF: Duration = Duration::from_secs(2);
 
 /// What the supervisor shares with its control connections.
 pub(crate) struct Shared {
@@ -92,9 +85,6 @@ impl Shared {
 
 /// Runs the supervisor until the browser exits. The session must be `starting` under the
 /// run's generation.
-/// How long the supervisor waits for `open` to finish handing the session lock over.
-const LOCK_HANDOFF: std::time::Duration = std::time::Duration::from_secs(2);
-
 pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
     let SuperviseArgs {
         id,
@@ -107,7 +97,7 @@ pub fn run(data: &Path, args: SuperviseArgs, adapters: Adapters) -> Result<()> {
     } = args;
     let _lock = acquire_lock_within(&paths::lock_path(data, &id), LOCK_HANDOFF)
         .context("another supervisor is running this session")?;
-    let store = adapters.stores.open()?;
+    let store = adapters.stores.open().context("open store")?;
     supervision::check_reservation(&*store, id, generation)?;
     let fail = |store: &dyn Store, error: anyhow::Error| {
         supervision::mark_failed(store, id, generation, &error);
@@ -285,7 +275,7 @@ async fn serve(
             }
             () = deadline => {
                 let _ = child.start_kill();
-                kill_at = Some(Instant::now() + Duration::from_secs(3600));
+                kill_at = Some(Instant::now() + AFTER_KILL);
             }
         }
     }
@@ -301,79 +291,13 @@ async fn record_exit(shared: &Shared, status: ExitStatus) {
     } else {
         BrowserExit::Unexpected
     };
-    for _ in 0..40 {
-        let outcome = shared
-            .store
-            .lock()
-            .map_err(|_| anyhow::anyhow!("store lock poisoned"))
-            .and_then(|store| {
-                supervision::mark_exited(&**store, shared.id, shared.generation, exit)
-            });
+    for _ in 0..EXIT_RECORD_ATTEMPTS {
+        let outcome = lock_store(&shared.store).and_then(|store| {
+            supervision::mark_exited(&**store, shared.id, shared.generation, exit)
+        });
         if matches!(outcome, Ok(true)) {
             return;
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        tokio::time::sleep(EXIT_RECORD_BACKOFF).await;
     }
-}
-
-/// Watches every page: document loads are held to the session's grants (R-43), and every
-/// sign-in the browser reports goes to the guard, which keeps it only during a handoff with
-/// capture on (08 §8.2 ②). Values stay in this process.
-fn watch_pages(
-    shared: &Arc<Shared>,
-    link: &chrome::CdpLink,
-    clock: Arc<dyn Clock>,
-    gate: keyharbor_broker::Gate,
-) {
-    let (sender, mut captured) = tokio::sync::mpsc::channel(16);
-    let rule_shared = shared.clone();
-    let documents: keyharbor_broker::DocumentRule = Arc::new(move |url: &str| {
-        let store = rule_shared
-            .store
-            .lock()
-            .map_err(|_| anyhow::anyhow!("store lock poisoned"))?;
-        grant::allows(&**store, &*clock, rule_shared.id, url)
-    });
-    let hooks = keyharbor_broker::PageHooks {
-        captured: sender,
-        documents,
-        gate,
-    };
-    let link = link.clone();
-    tokio::spawn(async move { link.watch_pages(hooks).await });
-    let shared = shared.clone();
-    tokio::spawn(async move {
-        while let Some(login) = captured.recv().await {
-            let shared = shared.clone();
-            let _ = tokio::task::spawn_blocking(move || shared.guard.capture(login)).await;
-        }
-    });
-}
-
-/// How often ended grants are looked for. Fixed: a grant's end is minutes or more away, and
-/// navigation is refused from the moment it ends; this only bounds how long its cookies stay.
-const GRANT_SWEEP: Duration = Duration::from_secs(5);
-
-/// Removes the cookies of every grant of this session that has ended (R-43).
-fn sweep_ended_grants(shared: &Arc<Shared>, link: &chrome::CdpLink, clock: Arc<dyn Clock>) {
-    let (shared, link) = (shared.clone(), link.clone());
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(GRANT_SWEEP).await;
-            let ended = match shared.store.lock() {
-                Ok(store) => {
-                    grant::ended_uncleared(&**store, &*clock, shared.id).unwrap_or_default()
-                }
-                Err(_) => return,
-            };
-            for ended in ended {
-                let Some(host) = ended.host() else { continue };
-                if link.clear_cookies(&host).await.is_ok()
-                    && let Ok(store) = shared.store.lock()
-                {
-                    let _ = grant::cleared(&**store, &ended);
-                }
-            }
-        }
-    });
 }
