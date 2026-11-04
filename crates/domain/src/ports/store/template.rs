@@ -1,7 +1,9 @@
 //! Credential templates (R-48), kept with the settings in the config context.
 
+use super::StoreError;
 use crate::vault::{CredentialTemplate, TemplateName};
-use anyhow::Result;
+
+type Result<T> = std::result::Result<T, StoreError>;
 
 /// Stores credential templates. A template holds no value.
 pub trait TemplateStore {

@@ -1,10 +1,12 @@
-//! The vault's vocabulary: item kinds, names, origins, descriptions, placeholders, tags,
-//! run patterns, generated passwords, secret values masking handles badly and credential
-//! templates. Eleven files, three past the folder line: each is one concept the issues (#163,
-//! #191, #205) asked to keep apart, and none groups with another (J-170, J-230, J-281).
+//! The vault's vocabulary: item kinds, names, status and source, origins, descriptions,
+//! placeholders, tags, run patterns, generated passwords, secret values masking handles badly
+//! and credential templates. Twelve files, four past the folder line: each is one concept the
+//! issues (#163, #191, #200, #205) asked to keep apart, and none groups with another (J-170,
+//! J-230, J-260, J-281).
 
 mod common_value;
 mod description;
+mod item;
 pub mod item_pattern;
 mod kind;
 mod name;
@@ -18,6 +20,7 @@ pub use common_value::{
     CommonValueReason, CommonValueWarning, MIN_MASKED_CHARS, common_value_warnings,
 };
 pub use description::Description;
+pub use item::{ItemSource, ItemStatus};
 pub use kind::{CUSTOM_FIELD, FREE_FIELD, FieldSpec, InputKind, ItemKind, KINDS, KindSpec};
 pub use name::{DRAFT_MARK, FieldName, ItemName};
 pub use origin::Origin;

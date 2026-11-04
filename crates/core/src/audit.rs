@@ -11,7 +11,7 @@ use std::{cmp::Reverse, collections::HashMap, collections::HashSet};
 
 /// The most recent `limit` events (all when `None`), oldest first.
 pub fn list(store: &dyn AuditStore, limit: Option<usize>) -> Result<Vec<AuditRecord>> {
-    store.list_audit(limit)
+    Ok(store.list_audit(limit)?)
 }
 
 /// Which part of the record [`stops`] reads.
@@ -158,15 +158,19 @@ fn group((cause, rows): (StopCause, HashMap<RowKey, (u64, String)>)) -> StopGrou
 #[cfg(test)]
 mod tests {
     use super::*;
-    use keyharbor_domain::{audit::AuditEvent, denial::DenialReason, ports::ManualClock};
+    use keyharbor_domain::{
+        audit::AuditEvent,
+        denial::DenialReason,
+        ports::{ManualClock, StoreError},
+    };
 
     /// The record as a list, each event at the given UTC time.
     struct Record(Vec<AuditRecord>);
     impl AuditStore for Record {
-        fn record(&self, _: &AuditEvent) -> Result<bool> {
+        fn record(&self, _: &AuditEvent) -> Result<bool, StoreError> {
             unreachable!("stops only reads")
         }
-        fn list_audit(&self, _: Option<usize>) -> Result<Vec<AuditRecord>> {
+        fn list_audit(&self, _: Option<usize>) -> Result<Vec<AuditRecord>, StoreError> {
             Ok(self.0.clone())
         }
     }

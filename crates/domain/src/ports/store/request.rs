@@ -1,11 +1,13 @@
 //! Requests for information only the user has (08 §8.2 ③).
 
+use super::StoreError;
 use crate::{
     RequestId,
     request::{VaultRequest, VaultRequestStatus},
     vault::ItemName,
 };
-use anyhow::Result;
+
+type Result<T> = std::result::Result<T, StoreError>;
 
 pub trait VaultRequestStore {
     fn vault_request_add(&self, request: &VaultRequest) -> Result<()>;

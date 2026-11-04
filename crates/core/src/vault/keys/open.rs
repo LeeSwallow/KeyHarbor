@@ -53,7 +53,7 @@ impl Vault {
         if let Err(e) = created {
             // Another process won the race; do not leave an orphan key behind.
             let _ = keystore.delete(&account(&vault_id));
-            return Err(e);
+            return Err(e.into());
         }
         Ok(Vault {
             store,

@@ -1,11 +1,13 @@
 //! Agent policy rules (02 §2.7, §2.8). One rule per (agent, resource, target).
 
+use super::StoreError;
 use crate::{
     SessionId,
     grant::{Grant, GrantId},
     policy::{Resource, Rule},
 };
-use anyhow::Result;
+
+type Result<T> = std::result::Result<T, StoreError>;
 
 pub trait PolicyStore {
     /// Every rule, ordered by agent, resource and target.

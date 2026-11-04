@@ -33,7 +33,7 @@ pub fn get(store: &dyn Store, id: SessionId, origin: &Origin) -> Result<SiteStat
 /// Every recorded state of a session, ordered by origin.
 pub fn list(store: &dyn Store, id: SessionId) -> Result<Vec<SiteRecord>> {
     session(store, id)?;
-    store.site_list(id)
+    Ok(store.site_list(id)?)
 }
 
 /// Records `change` as said by `agent` now, and notes it in the usage record.

@@ -14,11 +14,12 @@ use super::{
         domain_keys, item_field_descriptions, item_origins, vault, vault_fields, vault_items,
     },
 };
-use crate::SqliteStore;
-use anyhow::{Context, Result, bail};
+use crate::{SqliteStore, error::unique_clash};
+use anyhow::{Result, bail};
 use diesel::prelude::*;
-use keyharbor_domain::ports::vault::{
-    DomainKeyRow, FieldRow, ItemRow, KeyGuard, VaultRow, VaultStore,
+use keyharbor_domain::ports::{
+    Staleness, StoreError,
+    vault::{DomainKeyRow, FieldRow, ItemRow, KeyGuard, VaultRow, VaultStore},
 };
 
 fn check_guard(conn: &mut SqliteConnection, guard: &KeyGuard) -> Result<()> {
@@ -32,7 +33,7 @@ fn check_guard(conn: &mut SqliteConnection, guard: &KeyGuard) -> Result<()> {
         .count()
         .get_result(conn)?;
     if kek * dk != 1 {
-        bail!("vault changed (keys were rotated); reopen it and retry");
+        return Err(StoreError::Stale(Staleness::KeysRotated).into());
     }
     Ok(())
 }
@@ -43,7 +44,7 @@ fn bump_from(conn: &mut SqliteConnection, expected_version: i64) -> Result<()> {
         .set(vault::version.eq(vault::version + 1))
         .execute(conn)?;
     if changed != 1 {
-        bail!("vault changed during rotation; nothing was changed");
+        return Err(StoreError::Stale(Staleness::VersionMoved).into());
     }
     Ok(())
 }
@@ -53,7 +54,7 @@ fn bump(conn: &mut SqliteConnection) -> Result<()> {
         .set(vault::version.eq(vault::version + 1))
         .execute(conn)?;
     if changed != 1 {
-        bail!("vault not initialized");
+        return Err(StoreError::NotInitialized.into());
     }
     Ok(())
 }
@@ -135,7 +136,7 @@ fn update_item(conn: &mut SqliteConnection, item: &ItemRow, fields: &[FieldRow])
         .set(item_model(item))
         .execute(conn)?;
     if updated == 0 {
-        bail!("item not found");
+        return Err(StoreError::NotFound("item not found").into());
     }
     diesel::delete(vault_fields::table.filter(vault_fields::item_id.eq(&item.id[..])))
         .execute(conn)?;
@@ -149,7 +150,7 @@ fn update_item(conn: &mut SqliteConnection, item: &ItemRow, fields: &[FieldRow])
 }
 
 impl VaultStore for SqliteStore {
-    fn vault_get(&self) -> Result<Option<VaultRow>> {
+    fn vault_get(&self) -> Result<Option<VaultRow>, StoreError> {
         self.read(|conn| {
             vault::table
                 .select(VaultModel::as_select())
@@ -160,7 +161,7 @@ impl VaultStore for SqliteStore {
         })
     }
 
-    fn vault_create(&self, row: &VaultRow, dks: &[DomainKeyRow]) -> Result<()> {
+    fn vault_create(&self, row: &VaultRow, dks: &[DomainKeyRow]) -> Result<(), StoreError> {
         self.write(|conn| {
             diesel::insert_into(vault::table)
                 .values(NewVault {
@@ -169,7 +170,7 @@ impl VaultStore for SqliteStore {
                     version: row.version,
                 })
                 .execute(conn)
-                .context("vault already initialized")?;
+                .map_err(|e| unique_clash(e, "vault already initialized"))?;
             for dk in dks {
                 diesel::insert_into(domain_keys::table)
                     .values(domain_key_model(dk))
@@ -179,7 +180,7 @@ impl VaultStore for SqliteStore {
         })
     }
 
-    fn domain_keys(&self) -> Result<Vec<DomainKeyRow>> {
+    fn domain_keys(&self) -> Result<Vec<DomainKeyRow>, StoreError> {
         self.read(|conn| {
             domain_keys::table
                 .select(DomainKeyModel::as_select())
@@ -191,7 +192,12 @@ impl VaultStore for SqliteStore {
         })
     }
 
-    fn item_insert(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
+    fn item_insert(
+        &self,
+        guard: &KeyGuard,
+        item: &ItemRow,
+        fields: &[FieldRow],
+    ) -> Result<(), StoreError> {
         self.write(|conn| {
             check_guard(conn, guard)?;
             let inserted = diesel::insert_into(vault_items::table)
@@ -200,7 +206,7 @@ impl VaultStore for SqliteStore {
                 .do_nothing()
                 .execute(conn)?;
             if inserted == 0 {
-                bail!("item already exists");
+                return Err(StoreError::AlreadyExists("item already exists").into());
             }
             write_children(conn, item, fields)?;
             bump(conn)
@@ -213,7 +219,7 @@ impl VaultStore for SqliteStore {
         replaced: &str,
         item: &ItemRow,
         fields: &[FieldRow],
-    ) -> Result<()> {
+    ) -> Result<(), StoreError> {
         self.write(|conn| {
             check_guard(conn, guard)?;
             diesel::delete(vault_items::table.filter(vault_items::name.eq(replaced)))
@@ -223,7 +229,12 @@ impl VaultStore for SqliteStore {
         })
     }
 
-    fn item_update(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()> {
+    fn item_update(
+        &self,
+        guard: &KeyGuard,
+        item: &ItemRow,
+        fields: &[FieldRow],
+    ) -> Result<(), StoreError> {
         self.write(|conn| {
             check_guard(conn, guard)?;
             update_item(conn, item, fields)?;
@@ -231,7 +242,7 @@ impl VaultStore for SqliteStore {
         })
     }
 
-    fn item_delete(&self, name: &str) -> Result<bool> {
+    fn item_delete(&self, name: &str) -> Result<bool, StoreError> {
         self.write(|conn| {
             let deleted = diesel::delete(vault_items::table.filter(vault_items::name.eq(name)))
                 .execute(conn)?
@@ -243,7 +254,7 @@ impl VaultStore for SqliteStore {
         })
     }
 
-    fn item_get(&self, name: &str) -> Result<Option<(ItemRow, Vec<FieldRow>)>> {
+    fn item_get(&self, name: &str) -> Result<Option<(ItemRow, Vec<FieldRow>)>, StoreError> {
         self.read(|conn| {
             let Some(model) = vault_items::table
                 .filter(vault_items::name.eq(name))
@@ -266,7 +277,7 @@ impl VaultStore for SqliteStore {
         })
     }
 
-    fn item_list(&self) -> Result<Vec<ItemRow>> {
+    fn item_list(&self) -> Result<Vec<ItemRow>, StoreError> {
         self.read(|conn| {
             let models = vault_items::table
                 .select(ItemModel::as_select())
@@ -282,7 +293,7 @@ impl VaultStore for SqliteStore {
         new_kek_id: [u8; 16],
         dks: &[DomainKeyRow],
         metas: &[([u8; 16], Vec<u8>)],
-    ) -> Result<()> {
+    ) -> Result<(), StoreError> {
         self.write(|conn| {
             bump_from(conn, expected_version)?;
             diesel::update(vault::table)
@@ -305,7 +316,7 @@ impl VaultStore for SqliteStore {
         expected_version: i64,
         dk: &DomainKeyRow,
         fields: &[([u8; 16], FieldRow)],
-    ) -> Result<()> {
+    ) -> Result<(), StoreError> {
         self.write(|conn| {
             bump_from(conn, expected_version)?;
             replace_domain_key(conn, dk)?;
@@ -324,7 +335,7 @@ impl VaultStore for SqliteStore {
         })
     }
 
-    fn vault_version(&self) -> Result<i64> {
+    fn vault_version(&self) -> Result<i64, StoreError> {
         self.read(|conn| Ok(vault::table.select(vault::version).first(conn)?))
     }
 
@@ -333,13 +344,13 @@ impl VaultStore for SqliteStore {
         expected_version: i64,
         dk: &DomainKeyRow,
         items: &[(ItemRow, Vec<FieldRow>)],
-    ) -> Result<()> {
+    ) -> Result<(), StoreError> {
         self.write(|conn| {
             bump_from(conn, expected_version)?;
             diesel::insert_into(domain_keys::table)
                 .values(domain_key_model(dk))
                 .execute(conn)
-                .context("the domain already has a key")?;
+                .map_err(|e| unique_clash(e, "the domain already has a key"))?;
             for (item, fields) in items {
                 let updated = diesel::update(vault_items::table.find(&item.id[..]))
                     .set(item_model(item))
@@ -370,13 +381,13 @@ struct Count {
 #[cfg(test)]
 impl SqliteStore {
     fn count_rows(&self, table: &str) -> Result<i64> {
-        self.read(|conn| {
+        Ok(self.read(|conn| {
             Ok(
                 diesel::sql_query(format!("SELECT count(*) AS n FROM {table}"))
                     .get_result::<Count>(conn)?
                     .n,
             )
-        })
+        })?)
     }
 }
 
@@ -488,7 +499,11 @@ mod tests {
             },
             &[],
         );
-        assert!(again.is_err());
+        assert!(
+            matches!(&again, Err(StoreError::AlreadyExists(_))),
+            "{again:?}"
+        );
+        assert_eq!(again.unwrap_err().to_string(), "vault already initialized");
     }
     #[test]
     fn item_roundtrip_and_cascade() {
@@ -513,6 +528,7 @@ mod tests {
             .item_insert(&G, &item("github", 2), &fields())
             .unwrap_err();
         assert!(err.to_string().contains("item already exists"), "{err}");
+        assert!(matches!(err, StoreError::AlreadyExists(_)), "{err:?}");
         assert_eq!(s.count_rows("vault_items").unwrap(), 1);
         assert_eq!(s.count_rows("vault_fields").unwrap(), 2);
         assert_eq!(s.count_rows("item_origins").unwrap(), 1);
@@ -551,11 +567,13 @@ mod tests {
             kek_id: [7; 16],
             ..G
         };
+        let err = s
+            .item_insert(&stale, &item("github", 1), &fields())
+            .unwrap_err();
+        assert!(err.to_string().contains("vault changed"), "{err}");
         assert!(
-            s.item_insert(&stale, &item("github", 1), &fields())
-                .unwrap_err()
-                .to_string()
-                .contains("vault changed")
+            matches!(err, StoreError::Stale(Staleness::KeysRotated)),
+            "{err:?}"
         );
         let stale_dk = KeyGuard {
             dk_id: [2; 16],
@@ -572,11 +590,11 @@ mod tests {
             dk_id: [0x10; 16],
             wrapped: vec![0x11; 8],
         };
+        let err = s.replace_domain(v + 1, &dk, &[]).unwrap_err();
+        assert!(err.to_string().contains("vault changed"), "{err}");
         assert!(
-            s.replace_domain(v + 1, &dk, &[])
-                .unwrap_err()
-                .to_string()
-                .contains("vault changed")
+            matches!(err, StoreError::Stale(Staleness::VersionMoved)),
+            "{err:?}"
         );
         assert!(s.rekey_domain_keys(v + 1, [5; 16], &[], &[]).is_err());
         assert_eq!(s.vault_get().unwrap().unwrap().kek_id, [8; 16]);
@@ -685,10 +703,10 @@ mod tests {
             previous: None,
         }];
         // A stale version changes nothing.
-        assert!(
-            s.add_domain(version - 1, &dk, &[(moved.clone(), sealed.clone())])
-                .is_err()
-        );
+        assert!(matches!(
+            s.add_domain(version - 1, &dk, &[(moved.clone(), sealed.clone())]),
+            Err(StoreError::Stale(Staleness::VersionMoved))
+        ));
         assert_eq!(s.domain_keys().unwrap().len(), 3);
         s.add_domain(version, &dk, &[(moved.clone(), sealed.clone())])
             .unwrap();
@@ -700,7 +718,11 @@ mod tests {
         assert_eq!(f, sealed);
         // The domain gets one key only.
         let version = s.vault_version().unwrap();
-        assert!(s.add_domain(version, &dk, &[]).is_err());
+        let again = s.add_domain(version, &dk, &[]);
+        assert!(
+            matches!(&again, Err(StoreError::AlreadyExists(_))),
+            "{again:?}"
+        );
         assert_eq!(s.vault_version().unwrap(), version);
     }
 }

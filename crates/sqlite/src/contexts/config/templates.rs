@@ -5,13 +5,14 @@ use super::{
     models::TemplateRow,
     schema::credential_templates,
 };
-use crate::SqliteStore;
-use anyhow::Result;
+use crate::{SqliteStore, error::store_error};
 use diesel::prelude::*;
 use keyharbor_domain::{
-    ports::TemplateStore,
+    ports::{StoreError, TemplateStore},
     vault::{CredentialTemplate, TemplateName},
 };
+
+type Result<T, E = StoreError> = std::result::Result<T, E>;
 
 impl TemplateStore for SqliteStore {
     fn template_list(&self) -> Result<Vec<CredentialTemplate>> {
@@ -20,7 +21,10 @@ impl TemplateStore for SqliteStore {
                 .order(credential_templates::name)
                 .load(conn)?)
         })?;
-        rows.into_iter().map(from_row).collect()
+        rows.into_iter()
+            .map(from_row)
+            .collect::<anyhow::Result<_>>()
+            .map_err(store_error)
     }
 
     fn template_add(&self, template: &CredentialTemplate) -> Result<bool> {

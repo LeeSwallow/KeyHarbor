@@ -1,7 +1,9 @@
 //! Per-session site sign-in states (02 §2.7). One record per (session, origin).
 
+use super::StoreError;
 use crate::{SessionId, site::SiteRecord, vault::Origin};
-use anyhow::Result;
+
+type Result<T> = std::result::Result<T, StoreError>;
 
 pub trait SiteStore {
     /// The record for `origin` in `session`, if one was set.

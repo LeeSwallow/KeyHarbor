@@ -1,6 +1,8 @@
-//! The words the vault use cases speak: an item's status and source, what a new item or a
-//! change carries, and the value-free summary callers may show.
+//! The words the vault use cases speak: what a new item or a change carries, and the
+//! value-free summary callers may show. An item's status and source are domain words
+//! (`keyharbor_domain::vault::{ItemStatus, ItemSource}`), re-exported here (#200).
 
+pub use keyharbor_domain::vault::{ItemSource, ItemStatus};
 use keyharbor_domain::{
     date::Expiry,
     tag::Tag,
@@ -8,61 +10,6 @@ use keyharbor_domain::{
 };
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ItemStatus {
-    Draft,
-    Active,
-    Discarded,
-}
-impl ItemStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Draft => "draft",
-            Self::Active => "active",
-            Self::Discarded => "discarded",
-        }
-    }
-    pub fn parse(value: &str) -> Option<Self> {
-        [Self::Draft, Self::Active, Self::Discarded]
-            .into_iter()
-            .find(|s| s.as_str() == value)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ItemSource {
-    User,
-    Import,
-    Generated,
-    Captured,
-    Requested,
-    Agent,
-}
-impl ItemSource {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::User => "user",
-            Self::Import => "import",
-            Self::Generated => "generated",
-            Self::Captured => "captured",
-            Self::Requested => "requested",
-            Self::Agent => "agent",
-        }
-    }
-    pub fn parse(value: &str) -> Option<Self> {
-        [
-            Self::User,
-            Self::Import,
-            Self::Generated,
-            Self::Captured,
-            Self::Requested,
-            Self::Agent,
-        ]
-        .into_iter()
-        .find(|s| s.as_str() == value)
-    }
-}
 
 pub struct NewItem {
     pub name: ItemName,

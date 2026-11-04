@@ -1,6 +1,8 @@
 //! Vault storage. Only ciphertext, wrapped keys and non-secret metadata cross this port.
 
-use anyhow::Result;
+use super::StoreError;
+
+type Result<T> = std::result::Result<T, StoreError>;
 use std::any::Any;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,12 +77,14 @@ pub trait RotationLock {
 /// Writes bump the vault version; key rotations commit only from an expected version.
 pub trait VaultStore: Send {
     fn vault_get(&self) -> Result<Option<VaultRow>>;
-    /// Fails with "vault already initialized" if a vault exists.
+    /// `AlreadyExists` if a vault exists.
     fn vault_create(&self, vault: &VaultRow, dks: &[DomainKeyRow]) -> Result<()>;
     fn domain_keys(&self) -> Result<Vec<DomainKeyRow>>;
-    /// Fails with "item already exists" on a name clash, "vault changed …" on a stale guard.
+    /// `AlreadyExists` on a name clash, `Stale(KeysRotated)` on a stale guard,
+    /// `NotInitialized` without a vault.
     fn item_insert(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()>;
-    /// Replaces the item's metadata, fields and origins.
+    /// Replaces the item's metadata, fields and origins. `NotFound` if the item is gone,
+    /// `Stale(KeysRotated)` on a stale guard.
     fn item_update(&self, guard: &KeyGuard, item: &ItemRow, fields: &[FieldRow]) -> Result<()>;
     /// Deletes the item named `replaced` (if any) and updates `item` in one transaction:
     /// confirming a draft renames it over the item it was made for (08 §8.3).
@@ -96,6 +100,7 @@ pub trait VaultStore: Send {
     /// Every item, ordered by name, with its origins.
     fn item_list(&self) -> Result<Vec<ItemRow>>;
     /// Re-wraps all domain keys under a new KEK and replaces every item's metadata MAC atomically.
+    /// `Stale(VersionMoved)`, changing nothing, if the version moved.
     fn rekey_domain_keys(
         &self,
         expected_version: i64,
@@ -104,6 +109,7 @@ pub trait VaultStore: Send {
         metas: &[([u8; 16], Vec<u8>)],
     ) -> Result<()>;
     /// Replaces one domain key and the given re-encrypted fields atomically.
+    /// `Stale(VersionMoved)`, changing nothing, if the version moved.
     fn replace_domain(
         &self,
         expected_version: i64,
@@ -112,8 +118,9 @@ pub trait VaultStore: Send {
     ) -> Result<()>;
     fn vault_version(&self) -> Result<i64>;
     /// Adds a domain key and moves items into it — each item's metadata row and its
-    /// re-sealed fields replaced — atomically, from an expected version. Fails, changing
-    /// nothing, if the version moved or the domain already has a key.
+    /// re-sealed fields replaced — atomically, from an expected version. Changes nothing and
+    /// fails with `Stale(VersionMoved)` if the version moved, `AlreadyExists` if the domain
+    /// already has a key.
     fn add_domain(
         &self,
         expected_version: i64,

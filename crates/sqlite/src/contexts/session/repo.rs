@@ -7,13 +7,13 @@ use super::{
     models::{NewGeneration, NewHandoff, NewSession, SessionModel},
     schema::{generations, handoff_requests, sessions},
 };
-use crate::SqliteStore;
-use anyhow::{Result, bail};
+use crate::{SqliteStore, error::store_error};
+use anyhow::Result;
 use diesel::{dsl::exists, prelude::*, upsert::excluded};
 use keyharbor_domain::{
     Generation, HandoffStatus, RequestId, Session, SessionId, SessionName, State,
     browser_choice::BrowserKind,
-    ports::{SessionRow, SessionStore},
+    ports::{SessionRow, SessionStore, StoreError},
     vault::{Description, Origin},
 };
 
@@ -70,7 +70,7 @@ impl SessionStore for SqliteStore {
         &self,
         name: SessionName,
         description: Option<&Description>,
-    ) -> Result<Session> {
+    ) -> Result<Session, StoreError> {
         let id = keyharbor_crypto::random::id::<SessionId>();
         self.read(|conn| {
             diesel::insert_into(sessions::table)
@@ -90,7 +90,11 @@ impl SessionStore for SqliteStore {
         })
     }
 
-    fn set_description(&self, id: SessionId, description: Option<&Description>) -> Result<bool> {
+    fn set_description(
+        &self,
+        id: SessionId,
+        description: Option<&Description>,
+    ) -> Result<bool, StoreError> {
         let id = id.to_string();
         self.write(|conn| {
             Ok(diesel::update(sessions::table.find(&id))
@@ -100,15 +104,15 @@ impl SessionStore for SqliteStore {
         })
     }
 
-    fn list(&self) -> Result<Vec<SessionRow>> {
+    fn list(&self) -> Result<Vec<SessionRow>, StoreError> {
         self.read(|conn| load_rows(conn, None))
     }
 
-    fn get(&self, id: SessionId) -> Result<Option<SessionRow>> {
+    fn get(&self, id: SessionId) -> Result<Option<SessionRow>, StoreError> {
         self.read(|conn| Ok(load_rows(conn, Some(&id.to_string()))?.into_iter().next()))
     }
 
-    fn delete(&self, id: SessionId) -> Result<bool> {
+    fn delete(&self, id: SessionId) -> Result<bool, StoreError> {
         let id = id.to_string();
         self.write(|conn| {
             let changed = diesel::delete(
@@ -129,7 +133,7 @@ impl SessionStore for SqliteStore {
         id: SessionId,
         cdp: bool,
         browser: BrowserKind,
-    ) -> Result<Option<Generation>> {
+    ) -> Result<Option<Generation>, StoreError> {
         let id = id.to_string();
         self.write(|conn| {
             let changed = diesel::update(
@@ -171,9 +175,9 @@ impl SessionStore for SqliteStore {
         generation: Generation,
         from: State,
         to: State,
-    ) -> Result<bool> {
+    ) -> Result<bool, StoreError> {
         if !from.permits(to) {
-            bail!("invalid session transition");
+            return Err(StoreError::Conflict("invalid session transition"));
         }
         let (id, generation) = (id.to_string(), generation.to_string());
         self.write(|conn| {
@@ -193,7 +197,12 @@ impl SessionStore for SqliteStore {
         })
     }
 
-    fn fail(&self, id: SessionId, generation: Generation, reason: &str) -> Result<bool> {
+    fn fail(
+        &self,
+        id: SessionId,
+        generation: Generation,
+        reason: &str,
+    ) -> Result<bool, StoreError> {
         let (id, generation) = (id.to_string(), generation.to_string());
         self.write(|conn| {
             let changed = diesel::update(
@@ -215,7 +224,7 @@ impl SessionStore for SqliteStore {
         })
     }
 
-    fn force_stopped(&self, id: SessionId) -> Result<bool> {
+    fn force_stopped(&self, id: SessionId) -> Result<bool, StoreError> {
         let id = id.to_string();
         self.write(|conn| {
             let changed = diesel::update(
@@ -238,12 +247,8 @@ impl SessionStore for SqliteStore {
         &self,
         id: SessionId,
         generation: Generation,
-        origin: Option<&str>,
-    ) -> Result<RequestId> {
-        let origin = origin
-            .map(Origin::parse)
-            .transpose()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        origin: Option<&Origin>,
+    ) -> Result<RequestId, StoreError> {
         let (id, generation) = (id.to_string(), generation.to_string());
         self.write(|conn| {
             let changed = diesel::update(
@@ -258,7 +263,9 @@ impl SessionStore for SqliteStore {
             .set(sessions::state.eq(State::AwaitingUser.as_str()))
             .execute(conn)?;
             if changed != 1 {
-                bail!("session is not running under this generation");
+                return Err(
+                    StoreError::Conflict("session is not running under this generation").into(),
+                );
             }
             diesel::update(
                 handoff_requests::table
@@ -273,7 +280,7 @@ impl SessionStore for SqliteStore {
                     request_id: &request.to_string(),
                     session_id: &id,
                     generation: &generation,
-                    origin: origin.as_ref().map(Origin::as_str),
+                    origin: origin.map(Origin::as_str),
                     status: HandoffStatus::Pending.as_str(),
                 })
                 .execute(conn)?;
@@ -281,7 +288,10 @@ impl SessionStore for SqliteStore {
         })
     }
 
-    fn pending_handoff(&self, id: SessionId) -> Result<Option<(RequestId, Option<String>)>> {
+    fn pending_handoff(
+        &self,
+        id: SessionId,
+    ) -> Result<Option<(RequestId, Option<String>)>, StoreError> {
         let id = id.to_string();
         let found: Option<(String, Option<String>)> = self.read(|conn| {
             Ok(handoff_requests::table
@@ -299,7 +309,7 @@ impl SessionStore for SqliteStore {
                 .optional()?)
         })?;
         found
-            .map(|(request, origin)| Ok((request_id(&request)?, origin)))
+            .map(|(request, origin)| Ok((request_id(&request).map_err(store_error)?, origin)))
             .transpose()
     }
 
@@ -308,7 +318,7 @@ impl SessionStore for SqliteStore {
         id: SessionId,
         generation: Generation,
         request: RequestId,
-    ) -> Result<()> {
+    ) -> Result<(), StoreError> {
         let (id, generation) = (id.to_string(), generation.to_string());
         self.write(|conn| {
             let changed = diesel::update(
@@ -321,9 +331,10 @@ impl SessionStore for SqliteStore {
             .set(handoff_requests::status.eq(HandoffStatus::Resumed.as_str()))
             .execute(conn)?;
             if changed != 1 {
-                bail!(
-                    "authentication request is not pending; inspect the current request with handoff"
-                );
+                return Err(StoreError::Conflict(
+                    "authentication request is not pending; inspect the current request with handoff",
+                )
+                .into());
             }
             let changed = diesel::update(
                 sessions::table
@@ -334,13 +345,17 @@ impl SessionStore for SqliteStore {
             .set(sessions::state.eq(State::Running.as_str()))
             .execute(conn)?;
             if changed != 1 {
-                bail!("session is no longer awaiting the user");
+                return Err(StoreError::Conflict("session is no longer awaiting the user").into());
             }
             Ok(())
         })
     }
 
-    fn handoff_status(&self, id: SessionId, request: RequestId) -> Result<Option<HandoffStatus>> {
+    fn handoff_status(
+        &self,
+        id: SessionId,
+        request: RequestId,
+    ) -> Result<Option<HandoffStatus>, StoreError> {
         let status: Option<String> = self.read(|conn| {
             Ok(handoff_requests::table
                 .filter(handoff_requests::session_id.eq(id.to_string()))
@@ -349,14 +364,19 @@ impl SessionStore for SqliteStore {
                 .first(conn)
                 .optional()?)
         })?;
-        status.as_deref().map(handoff_status).transpose()
+        status
+            .as_deref()
+            .map(handoff_status)
+            .transpose()
+            .map_err(store_error)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::SqliteStore;
-    use keyharbor_domain::ports::SessionStore;
+    use keyharbor_domain::ports::{SessionStore, StoreError};
+    use keyharbor_domain::vault::Origin;
     use keyharbor_domain::{Generation, HandoffStatus, RequestId, SessionName, State};
 
     fn store() -> (tempfile::TempDir, SqliteStore) {
@@ -511,20 +531,16 @@ mod tests {
         let (_tmp, store) = store();
         let (id, generation) = running(&store, "handoff");
         assert!(
-            store
-                .request_handoff(id, generation, Some("https://example.com/login"))
-                .is_err(),
-            "origin with a path"
-        );
-        assert_eq!(store.get(id).unwrap().unwrap().state, State::Running);
-        assert!(
-            store
-                .request_handoff(id, keyharbor_crypto::random::id::<Generation>(), None)
-                .is_err(),
+            matches!(
+                store.request_handoff(id, keyharbor_crypto::random::id::<Generation>(), None),
+                Err(StoreError::Conflict(_))
+            ),
             "stale generation"
         );
+        assert_eq!(store.get(id).unwrap().unwrap().state, State::Running);
+        let origin = Origin::parse("https://EXAMPLE.com:443/").unwrap();
         let first = store
-            .request_handoff(id, generation, Some("https://EXAMPLE.com:443/"))
+            .request_handoff(id, generation, Some(&origin))
             .unwrap();
         assert_eq!(store.get(id).unwrap().unwrap().state, State::AwaitingUser);
         assert_eq!(
