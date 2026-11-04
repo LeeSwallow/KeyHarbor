@@ -14,9 +14,9 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use keyharbor_core::{
     LOCAL_AGENT,
-    grant::handed_off,
+    grant::wait_handed_off,
     session::{
-        self as lifecycle, DisplayState, OpenOptions, ResumeWait, SessionView, poll,
+        self as lifecycle, DisplayState, OpenOptions, ResumeWait, SessionView,
         remove::{self, Force},
     },
 };
@@ -291,9 +291,16 @@ impl Ports<'_> {
             .map(|o| Origin::parse(o).map_err(|e| anyhow::anyhow!("{e}")))
             .transpose()?;
         let wait = ResumeWait::seconds(timeout_seconds)?;
-        let since = self.clock.unix_seconds();
-        let check = || handed_off(&*self.store, id, since, origin.as_ref());
-        let Some(grant) = poll(wait, check, std::thread::sleep)? else {
+        let store = || Ok(&self.store);
+        let handed = wait_handed_off(
+            store,
+            self.clock,
+            id,
+            origin.as_ref(),
+            wait,
+            std::thread::sleep,
+        )?;
+        let Some(grant) = handed else {
             bail!("no site was handed over before the wait ran out");
         };
         println!("{id}\treceived\t{}", grant.origin.as_str());
