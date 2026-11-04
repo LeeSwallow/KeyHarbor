@@ -137,8 +137,12 @@ pub fn fulfill(
     }
     note(
         store,
-        AuditEvent::new(LOCAL_AGENT, AuditKind::VaultRequestAnswered, "fulfilled")
-            .item(item.as_str()),
+        AuditEvent::new(
+            LOCAL_AGENT,
+            AuditKind::VaultRequestAnswered,
+            VaultRequestStatus::Fulfilled.as_str(),
+        )
+        .item(item.as_str()),
     );
     Ok(item)
 }
@@ -150,8 +154,12 @@ pub fn decline(store: &dyn Store, clock: &dyn Clock, id: RequestId) -> Result<()
     }
     note(
         store,
-        AuditEvent::new(LOCAL_AGENT, AuditKind::VaultRequestAnswered, "declined")
-            .item(request.name.as_str()),
+        AuditEvent::new(
+            LOCAL_AGENT,
+            AuditKind::VaultRequestAnswered,
+            VaultRequestStatus::Declined.as_str(),
+        )
+        .item(request.name.as_str()),
     );
     Ok(())
 }
