@@ -4,61 +4,23 @@
 //! `keyharbor-supervisor` the session runtime — and each binary's composition root wires
 //! concrete adapters together (also the [`Clock`]).
 
-pub mod access;
-pub mod audit;
 pub mod browser;
 pub mod clock;
 pub mod confirm;
 pub mod keys;
-pub mod request;
 pub mod runtime;
-pub mod session;
-pub mod site;
-pub mod vault;
+pub mod store;
 
-pub use access::{GrantStore, PolicyStore};
-pub use audit::{AUDIT_ENABLED, AuditStore, SettingsStore};
+// The storage modules keep their old paths (`ports::vault`, `ports::session`, …).
+pub use store::{access, audit, request, session, settings, site, vault};
+
 pub use browser::{BrowserPort, FrameInspector, PageInput};
 pub use clock::{Clock, ManualClock};
 pub use confirm::{Answer, Confirm};
 pub use keys::KeyStore;
-pub use request::VaultRequestStore;
 pub use runtime::SessionRuntime;
-pub use session::{SessionRow, SessionStore};
-pub use site::SiteStore;
-pub use vault::{
-    DomainKeyRow, FieldRow, ItemRow, KeyGuard, RotationGuard, RotationLock, VaultRow, VaultStore,
+pub use store::{
+    AUDIT_ENABLED, AuditStore, DomainKeyRow, FieldRow, GrantStore, ItemRow, KeyGuard, PolicyStore,
+    RotationGuard, RotationLock, SessionRow, SessionStore, SettingsStore, SiteStore, Store,
+    StoreFactory, VaultRequestStore, VaultRow, VaultStore,
 };
-
-/// Everything the local database provides, as one object.
-pub trait Store:
-    VaultStore
-    + RotationLock
-    + SessionStore
-    + SiteStore
-    + VaultRequestStore
-    + PolicyStore
-    + GrantStore
-    + AuditStore
-    + SettingsStore
-{
-}
-impl<
-    T: VaultStore
-        + RotationLock
-        + SessionStore
-        + SiteStore
-        + VaultRequestStore
-        + PolicyStore
-        + GrantStore
-        + AuditStore
-        + SettingsStore,
-> Store for T
-{
-}
-
-/// Opens the local database. Interfaces hand the adapter's factory to the layers that need a
-/// store of their own (e.g. a session supervisor), so those layers never name the adapter.
-pub trait StoreFactory: Send + Sync {
-    fn open(&self) -> anyhow::Result<Box<dyn Store>>;
-}

@@ -60,6 +60,8 @@ planted "an-mcp-tool-calling-a-storage-port" mcp/src/tools/vault.rs 'fn x(s: &dy
 	"interfaces call storage ports directly"
 planted "a-placeholder-literal-outside-domain" guard/src/browser/login.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
 	"placeholder syntax outside keyharbor-domain"
+planted "a-placeholder-literal-outside-its-module" domain/src/vault/kind.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
+	"placeholder syntax outside keyharbor-domain"
 planted "a-requester-check-outside-domain" supervisor/src/ops.rs 'fn x(a: &str) -> bool { a == ANY }' \
 	"requester-name rule outside keyharbor-domain"
 planted "an-interface-choosing-a-session-action" mcp/src/server.rs 'fn x() { let _ = Action::RawCdp; }' \
@@ -76,7 +78,7 @@ planted "the-clock-read-in-the-guard" guard/src/audit.rs 'fn x() { let _ = std::
 	"I/O in an inner crate"
 planted "a-driver-crate-in-the-domain" domain/Cargo.toml 'tokio.workspace = true' \
 	"domain depends on tokio; inner crates use no driver crate"
-planted "serde-json-in-a-domain-value" domain/src/policy.rs 'fn x() -> serde_json::Value { serde_json::Value::Null }' \
+planted "serde-json-in-a-domain-value" domain/src/access/policy.rs 'fn x() -> serde_json::Value { serde_json::Value::Null }' \
 	"keyharbor-domain uses serde_json outside ports/browser.rs"
 planted "randomness-outside-crypto" sqlite/src/lib.rs 'fn x() { let _ = uuid::Uuid::new_v4(); }' \
 	"randomness outside keyharbor-crypto"
