@@ -1,7 +1,7 @@
 // Renders the popup from its state, using only design-system classes (design-system/components,
 // design-system/patterns/extension-popup.css). Pure: state in, HTML out. Values are escaped.
 
-import { TTL_CHOICES } from "../../domain/handoff.js";
+import { TTL_CHOICES, type TtlChoice } from "../../domain/handoff.js";
 import type { LoginChoice } from "../../domain/login.js";
 import type { ErrorCode } from "../../domain/result.js";
 import { ERRORS, type Lang, MESSAGES, type MessageKey, format } from "./i18n.js";
@@ -23,6 +23,9 @@ export type PopupState =
       /** What the last fill or save did. */
       login?: { kind: "filled" | "saved" | "known"; item: string };
     };
+
+/** The label of each grant length the popup offers. */
+const TTL_LABELS: Record<TtlChoice, MessageKey> = { 3600: "ttl3600", 28800: "ttl28800", 86400: "ttl86400" };
 
 const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const escape = (s: string): string => s.replace(/[&<>"']/g, (c) => ESCAPES[c] ?? c);
@@ -50,7 +53,7 @@ function logins(s: Extract<PopupState, { kind: "ready" }>, t: (k: MessageKey) =>
 function ready(s: Extract<PopupState, { kind: "ready" }>, lang: Lang): string {
   const t = (k: MessageKey) => MESSAGES[lang][k];
   const ttl = TTL_CHOICES.map(
-    (v) => `<button type="button" data-ttl="${v}"${v === s.ttlSeconds ? ' class="is-on"' : ""}>${escape(t(`ttl${v}` as MessageKey))}</button>`,
+    (v) => `<button type="button" data-ttl="${v}"${v === s.ttlSeconds ? ' class="is-on"' : ""}>${escape(t(TTL_LABELS[v]))}</button>`,
   ).join("");
   const toast = s.error
     ? `<div class="kh-toast danger" role="alert">${icon("shield-x", "lead")}<span class="msg">${escape(ERRORS[lang][s.error])}</span></div>`

@@ -43,14 +43,14 @@ flowchart LR
 
 | 폴더 | 책임 | 브라우저 API |
 |---|---|---|
-| `src/domain/` | `scope.ts`(등록 가능 도메인 + 하위 도메인, 허용 스킴), `cookie.ts`(`SiteCookie`와 넘길 쿠키 고르기: 범위·파티션·first-party), `session-name.ts`(Rust `SessionName::parse`와 같은 규칙), `handoff.ts`(TTL 검사, `SiteHandoff`, `HostReply`), `result.ts`(오류는 코드뿐) | 없음 |
+| `src/domain/` | `scope.ts`(등록 가능 도메인 + 하위 도메인, 허용 스킴), `cookie.ts`(`SiteCookie`와 넘길 쿠키 고르기: 범위·파티션·first-party), `session-name.ts`(Rust `SessionName::parse`와 같은 규칙), `item-name.ts`(채울 항목 이름의 미리 검사, Rust `ItemName::parse_new`보다 조금 느슨하다: J-130), `handoff.ts`(TTL 검사, `SiteHandoff`, `HostReply`), `result.ts`(오류는 코드뿐, 목록 `ERROR_CODES`) | 없음 |
 | `src/ports/` | 유스케이스가 쓰는 인터페이스 넷. `NativeHost.receiveSite(SiteHandoff)`는 우리 말로 주고받는다 | 없음 |
 | `src/app/` | `makeHandOffSite(ports)`, 7단계의 `makeListLogins`·`makeFillLogin`·`makeSaveLogin`(`autofill.ts`) 유스케이스, 검사를 마친 `Command`와 팝업이 묻는 `HandOffAsk` | 없음 |
-| `src/adapters/wire/` | `protocol.ts`(Native Messaging v1 판별 유니온, 만들기·읽기는 여기서만), `cdp-cookie.ts`(`SiteCookie` → CDP `Network.CookieParam`), `native-host.ts`(전송 위의 `NativeHost`: 번역만), `command.ts`(팝업 → 백그라운드 메시지와 그 검증 한 곳) | 없음 |
+| `src/adapters/wire/` | `protocol.ts`(Native Messaging v1 판별 유니온, 만들기·읽기는 여기서만), `cdp-cookie.ts`(`SiteCookie` → CDP `Network.CookieParam`), `native-host.ts`(전송 위의 `NativeHost`: 번역만), `command.ts`(팝업 ↔ 백그라운드: 명령 메시지를 만드는 함수, 명령 검증 `parseCommand`, 응답 검증 `parseCommandAnswer`. 모양이 틀린 응답은 `bad_reply`) | 없음 |
 | `src/adapters/webext/page-form.ts` | 최상위 frame에서 도는 `fillPageLogin`·`readPageLogin`(`scripting.executeScript`, 탭 접근은 팝업 클릭의 `activeTab`). 넣기 직전에 `location.origin`이 요청한 origin인지 다시 본다 | 있음 |
 | `src/adapters/webext/` | 두 브라우저에 공통인 포트 구현. 손으로 쓴 API 부분 타입 `WebExtApi` | 있음 |
 | `src/adapters/chrome/`, `firefox/` | 브라우저마다 다른 쿠키 조회와 진입점(백그라운드, 팝업) | 있음 |
-| `src/ui/popup/` | 디자인 시스템 클래스로만 그리는 팝업. 상태 → HTML은 순수 함수 | 진입점이 준 deps만 |
+| `src/ui/popup/` | 디자인 시스템 클래스로만 그리는 팝업. 상태 → HTML은 순수 함수(`view.ts`), 상태와 흐름별 핸들러(`controller.ts`: 채우기·저장·넘기기·옵션, DOM 없음), DOM 연결(`popup.ts`). 백그라운드 호출이 거부되면 오류를 그리고 busy를 푼다 | 진입점이 준 deps만 |
 | `manifest/` | `base.json` + 브라우저 오버레이, 빌드가 병합 | — |
 | `native-host/` | native messaging host 매니페스트 틀 | — |
 | `scripts/` | 빌드(esbuild), 매니페스트 병합, 디자인 자산 고르기, 빌드 대상 표 | — |
@@ -62,7 +62,7 @@ flowchart LR
 |---|---|
 | 브라우저 (예: Edge) | `src/adapters/edge/`(쿠키 조회 + 진입점 둘), `manifest/edge.json`, `scripts/targets.mjs`에 한 줄 |
 | 프로토콜 요청 | `adapters/wire/protocol.ts`의 `HostRequestWire` 유니온에 한 형태 + 만드는 함수, `NativeHost` 포트에 메서드 하나 |
-| 팝업 명령 | `app/commands.ts`의 `Command` 유니온, `adapters/wire/command.ts`의 `parseCommand` |
+| 팝업 명령 | `app/commands.ts`의 `Command` 유니온, `adapters/wire/command.ts`의 `CommandWire`·만드는 함수·`parseCommand`, 응답 검사 표 `ANSWER_CHECKS`에 한 줄(빠지면 타입 오류) |
 
 유스케이스는 포트를 인자로 받고(DI 라이브러리 없음), 전역은 각 진입점이 `chrome`/`browser`를 한 번 읽는 것뿐이다.
 

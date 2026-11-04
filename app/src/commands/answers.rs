@@ -1,7 +1,7 @@
 //! What the person answers from the app: an agent's request for information (the secure input
 //! form, 09 §9.4.5) and a browser handed to them (resume).
 
-use crate::Ctx;
+use crate::{Ctx, auth::AuthScope};
 use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_core::{
     request::{self, Answer},
@@ -85,6 +85,7 @@ pub fn request_form(ctx: &Ctx, id: &str) -> Result<RequestForm> {
 /// Stores the values the person typed as the requested item; returns its name. Empty values
 /// are left out; the values never come back.
 pub fn fulfill_request(ctx: &Ctx, id: &str, values: BTreeMap<String, String>) -> Result<String> {
+    ctx.challenge(AuthScope::Edit)?;
     let request = request::status(&*ctx.store()?, ctx.clock(), request_id(id)?)?;
     let mut fields = Vec::new();
     for (name, value) in values {
@@ -111,6 +112,7 @@ pub fn fulfill_request(ctx: &Ctx, id: &str, values: BTreeMap<String, String>) ->
 
 /// Answers a request with an item already in the vault.
 pub fn fulfill_with_item(ctx: &Ctx, id: &str, item: &str) -> Result<String> {
+    ctx.challenge(AuthScope::Edit)?;
     let name = keyharbor_domain::vault::ItemName::parse(item).map_err(|e| anyhow!("{e}"))?;
     let answer = Answer::Existing(name);
     let item = request::fulfill(

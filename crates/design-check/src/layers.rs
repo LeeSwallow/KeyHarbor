@@ -39,6 +39,9 @@ pub struct LayerSpec {
 
 use Layer::*;
 
+/// The entry stylesheet every page loads.
+pub const ENTRY: &str = "keyharbor.css";
+
 pub const LAYERS: &[LayerSpec] = &[
     LayerSpec {
         layer: Primitives,
@@ -82,16 +85,13 @@ pub const LAYERS: &[LayerSpec] = &[
     },
     LayerSpec {
         layer: Entry,
-        path: "keyharbor.css",
+        path: ENTRY,
         may_reference: &[],
         literal_colours: false,
         px_literals: false,
         defines: Defines::Nothing,
     },
 ];
-
-/// The entry stylesheet every page loads.
-pub const ENTRY: &str = "keyharbor.css";
 
 /// The layer of a stylesheet, by its path inside design-system/.
 pub fn layer_of(path: &str) -> Option<&'static LayerSpec> {

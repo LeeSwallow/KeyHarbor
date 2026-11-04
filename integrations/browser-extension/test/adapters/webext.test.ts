@@ -53,4 +53,21 @@ describe("webextPopupDeps", () => {
     await deps.saveSession("work");
     expect(await deps.loadSession()).toBe("work");
   });
+
+  it("checks the background's answer and turns a wrong shape into bad_reply", async () => {
+    const api = fakeBrowser();
+    api.runtime.sendMessage = async () => ({ ok: true, value: { cookies: "many" } });
+    expect(await webextPopupDeps(api, "en").handOff({ tabId: 7, session: "work", ttlSeconds: 3600, includeLocalStorage: false })).toEqual({ ok: false, error: "bad_reply" });
+  });
+
+  it("sends the messages the background reads", async () => {
+    const api = fakeBrowser();
+    const sent: unknown[] = [];
+    api.runtime.sendMessage = async (m) => {
+      sent.push(m);
+      return { ok: true, value: [] };
+    };
+    expect(await webextPopupDeps(api, "en").listLogins(7)).toEqual({ ok: true, value: [] });
+    expect(sent).toEqual([{ type: "list_logins", tabId: 7 }]);
+  });
 });

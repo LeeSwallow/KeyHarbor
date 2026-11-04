@@ -1,9 +1,8 @@
 //! Literal colours (`#hex`, `rgb()`, named colours) appear only in tokens/primitives.css.
 
-use super::Rule;
-use crate::layers;
 use crate::model::DesignSet;
 use crate::report::Violation;
+use crate::rules::Rule;
 use crate::scanner;
 
 pub struct LiteralColours;
@@ -16,10 +15,10 @@ impl Rule for LiteralColours {
     fn check(&self, ds: &DesignSet) -> Vec<Violation> {
         let mut out = Vec::new();
         for file in &ds.sheets {
-            if layers::layer_of(&file.path).is_none_or(|s| s.literal_colours) {
+            if file.spec.literal_colours {
                 continue;
             }
-            for decl in file.sheet.blocks.iter().flat_map(|b| &b.decls) {
+            for decl in file.sheet.decls() {
                 for colour in scanner::literal_colours(&decl.value) {
                     out.push(
                         Violation::new(

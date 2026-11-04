@@ -3,6 +3,7 @@
 
 use crate::{
     Ctx,
+    auth::AuthScope,
     confirm::{Outcome, confirmed_by_dialog},
 };
 use anyhow::{Result, anyhow};
@@ -35,6 +36,7 @@ pub fn settings(ctx: &Ctx) -> Result<Vec<SettingDto>> {
 }
 
 pub fn set_setting(ctx: &Ctx, key: &str, value: &str, confirmed: bool) -> Result<Outcome> {
+    ctx.challenge(AuthScope::PolicyChange)?;
     let store = ctx.store()?;
     confirmed_by_dialog(confirmed, |confirm| {
         settings::set(&*store, confirm, key, value)
@@ -66,6 +68,7 @@ fn resource(value: &str) -> Result<Resource> {
 }
 
 pub fn set_policy(ctx: &Ctx, rule: (&str, &str, &str, &str), confirmed: bool) -> Result<Outcome> {
+    ctx.challenge(AuthScope::PolicyChange)?;
     let (agent, res, target, effect) = rule;
     let effect = Effect::parse(effect).ok_or_else(|| anyhow!("effect must be allow or deny"))?;
     let rule = Rule::new(agent, resource(res)?, target, effect).map_err(|e| anyhow!("{e}"))?;
@@ -80,6 +83,7 @@ pub fn remove_policy(
     target: &str,
     confirmed: bool,
 ) -> Result<Outcome> {
+    ctx.challenge(AuthScope::PolicyChange)?;
     let resource = resource(res)?;
     let store = ctx.store()?;
     confirmed_by_dialog(confirmed, |confirm| {
