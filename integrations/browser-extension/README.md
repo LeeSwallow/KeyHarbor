@@ -43,9 +43,9 @@ flowchart LR
 
 | 폴더 | 책임 | 브라우저 API |
 |---|---|---|
-| `src/domain/` | `scope.ts`(등록 가능 도메인 + 하위 도메인, 허용 스킴), `cookie.ts`(`SiteCookie`와 넘길 쿠키 고르기: 범위·파티션·first-party, `sameSite` 값 목록 `SAME_SITE_VALUES`·`isSameSite`), `session-name.ts`(Rust `SessionName::parse`와 같은 규칙), `item-name.ts`(채울 항목 이름의 미리 검사, Rust `ItemName::parse_new`와 같은 규칙: J-165), `handoff.ts`(TTL 검사, `SiteHandoff`, `HostReply`), `result.ts`(오류는 코드뿐, 목록 `ERROR_CODES`) | 없음 |
-| `src/ports/` | 유스케이스가 쓰는 인터페이스 넷. `NativeHost.receiveSite(SiteHandoff)`는 우리 말로 주고받는다 | 없음 |
-| `src/app/` | `makeHandOffSite(ports)`, 7단계의 `makeListLogins`·`makeFillLogin`·`makeSaveLogin`(`autofill.ts`) 유스케이스, 검사를 마친 `Command`와 팝업이 묻는 `HandOffAsk` | 없음 |
+| `src/domain/` | `scope.ts`(등록 가능 도메인 + 하위 도메인, 허용 스킴), `cookie.ts`(`SiteCookie`와 넘길 쿠키 고르기: 범위·파티션·first-party, `sameSite` 값 목록 `SAME_SITE_VALUES`·`isSameSite`), `session-name.ts`(Rust `SessionName::parse`와 같은 규칙), `item-name.ts`(채울 항목 이름의 미리 검사, Rust `ItemName::parse_new`와 같은 규칙: J-165), `handoff.ts`(TTL 검사, `SiteHandoff`, `HostReply`), `login.ts`(7단계: 이 사이트에 채울 수 있는 로그인, 채울 값, 저장할 때 페이지에 있던 값), `site-request.ts`(앱이 끌어다 놓기로 묻는 넘기기), `result.ts`(오류는 코드뿐, 목록 `ERROR_CODES`) | 없음 |
+| `src/ports/` | 유스케이스가 쓰는 인터페이스(`CookieSource`, `StorageSource`, `NativeHost`, `PageForm`, `Permissions`·`Notifier`, `TabInfo`)와 묶음 `Ports`. `NativeHost.receiveSite(SiteHandoff)`는 우리 말로 주고받는다 | 없음 |
+| `src/app/` | `makeHandOffSite(ports)`, 7단계의 `makeListLogins`·`makeFillLogin`·`makeSaveLogin`(`autofill.ts`) 유스케이스, 앱의 넘기기 요청에 답하기(`site-request.ts`), 검사를 마친 `Command`와 팝업이 묻는 `HandOffAsk`(`commands.ts`), 명령을 유스케이스로 보내는 백그라운드(`background.ts`) | 없음 |
 | `src/adapters/wire/` | `protocol.ts`(Native Messaging v1 판별 유니온, 만들기·읽기는 여기서만), `cdp-cookie.ts`(`SiteCookie` → CDP `Network.CookieParam`), `native-host.ts`(전송 위의 `NativeHost`: 번역만), `command.ts`(팝업 ↔ 백그라운드: 명령 메시지를 만드는 함수, 명령 검증 `parseCommand`, 응답 검증 `parseCommandAnswer`. 모양이 틀린 응답은 `bad_reply`) | 없음 |
 | `src/adapters/webext/` | 두 브라우저에 공통인 진입 연결: 손으로 쓴 API 부분 타입 `WebExtApi`(`api.ts`), 포트 조립 `webextPorts`(`ports.ts`), 백그라운드 시작 `startBackground(api, traits)`(`background.ts`), 팝업 시작 `startPopup`(`popup.ts`), 앱과의 연결(`bridge.ts`), `TabInfo`(`tabs.ts`) | 있음 |
 | `src/adapters/webext/sources/` | 포트 구현: 쿠키(`cookies.ts`), `localStorage`(`storage.ts`), 로그인 폼(`page-form.ts`: 최상위 frame에서 도는 `fillPageLogin`·`readPageLogin`, 넣기 직전에 `location.origin`이 요청한 origin인지 다시 본다), native host(`native-host.ts`), 권한과 넘기기 알림(`consent.ts`, 문구 표는 `consent-text.ts`) | 있음 |
