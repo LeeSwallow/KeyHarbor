@@ -24,7 +24,7 @@ use keyharbor_domain::{
 use std::{
     collections::BTreeSet,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard,
         atomic::{AtomicBool, AtomicU32},
     },
 };
@@ -40,6 +40,11 @@ pub(crate) use probes::LockReason;
 
 /// The store a supervisor shares between its control connections and the guard.
 pub type SharedStore = Arc<Mutex<Box<dyn Store>>>;
+
+/// Locks the shared store. A poisoned lock (a holder panicked) is an error, never a panic.
+pub fn lock_store(store: &SharedStore) -> Result<MutexGuard<'_, Box<dyn Store>>> {
+    store.lock().map_err(|_| anyhow!("store lock poisoned"))
+}
 
 /// Opens the vault (adapters chosen by the interface that started the supervisor).
 pub type VaultOpener = Box<dyn Fn() -> Result<Vault> + Send + Sync>;

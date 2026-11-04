@@ -173,7 +173,7 @@ flowchart LR
 
 ### 2.4.2 세션 유스케이스와 런타임 포트
 
-세션 열기·멈추기·인계·복구·endpoint의 순서와 오류 메시지는 `keyharbor-core::session`에 있고 프로세스·OS 잠금·socket·`DevToolsActivePort` 파일은 `SessionRuntime` 포트 뒤(`keyharbor-supervisor`의 `ProcessRuntime`)에 있다. 감독자가 자기 실행에 기록하는 상태(예약 확인, `starting → running/failed`, 브라우저 종료 뒤 `stopped/failed`)의 규칙은 `core::session::supervision`에 있고 감독자는 그것을 부른다. 감독자 프로세스는 `StoreFactory`(SQLite 어댑터), 금고 opener, headless 여부를 composition root에게서 받는다(`keyharbor_supervisor::Adapters`). 감독자 argv는 `SuperviseArgs` 하나가 쓰고 읽는다. [J-47, J-74]
+세션 열기·멈추기·인계·복구·endpoint의 순서와 오류 메시지는 `keyharbor-core::session`에 있고 프로세스·OS 잠금·socket·`DevToolsActivePort` 파일은 `SessionRuntime` 포트 뒤(`keyharbor-supervisor`의 `ProcessRuntime`)에 있다. 감독자가 자기 실행에 기록하는 상태(예약 확인, `starting → running/failed`, 브라우저 종료 뒤 `stopped/failed`)의 규칙은 `core::session::supervision`에 있고 감독자는 그것을 부른다. 예약을 확인한 뒤 브라우저가 뜨기 전까지의 검사와 조립(시작 페이지와 grant, 경로 준비, 세션 행·설정 읽기, 비동기 런타임)은 `process::launch::launch_for` 하나로 묶여, 어느 단계가 실패해도 세션은 `starting`에 남지 않고 `failed`와 사유가 기록된다 [J-180]. 감독자 프로세스는 `StoreFactory`(SQLite 어댑터), 금고 opener, headless 여부를 composition root에게서 받는다(`keyharbor_supervisor::Adapters`). 감독자 argv는 `SuperviseArgs` 하나가 쓰고 읽는다. [J-47, J-74]
 
 ```mermaid
 flowchart LR

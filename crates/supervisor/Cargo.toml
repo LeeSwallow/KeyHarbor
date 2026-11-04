@@ -20,4 +20,5 @@ zeroize.workspace = true
 
 [dev-dependencies]
 keyharbor-crypto = { path = "../crypto" }
+keyharbor-sqlite = { path = "../sqlite" }
 tempfile.workspace = true
