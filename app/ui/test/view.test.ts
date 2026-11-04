@@ -160,7 +160,10 @@ describe("the item forms", () => {
     const data = new FormData();
     data.set("v:password", "pw");
     data.set("origins", "https://a.example\n\n https://b.example ");
-    expect(editorValues(data)).toEqual({ values: { password: "pw" }, origins: ["https://a.example", "https://b.example"] });
+    // R-48 added the plain, secret, remove and clash lists; a form without own fields sends none.
+    expect(editorValues(data)).toEqual({
+      values: { password: "pw" }, origins: ["https://a.example", "https://b.example"], plain: [], secret: [], remove: [], clashes: [],
+    });
   });
 });
 

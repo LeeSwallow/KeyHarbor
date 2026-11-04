@@ -475,8 +475,11 @@ flowchart TB
 | 결제 | `card` | `holder`, `number`, `exp_month`, `exp_year`, `cvc`, `billing_address`(address ID), `note` | 결제 폼 (대개 결제사 iframe) | 켜짐 — 결제사 origin을 함께 등록 |
 | 개인정보 | `identity` | `full_name`, `given_name`, `family_name`, `email`, `phone`, `birth_date`, `english_name`, `hanja_name`, `gender`, `nationality`, `emergency_phone`, `military_service`·`disability`·`veterans`(비밀), `note`, 사용자 정의 필드 | 가입·주문 폼, 채용 지원서 | 꺼짐 |
 | 개인정보 | `address` | `recipient`, `line1`, `line2`, `city`, `region`, `postal_code`, `country`, `phone`, `note` | 배송·청구 주소 | 꺼짐 |
+| 자격 증명 | `credential` | `note`, 나머지는 사람이 붙이는 필드(틀에서 채울 수 있음) | 은행·학교 포털 2차 비밀번호, 회원번호, 공동인증서 비밀번호 | 꺼짐 (브라우저 입력은 origin 목록 필요, R-36·J-280) |
 
-- 종류마다 필드 스키마를 정해 두고, `identity`·`address`에는 사용자가 **사용자 정의 필드**(`school`, `gpa` …)를 더할 수 있다(`KindSpec.custom_fields`, J-111). 사용자 정의 필드는 비밀이고 가려진다. 모든 필드는 소속 도메인의 키로 암호화한다.
+- 종류마다 필드 스키마를 정해 두고, env를 뺀 모든 종류에 사용자가 **직접 붙인 필드**(`school`, `gpa`, `second_password` …)를 더할 수 있다(`KindSpec.custom_fields`, J-111, [사용자 결정 R-48]). 직접 붙인 필드는 기본이 비밀이고 가려진다. 항목의 plain 표시로 필드마다 일반(목록에 값이 보이고 가려지지 않음)을 고른다(J-282). 정해진 필드 이름은 그 필드 자체라 별도 필드가 되지 않는다. 모든 필드는 소속 도메인의 키로 암호화한다.
+- **자격 증명 틀**(R-48, J-281): 이름 + 필드 목록(필드마다 비밀/일반)이다. config 컨텍스트의 `credential_templates`에 저장하고 `KINDS`는 정적으로 둔다. 새 `credential`을 만들 때 틀을 고르면 필드 이름과 plain 표시가 채워진다. 틀에는 값이 없어 추가·제거는 약화 작업이 아니고, 틀을 지워도 항목은 남는다.
+- 브라우저 입력에 origin 목록이 있어야 하는 종류(`KindSpec.browser_needs_origin`: `secret`·`env`·`credential`)는 목록이 비면 어떤 페이지에도 들어가지 않는다(R-36, J-58, J-280).
 - `identity`·`address`의 origin 바인딩 기본값을 끈 이유는 여러 사이트에서 쓰는 정보이기 때문이다. 켤 수 있다. [설계자 판단]
 - `totp_seed`는 처음에 저장만 했다(J-25). #206부터 설정 `agent_otp`(기본 꺼짐)를 사람이 켜면 에이전트가 `{{otp:<항목>}}`으로 그 순간의 코드를 그 항목의 묶인 origin에만 넣는다(R-48(3), J-290, 03 §3.8.1). 이메일·SMS 코드 수신은 여전히 범위 밖이다(R-07).
 - `username`도 암호화한다. 계정 이름도 민감한 정보이기 때문이다. [설계자 판단]
@@ -503,7 +506,7 @@ flowchart LR
     s["session<br/>sessions · generations · handoff_requests<br/>→ SessionStore"]
     a["access<br/>policy_rules<br/>→ PolicyStore"]
     au["audit<br/>audit<br/>→ AuditStore"]
-    c["config<br/>settings<br/>→ SettingsStore"]
+    c["config<br/>settings · credential_templates<br/>→ SettingsStore · TemplateStore"]
   end
   v --> s --> a --> au --> c
   au -.->|"config::audit_enabled (mod.rs 인터페이스)"| c
@@ -528,7 +531,9 @@ classDiagram
     domain: Domain
     fields: &[FieldSpec]
     free_fields: bool
+    custom_fields: bool
     default_origin_binding: bool
+    browser_needs_origin: bool
   }
   class FieldSpec {
     name: &str

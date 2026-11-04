@@ -54,9 +54,10 @@ struct Generate {
 struct Put {
     /// Item name (1–64 letters, digits, - or _). A taken name gets a draft named <name>~draft-N.
     name: String,
-    /// login, secret, env, card, identity or address.
+    /// login, secret, env, card, identity, address or credential.
     kind: String,
-    /// Field name → value, e.g. {"api_key": "..."} for a key you just created.
+    /// Field name → value, e.g. {"value": "..."} for a key you just created. Besides its own
+    /// fields every kind but env takes fields you name (e.g. "member_no"); those are secret.
     fields: BTreeMap<String, String>,
     /// Origins the item is for, e.g. ["https://github.com"].
     #[serde(default)]
@@ -166,7 +167,7 @@ fn entry_json(entry: &CatalogEntry, agent_otp: bool) -> Value {
 #[tool_router(router = vault_tools, vis = "pub(crate)")]
 impl Server {
     #[tool(
-        description = "List vault items: name, kind, domain, field names, descriptions (what the item and each field is for), tags, origins, run permission, expiry, status and the placeholder for each field. A login with a one-time code seed has otp: {placeholder: \"{{otp:item}}\", usable, refused}; when usable is false (refused otp-off: the user has not let agents type codes) hand the code step to the user instead. Optionally only names starting with prefix (e.g. myapp/) or items with a tag (use it in browser_fill or browser_type). An item whose stored metadata fails verification shows only its name and tampered: true; it cannot be used until the user fixes it. Values are never returned."
+        description = "List vault items: name, kind, domain, field names (fields the user named included), descriptions (what the item and each field is for), tags, origins, run permission, expiry, status and the placeholder for each field. A login with a one-time code seed has otp: {placeholder: \"{{otp:item}}\", usable, refused}; when usable is false (refused otp-off: the user has not let agents type codes) hand the code step to the user instead; plain_values holds only the values of fields the user marked not secret. Optionally only names starting with prefix (e.g. myapp/) or items with a tag (use it in browser_fill or browser_type). An item whose stored metadata fails verification shows only its name and tampered: true; it cannot be used until the user fixes it. Values are never returned."
     )]
     async fn vault_list(&self, Parameters(args): Parameters<ListArgs>) -> CallToolResult {
         let tag = match args.tag.as_deref().map(Tag::parse).transpose() {

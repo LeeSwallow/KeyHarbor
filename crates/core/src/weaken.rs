@@ -181,6 +181,8 @@ impl Vault {
             out.push(WeakeningOp::OtpAllowed { item: item.clone() });
         }
         if !change.make_plain.is_empty() {
+            // A field the item does not have yet holds no secret to expose: adding it plain
+            // asks nothing (R-48, J-282). Marking a field it has plain does.
             let already: Vec<String> = self
                 .list()?
                 .into_iter()
@@ -191,7 +193,7 @@ impl Vault {
                 .make_plain
                 .iter()
                 .map(|f| f.as_str().to_owned())
-                .filter(|f| !already.contains(f))
+                .filter(|f| !already.contains(f) && current.fields.contains(f))
                 .collect();
             if !fields.is_empty() {
                 out.push(WeakeningOp::FieldsPlain {
@@ -348,6 +350,32 @@ mod tests {
         assert_eq!(
             shown,
             vec!["letting agents type the one-time codes of github"]
+        );
+    }
+
+    #[test]
+    fn adding_a_field_plain_asks_nothing_and_marking_one_the_item_has_does() {
+        let e = env();
+        let v = init(&e);
+        v.add(login("github", "pw-1234-long")).unwrap();
+        let name = ItemName::parse("github").unwrap();
+        let plain = |field: &str| keyharbor_domain::vault::FieldName::parse(field).unwrap();
+        let added = ItemChange {
+            set_fields: vec![crate::tests::field("member_no", "M-1234")],
+            make_plain: vec![plain("member_no")],
+            ..Default::default()
+        };
+        assert!(v.weakenings(&name, &added).unwrap().is_empty());
+        let existing = ItemChange {
+            make_plain: vec![plain("password")],
+            ..Default::default()
+        };
+        assert_eq!(
+            v.weakenings(&name, &existing).unwrap(),
+            [WeakeningOp::FieldsPlain {
+                item: "github".into(),
+                fields: vec!["password".into()],
+            }]
         );
     }
 }

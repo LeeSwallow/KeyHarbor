@@ -14,7 +14,7 @@ pub enum DenialReason {
     Policy,
     /// The frame's origin is not one of the item's origins.
     Origin,
-    /// A developer item lists no origin, so it goes into no page (R-36).
+    /// A developer item or a credential lists no origin, so it goes into no page (R-36, J-280).
     NoOrigin,
     /// A password field may go only into a password input (C1).
     FieldKind,

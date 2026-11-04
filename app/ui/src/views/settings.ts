@@ -3,10 +3,10 @@
 // which change weakens a protection stays in the domain registry; this table is only how the
 // window shows it. A click saves at once; a weakening change comes back as a question.
 
-import type { Browsers, Setting, Weakening } from "../api.js";
+import type { Browsers, Setting, Template, Weakening } from "../api.js";
 import { esc } from "../html.js";
-import { NO_AUTH } from "../words.js";
-import { heading } from "./parts.js";
+import { NO_AUTH, fieldWord } from "../words.js";
+import { heading, quiet } from "./parts.js";
 
 type Control =
   | { kind: "switch" }
@@ -163,7 +163,38 @@ function authSection(auth: string | null): string {
     <div class="kh-seg" role="group"><button type="button"${auth === NO_AUTH ? ' class="is-on"' : ""}>없음</button><button type="button" disabled>macOS 인증 · 준비 중</button><button type="button" disabled>마스터 비밀번호 · 준비 중</button></div></div></section>`;
 }
 
-export function settings(list: Setting[], browsers: Browsers = { ego_lite: false }, auth: string | null = null): string {
+/// One line per field name typed into a template form's box.
+const lines = (value: FormDataEntryValue | null): string[] =>
+  String(value ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+
+/// The template the "자격 증명 틀" form sends: secret fields first, then plain ones.
+export function templateForm(data: FormData): Template {
+  const secret = lines(data.get("secret")).map((name) => ({ name, secret: true }));
+  const plain = lines(data.get("plain")).map((name) => ({ name, secret: false }));
+  return { name: String(data.get("name") ?? "").trim(), fields: [...secret, ...plain] };
+}
+
+/// Credential templates (R-48): the fields a new credential starts with, each secret or plain.
+/// Its own section, apart from the settings table: a template is a list, not one value, and
+/// holds no value, so adding or removing one asks nothing.
+function templatesSection(templates: Template[]): string {
+  const rows = templates
+    .map((t) => {
+      const fields = t.fields.map((f) => `${esc(fieldWord(f.name))}${f.secret ? "" : " (일반)"}`).join(", ");
+      return `<li><strong>${esc(t.name)}</strong> <span class="kh-help">${fields}</span> <button type="button" class="kh-btn ghost sm" data-action="remove-template" data-name="${esc(t.name)}">빼기</button></li>`;
+    })
+    .join("");
+  const list = rows ? `<ul class="folder-list">${rows}</ul>` : `<p class="kh-help">만든 틀이 없습니다</p>`;
+  return `<section class="settings-group"><h3>자격 증명 틀</h3>
+    <p class="kh-help">새 자격 증명 항목을 만들 때 고르면 이 필드가 채워집니다. 틀을 빼도 이미 만든 항목은 그대로입니다.</p>${list}
+    <form class="template-add" data-template-form>
+      <label class="kh-field"><span class="kh-label">이름</span><input class="kh-input" name="name" placeholder="은행 2차 비밀번호" ${quiet}></label>
+      <label class="kh-field"><span class="kh-label">비밀 필드 (한 줄에 하나)</span><textarea class="kh-textarea" name="secret" rows="2" placeholder="second_password" ${quiet}></textarea></label>
+      <label class="kh-field"><span class="kh-label">일반 필드 (한 줄에 하나, 목록에 값이 보임)</span><textarea class="kh-textarea" name="plain" rows="2" placeholder="member_no" ${quiet}></textarea></label>
+      <button class="kh-btn secondary sm" type="submit">틀 추가</button></form></section>`;
+}
+
+export function settings(list: Setting[], browsers: Browsers = { ego_lite: false }, auth: string | null = null, templates: Template[] = []): string {
   const sections = GROUPS.map((group) => {
     // Whether ego lite answers right now goes with the browser choice it changes.
     const status = browsers.ego_lite
@@ -180,7 +211,7 @@ export function settings(list: Setting[], browsers: Browsers = { ego_lite: false
   }).join("");
   const unknown = list.filter((s) => !SHOWN[s.key]).map(plain).join("");
   const others = unknown ? `<section class="settings-group"><h3>기타</h3>${unknown}</section>` : "";
-  return `${heading("settings")}${sections}${others}${authSection(auth)}`;
+  return `${heading("settings")}${sections}${others}${templatesSection(templates)}${authSection(auth)}`;
 }
 
 /// How `upload_dirs` keeps its folders in one value, like `PATH`.

@@ -9,7 +9,7 @@ use super::{
     capture::{CaptureOutcome, store_login},
 };
 use crate::audit;
-use anyhow::{Result, bail};
+use anyhow::Result;
 use keyharbor_core::{ItemStatus, PlaintextAccess, Vault};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
@@ -71,26 +71,40 @@ pub fn candidates(vault: &Vault, origin: &Origin) -> Result<Vec<String>> {
         .collect())
 }
 
+/// Why [`fill`] gave nothing, for the host to tell the extension (#198). A broken vault is
+/// not one of these: it is the outer error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutofillRefusal {
+    /// `item` is not an active, verified, unexpired login bound to that origin. Nobody was
+    /// asked.
+    NotCandidate,
+    /// The person said no.
+    NotConfirmed,
+    /// There was no way to ask (Touch ID or the login password).
+    Unavailable,
+}
+
 /// The login `item` for `origin`, after the person confirms this fill; records
 /// `value_autofilled`. Refuses, without asking, a login that is not a candidate for `origin`.
+/// The inner `Err` is a refusal; the outer one, a vault that could not be read.
 pub fn fill(
     store: &dyn Store,
     vault: &Vault,
     confirm: &dyn Confirm,
     origin: &Origin,
     item: &ItemName,
-) -> Result<Fill> {
+) -> Result<Result<Fill, AutofillRefusal>> {
     if !candidates(vault, origin)?
         .iter()
         .any(|n| n == item.as_str())
     {
-        bail!("{} is not a login for {}", item.as_str(), origin.as_str());
+        return Ok(Err(AutofillRefusal::NotCandidate));
     }
     let action = format!("fill the {} login into {}", item.as_str(), origin.as_str());
     match confirm.confirm(&action) {
         Answer::Yes => {}
-        Answer::No => bail!("the fill was not confirmed"),
-        Answer::Unavailable => bail!("no way to confirm the fill (Touch ID or the login password)"),
+        Answer::No => return Ok(Err(AutofillRefusal::NotConfirmed)),
+        Answer::Unavailable => return Ok(Err(AutofillRefusal::Unavailable)),
     }
     let access = PlaintextAccess::issue();
     let read = |field: &str| -> Result<Zeroizing<String>> {
@@ -108,7 +122,7 @@ pub fn fill(
             .item(item.as_str())
             .origin(Some(origin.as_str())),
     );
-    Ok(Fill { username, password })
+    Ok(Ok(Fill { username, password }))
 }
 
 #[cfg(test)]
@@ -190,7 +204,9 @@ mod tests {
         vault.add(login("github", "pw-1234")).unwrap();
         let store = SqliteStore::open(&e.data).unwrap();
         let yes = person(Answer::Yes);
-        let fill = fill(&store, &vault, &yes, &github(), &name("github")).unwrap();
+        let Ok(fill) = fill(&store, &vault, &yes, &github(), &name("github")).unwrap() else {
+            panic!("a confirmed fill is not refused")
+        };
         assert_eq!(
             (
                 fill.username.as_deref().map(|u| u.as_str()),
@@ -218,8 +234,12 @@ mod tests {
         let vault = init(&e);
         vault.add(login("github", "pw")).unwrap();
         let store = SqliteStore::open(&e.data).unwrap();
-        for answer in [Answer::No, Answer::Unavailable] {
-            assert!(fill(&store, &vault, &person(answer), &github(), &name("github")).is_err());
+        for (answer, refusal) in [
+            (Answer::No, AutofillRefusal::NotConfirmed),
+            (Answer::Unavailable, AutofillRefusal::Unavailable),
+        ] {
+            let result = fill(&store, &vault, &person(answer), &github(), &name("github"));
+            assert!(matches!(result, Ok(Err(r)) if r == refusal));
         }
         assert!(
             store
@@ -246,9 +266,14 @@ mod tests {
         let evil = Origin::parse("https://github.com.evil.example").unwrap();
         assert_eq!(candidates(&vault, &github()).unwrap(), ["github"]);
         assert!(candidates(&vault, &evil).unwrap().is_empty());
-        assert!(fill(&store, &vault, &yes, &evil, &name("github")).is_err());
-        assert!(fill(&store, &vault, &yes, &github(), &name("github~draft-1")).is_err());
-        assert!(fill(&store, &vault, &yes, &github(), &name("nope")).is_err());
+        for (origin, item) in [
+            (&evil, "github"),
+            (&github(), "github~draft-1"),
+            (&github(), "nope"),
+        ] {
+            let result = fill(&store, &vault, &yes, origin, &name(item));
+            assert!(matches!(result, Ok(Err(AutofillRefusal::NotCandidate))));
+        }
         assert_eq!(yes.asked.get(), 0, "refused before asking");
         store.execute_for_tests("UPDATE vault_items SET origin_binding = 0");
         assert!(

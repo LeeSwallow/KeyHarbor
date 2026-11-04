@@ -1,7 +1,7 @@
 //! The vault's vocabulary: item kinds, names, origins, descriptions, placeholders, tags,
-//! run patterns, generated passwords and secret values masking handles badly. Ten files, two
-//! past the folder line: each is one concept the issues (#163, #191) asked to keep apart, and
-//! none groups with another (J-170, J-230).
+//! run patterns, generated passwords, secret values masking handles badly and credential
+//! templates. Eleven files, three past the folder line: each is one concept the issues (#163,
+//! #191, #205) asked to keep apart, and none groups with another (J-170, J-230, J-281).
 
 mod common_value;
 mod description;
@@ -12,6 +12,7 @@ mod origin;
 pub mod password;
 mod placeholder;
 pub mod tag;
+mod template;
 
 pub use common_value::{
     CommonValueReason, CommonValueWarning, MIN_MASKED_CHARS, common_value_warnings,
@@ -26,6 +27,7 @@ pub use placeholder::{
     has_placeholder, otp_placeholder, parse_placeholders, parse_secret_placeholders, placeholder,
     placeholder_spans,
 };
+pub use template::{CredentialTemplate, TemplateField, TemplateName};
 
 use std::{error::Error, fmt};
 

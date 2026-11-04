@@ -10,15 +10,17 @@ pub enum ItemKind {
     Card,
     Identity,
     Address,
+    Credential,
 }
 impl ItemKind {
-    pub const ALL: [ItemKind; 6] = [
+    pub const ALL: [ItemKind; 7] = [
         Self::Login,
         Self::Secret,
         Self::Env,
         Self::Card,
         Self::Identity,
         Self::Address,
+        Self::Credential,
     ];
     /// This kind's entry in [`KINDS`].
     pub fn spec(self) -> &'static KindSpec {
@@ -64,6 +66,25 @@ impl ItemKind {
     pub fn default_run_allowed(self) -> bool {
         self.spec().default_run_allowed
     }
+    /// Whether a browser may receive this kind's values only in frames of its listed origins,
+    /// and nowhere while it lists none (R-36), whatever its origin binding says.
+    pub fn needs_origin_for_browser(self) -> bool {
+        self.spec().browser_needs_origin
+    }
+    /// Whether `field` would be a field the person names on an item of this kind (R-48): the
+    /// kind takes custom fields and does not declare one by that name.
+    pub fn is_custom_field(self, field: &str) -> bool {
+        let spec = self.spec();
+        spec.custom_fields && !spec.fields.iter().any(|f| f.name == field)
+    }
+    /// Whether any kind declares `field` secret (`password`, `cvc`): such a name stays off the
+    /// command line even as a custom field marked plain (R-48).
+    pub fn is_declared_secret_anywhere(field: &str) -> bool {
+        KINDS
+            .iter()
+            .flat_map(|k| k.fields)
+            .any(|f| f.name == field && f.secret)
+    }
     /// How `field` is treated in an item of this kind: its declared spec, the free-field spec
     /// for kinds with free-form names, the custom-field spec for kinds that take named fields, or `None` if the kind has no such field.
     pub fn field(self, field: &str) -> Option<&'static FieldSpec> {
@@ -87,10 +108,7 @@ impl ItemKind {
     pub fn is_secret_field(self, field: &str) -> bool {
         match self.field(field) {
             Some(spec) => spec.secret,
-            None => KINDS
-                .iter()
-                .flat_map(|k| k.fields)
-                .any(|f| f.name == field && f.secret),
+            None => Self::is_declared_secret_anywhere(field),
         }
     }
 }
@@ -135,8 +153,9 @@ pub struct KindSpec {
     pub fields: &'static [FieldSpec],
     /// Field names are free-form (environment variable names), each treated as [`FREE_FIELD`].
     pub free_fields: bool,
-    /// Besides its declared fields the kind takes fields the person names (`school`, `gpa`),
-    /// each treated as [`CUSTOM_FIELD`] (J-111).
+    /// Besides its declared fields the kind takes fields the person names (`school`, `gpa`,
+    /// a bank's second password), each treated as [`CUSTOM_FIELD`] unless the item marks it
+    /// plain (J-111, R-48).
     pub custom_fields: bool,
     /// The field whose value KeyHarbor can make up instead of taking one (a login's password,
     /// `generate_password`); `None` when the kind has none. Always one of `fields`.
@@ -145,10 +164,13 @@ pub struct KindSpec {
     /// `keyharbor run` may inject the values unless the user turns it off: true for API keys
     /// and environment items, false for anything a site signs in or pays with (R-36).
     pub default_run_allowed: bool,
+    /// A browser receives the values only in frames of the item's listed origins, and nowhere
+    /// while it lists none (R-36): API keys, environment items and credentials (J-280).
+    pub browser_needs_origin: bool,
 }
 
-/// How a field the person named on an identity or address is treated: secret and masked,
-/// like any value whose meaning KeyHarbor cannot know.
+/// How a field the person named is treated: secret and masked, like any value whose meaning
+/// KeyHarbor cannot know. The item's plain mark makes one plain (R-48).
 pub const CUSTOM_FIELD: FieldSpec = FieldSpec {
     name: "*",
     secret: true,
@@ -223,10 +245,11 @@ pub static KINDS: &[KindSpec] = &[
             secret("note", "Free-form note"),
         ],
         free_fields: false,
-        custom_fields: false,
+        custom_fields: true,
         generated: Some("password"),
         default_origin_binding: true,
         default_run_allowed: false,
+        browser_needs_origin: false,
     },
     KindSpec {
         kind: ItemKind::Secret,
@@ -237,10 +260,11 @@ pub static KINDS: &[KindSpec] = &[
             secret("note", "Free-form note"),
         ],
         free_fields: false,
-        custom_fields: false,
+        custom_fields: true,
         generated: None,
         default_origin_binding: false,
         default_run_allowed: true,
+        browser_needs_origin: true,
     },
     KindSpec {
         kind: ItemKind::Env,
@@ -252,6 +276,7 @@ pub static KINDS: &[KindSpec] = &[
         generated: None,
         default_origin_binding: false,
         default_run_allowed: true,
+        browser_needs_origin: true,
     },
     KindSpec {
         kind: ItemKind::Card,
@@ -267,10 +292,11 @@ pub static KINDS: &[KindSpec] = &[
             secret("note", "Free-form note"),
         ],
         free_fields: false,
-        custom_fields: false,
+        custom_fields: true,
         generated: None,
         default_origin_binding: true,
         default_run_allowed: false,
+        browser_needs_origin: false,
     },
     KindSpec {
         kind: ItemKind::Identity,
@@ -298,6 +324,7 @@ pub static KINDS: &[KindSpec] = &[
         generated: None,
         default_origin_binding: false,
         default_run_allowed: false,
+        browser_needs_origin: false,
     },
     KindSpec {
         kind: ItemKind::Address,
@@ -319,6 +346,21 @@ pub static KINDS: &[KindSpec] = &[
         generated: None,
         default_origin_binding: false,
         default_run_allowed: false,
+        browser_needs_origin: false,
+    },
+    // A credential with no fixed shape (R-48): a bank's second password, a member number, a
+    // certificate password. Its fields are the ones the person names, often from a template.
+    KindSpec {
+        kind: ItemKind::Credential,
+        name: "credential",
+        domain: Domain::Credentials,
+        fields: &[secret("note", "Free-form note")],
+        free_fields: false,
+        custom_fields: true,
+        generated: None,
+        default_origin_binding: false,
+        default_run_allowed: false,
+        browser_needs_origin: true,
     },
 ];
 
@@ -373,7 +415,8 @@ mod tests {
         );
         assert!(ItemKind::Env.is_secret_field("API_KEY"));
         assert!(ItemKind::Card.field("number").unwrap().maskable);
-        assert!(ItemKind::Card.field("password").is_none());
+        // A card takes fields the person names (R-48): `password` is one of those there.
+        assert_eq!(ItemKind::Card.field("password"), Some(&CUSTOM_FIELD));
         assert_eq!(
             ItemKind::Login.field("password").unwrap().input,
             InputKind::Password
@@ -412,18 +455,34 @@ mod tests {
     }
     #[test]
     fn custom_field_is_secret_and_masked() {
-        for kind in [ItemKind::Identity, ItemKind::Address] {
+        // Every kind with named fields takes custom fields (R-48); env names its own.
+        for kind in ItemKind::ALL.into_iter().filter(|k| *k != ItemKind::Env) {
             let spec = kind.field("school").unwrap();
             assert_eq!(spec, &CUSTOM_FIELD);
             assert!(spec.secret && spec.maskable);
             assert_eq!(spec.input, InputKind::Text);
             assert!(kind.is_secret_field("school"));
+            assert!(kind.is_custom_field("school"), "{kind:?}");
+            assert!(!kind.is_custom_field("note"), "{kind:?} declares note");
         }
-        for kind in [ItemKind::Login, ItemKind::Card, ItemKind::Secret] {
-            assert!(
-                kind.field("school").is_none(),
-                "{kind:?} takes no custom fields"
-            );
+        assert!(!ItemKind::Env.is_custom_field("SCHOOL"));
+    }
+    #[test]
+    fn a_credential_is_custom_fields_that_need_an_origin_in_a_browser() {
+        let spec = ItemKind::Credential.spec();
+        assert_eq!(spec.domain, Domain::Credentials);
+        assert_eq!(ItemKind::Credential.schema().unwrap(), ["note"]);
+        assert!(spec.custom_fields && !spec.free_fields);
+        assert!(!ItemKind::Credential.default_origin_binding());
+        assert!(!ItemKind::Credential.default_run_allowed());
+        assert!(ItemKind::Credential.needs_origin_for_browser());
+        assert_eq!(ItemKind::parse("credential"), Some(ItemKind::Credential));
+        // The R-36 rule as it was: developer items need an origin, the others follow binding.
+        for kind in ItemKind::ALL {
+            let developer = kind.domain() == Domain::Developer;
+            if kind != ItemKind::Credential {
+                assert_eq!(kind.needs_origin_for_browser(), developer, "{kind:?}");
+            }
         }
     }
     #[test]
@@ -457,6 +516,7 @@ mod tests {
             ItemKind::Card,
             ItemKind::Identity,
             ItemKind::Address,
+            ItemKind::Credential,
         ] {
             assert!(kind.schema().unwrap().contains(&"note"));
             assert_eq!(ItemKind::parse(kind.as_str()), Some(kind));

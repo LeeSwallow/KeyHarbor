@@ -205,7 +205,7 @@ function fieldRow(s: State, item: Item, field: string, placeholder: string): str
 }
 
 function detail(s: State): string {
-  if (s.editor) return editor(s.editor, s.kinds, s.items);
+  if (s.editor) return editor(s.editor, s.kinds, s.items, s.templates);
   const item = s.items.find((i) => i.name === s.selected);
   if (!item) return empty("항목을 고르세요");
   const warn = item.tampered ? `<p class="kh-help error">${icon("triangle-alert")} 변조 의심 — 이 항목은 입력에 쓰이지 않습니다</p>` : "";
@@ -258,7 +258,7 @@ export function render(s: State): string {
       : ["", {
           home, inbox, sessions, audit,
           policies: (x: State) => policies(x.policies),
-          settings: (x: State) => settings(x.settings, x.browsers, x.overview?.auth ?? null),
+          settings: (x: State) => settings(x.settings, x.browsers, x.overview?.auth ?? null, x.templates),
         }[s.view](s)];
   return `${side(s)}<section class="list">${list}</section><section class="detail">${error}${notice}${warnings}${main}</section>${undo}${dialog(s.ask)}${s.palette ? palette(s.palette, paletteCommands(s, s.palette.query)) : ""}`;
 }

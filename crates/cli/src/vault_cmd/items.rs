@@ -4,10 +4,10 @@
 
 use super::{
     Toggle,
-    input::{FieldInput, collect_fields, field_name, item_name, origins},
+    input::{FieldInput, Fill, collect_fields, field_name, item_name, origins},
     kind_parser,
     output::warn_common_values,
-    status_parser,
+    status_parser, templates,
 };
 use crate::{
     args::{DescriptionArgs, ExpiryArgs},
@@ -16,7 +16,9 @@ use crate::{
 };
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
-use keyharbor_core::{ItemChange, ItemDetails, ItemSource, ItemStatus, NewItem, Vault};
+use keyharbor_core::{
+    ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary, NewItem, Vault,
+};
 use keyharbor_domain::{
     tag::Tag,
     vault::{FieldName, ItemKind, ItemName, placeholder},
@@ -50,6 +52,9 @@ pub struct AddArgs {
     /// A field that is not secret (PORT): its value shows in listings, unmasked
     #[arg(long = "plain", value_name = "FIELD")]
     plain: Vec<String>,
+    /// Start a credential from a template: its fields are asked for, its plain ones marked
+    #[arg(long, value_name = "NAME")]
+    template: Option<String>,
     #[arg(long)]
     draft: bool,
 }
@@ -104,11 +109,35 @@ fn tags(values: &[String]) -> Result<Vec<Tag>> {
         .collect()
 }
 
+/// The fields a template gives a new item, and which of them are plain; none without one.
+fn template_fields(
+    app: &App,
+    kind: ItemKind,
+    template: Option<&str>,
+) -> Result<(Vec<FieldName>, Vec<FieldName>)> {
+    let Some(name) = template else {
+        return Ok(Default::default());
+    };
+    let template = templates::for_new_item(app, kind, name)?;
+    let fields = template.fields().iter().map(|f| f.name.clone()).collect();
+    Ok((fields, template.plain_fields()))
+}
+
 pub fn add(app: &App, args: &AddArgs) -> Result<()> {
     let (kind, name) = (args.kind, item_name(&args.name)?);
     let (description, field_descriptions) = (args.about.item()?, args.about.new_fields(kind)?);
-    let fields = collect_fields(kind, &args.input, true)?;
+    let (template_fields, template_plain) = template_fields(app, kind, args.template.as_deref())?;
+    let mut plain = field_names(kind, &args.plain)?;
+    plain.extend(template_plain.iter().cloned());
+    let fill = Fill {
+        kind_secrets: true,
+        template: &template_fields,
+        plain: &plain,
+    };
+    let fields = collect_fields(kind, &args.input, fill)?;
     let vault = app.vault()?;
+    // A template field left empty is not stored, so the template cannot mark it plain.
+    plain.retain(|p| !template_plain.contains(p) || fields.iter().any(|(f, _)| f == p));
     let item = NewItem {
         name: name.clone(),
         kind,
@@ -127,7 +156,7 @@ pub fn add(app: &App, args: &AddArgs) -> Result<()> {
             description: description.flatten(),
             field_descriptions,
             tags: tags(&args.tags)?,
-            plain_fields: field_names(kind, &args.plain)?,
+            plain_fields: plain,
             otp_allowed: args.otp_allowed.map(Toggle::on),
         },
     };
@@ -140,7 +169,24 @@ pub fn add(app: &App, args: &AddArgs) -> Result<()> {
 pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
     let name = item_name(&args.name)?;
     let vault = app.vault()?;
-    let kind = stored_kind(&vault, &name)?;
+    let stored = stored_item(&vault, &name)?;
+    let kind = stored.kind;
+    let (make_plain, make_secret) = (
+        field_names(kind, &args.plain)?,
+        field_names(kind, &args.secret)?,
+    );
+    // Plain after the change: a field the person names may then come from `--set` (R-48).
+    let plain: Vec<FieldName> = stored
+        .plain_values
+        .keys()
+        .filter_map(|f| FieldName::parse(f).ok())
+        .chain(make_plain.iter().cloned())
+        .filter(|f| !make_secret.contains(f))
+        .collect();
+    let fill = Fill {
+        plain: &plain,
+        ..Fill::default()
+    };
     let new_origins = if args.clear_origins {
         Some(Vec::new())
     } else if args.origins.is_empty() {
@@ -149,7 +195,7 @@ pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
         Some(origins(&args.origins)?)
     };
     let change = ItemChange {
-        set_fields: collect_fields(kind, &args.input, false)?,
+        set_fields: collect_fields(kind, &args.input, fill)?,
         remove_fields: field_names(kind, &args.unset)?,
         origins: new_origins,
         origin_binding: args.origin_binding.map(Toggle::on),
@@ -160,8 +206,8 @@ pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
         status: args.status,
         add_tags: tags(&args.tags)?,
         remove_tags: tags(&args.untag)?,
-        make_plain: field_names(kind, &args.plain)?,
-        make_secret: field_names(kind, &args.secret)?,
+        make_plain,
+        make_secret,
         otp_allowed: args.otp_allowed.map(Toggle::on),
     };
     let warnings = items::edit(&vault, &TtyConfirm, &name, change, &args.about.texts())?;
@@ -170,20 +216,19 @@ pub fn edit(app: &App, args: &EditArgs) -> Result<()> {
     Ok(())
 }
 
-/// The kind of a stored item, to read its field names.
-fn stored_kind(vault: &Vault, name: &ItemName) -> Result<ItemKind> {
-    Ok(vault
+/// A stored item without values, to read its kind and plain fields.
+fn stored_item(vault: &Vault, name: &ItemName) -> Result<ItemSummary> {
+    vault
         .list()?
         .into_iter()
         .find(|i| i.name == name.as_str())
-        .context("item not found")?
-        .kind)
+        .context("item not found")
 }
 
 pub fn revert(app: &App, name: &str, fields: &[String]) -> Result<()> {
     let name = item_name(name)?;
     let vault = app.vault()?;
-    let fields = field_names(stored_kind(&vault, &name)?, fields)?;
+    let fields = field_names(stored_item(&vault, &name)?.kind, fields)?;
     for field in vault.revert(&name, &fields)? {
         println!("reverted\t{}\t{field}", name.as_str());
     }

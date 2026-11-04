@@ -15,6 +15,7 @@ pub mod session;
 pub mod settings;
 pub mod site;
 pub mod status;
+pub mod template;
 #[cfg(test)]
 mod test_support;
 mod transfer;
@@ -30,7 +31,7 @@ pub use vault::{
     CatalogEntry, DEFAULT_ITEM_TTL, DraftItem, ExpiryChoice, GeneratedDraft, GeneratedLogin,
     ItemChange, ItemDetails, ItemFilter, ItemSource, ItemStatus, ItemSummary, ItemUse,
     MAX_FIELD_BYTES, MaskValues, NO_TTL, NewItem, OneTimeCode, Vault, VaultBackend, catalog,
-    effective_descriptions, fill_placeholders, fill_template, generate_password,
+    effective_descriptions, fill_placeholders, fill_template, generate_password, open_existing,
 };
 
 /// The agent name recorded for changes made by the local user through the CLI.
@@ -188,10 +189,12 @@ mod tests {
     fn schema_and_size_are_enforced() {
         let e = env();
         let v = init(&e);
+        // A card takes fields the person names (R-48): `password` here is a custom field.
         let mut card = login("visa", "x");
         card.kind = ItemKind::Card;
         card.fields = vec![field("password", "x")];
-        assert!(v.add(card).is_err());
+        v.add(card).unwrap();
+        v.remove(&ItemName::parse("visa").unwrap()).unwrap();
         let mut big = login("big", "x");
         big.fields = vec![field("password", &"a".repeat(64 * 1024 + 1))];
         assert!(v.add(big).is_err());

@@ -117,6 +117,10 @@ pub struct NewItemForm {
     /// Make up the kind's generated field (a login's password) instead of taking one.
     #[serde(default)]
     pub generate_password: bool,
+    /// Fields that are not secret: shown in listings, not masked (a template's plain fields,
+    /// or a field the person added as 일반; R-48).
+    #[serde(default)]
+    pub plain: Vec<String>,
 }
 
 /// The form's values as they arrive, each wiped when dropped. Done first, before any check
@@ -138,6 +142,10 @@ fn fields(kind: ItemKind, values: Typed) -> Result<Vec<(FieldName, Zeroizing<Str
         }
     }
     Ok(out)
+}
+
+fn field_names(kind: ItemKind, names: &[String]) -> Result<Vec<FieldName>> {
+    names.iter().map(|n| Ok(kind.field_name(n)?)).collect()
 }
 
 fn origins(values: &[String]) -> Result<Vec<Origin>> {
@@ -167,6 +175,11 @@ pub fn add_item(ctx: &Ctx, form: NewItemForm) -> Result<Saved> {
     if values.is_empty() {
         bail!("an item needs at least one value");
     }
+    // A plain field left empty is not stored, so it is not marked either.
+    let plain = field_names(kind, &form.plain)?
+        .into_iter()
+        .filter(|p| values.iter().any(|(f, _)| f == p))
+        .collect();
     let item = NewItem {
         name: name.clone(),
         kind,
@@ -175,7 +188,10 @@ pub fn add_item(ctx: &Ctx, form: NewItemForm) -> Result<Saved> {
         origin_binding: None,
         status: ItemStatus::Active,
         source: ItemSource::User,
-        details: ItemDetails::default(),
+        details: ItemDetails {
+            plain_fields: plain,
+            ..ItemDetails::default()
+        },
     };
     let warnings = items::add(&ctx.vault()?, item, &[])?;
     Ok(Saved {
@@ -184,14 +200,21 @@ pub fn add_item(ctx: &Ctx, form: NewItemForm) -> Result<Saved> {
     })
 }
 
-/// A change as the form sends it: values to replace (empty ones are left as they are) and,
-/// when given, the whole new list of sites.
-#[derive(Debug, Deserialize)]
+/// A change as the form sends it: values to replace (empty ones are left as they are), when
+/// given the whole new list of sites, and fields to remove or mark plain or secret (R-48).
+/// Marking a field the item has plain asks the person first; adding one plain does not.
+#[derive(Debug, Default, Deserialize)]
 pub struct ChangeForm {
     #[serde(default)]
     pub values: BTreeMap<String, String>,
     #[serde(default)]
     pub origins: Option<Vec<String>>,
+    #[serde(default)]
+    pub remove: Vec<String>,
+    #[serde(default)]
+    pub plain: Vec<String>,
+    #[serde(default)]
+    pub secret: Vec<String>,
 }
 
 pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Result<Edited> {
@@ -208,6 +231,9 @@ pub fn edit_item(ctx: &Ctx, name: &str, form: ChangeForm, confirmed: bool) -> Re
         Ok(ItemChange {
             set_fields: fields(kind, typed)?,
             origins: form.origins.as_deref().map(origins).transpose()?,
+            remove_fields: field_names(kind, &form.remove)?,
+            make_plain: field_names(kind, &form.plain)?,
+            make_secret: field_names(kind, &form.secret)?,
             ..Default::default()
         })
     };
