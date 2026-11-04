@@ -15,6 +15,8 @@ mod snapshot;
 mod tabs;
 mod wait;
 
+pub use input::key_names;
+
 use crate::cdp::Cdp;
 use anyhow::{Context, Result};
 use keyharbor_domain::{
@@ -33,7 +35,8 @@ use std::{
 };
 
 pub(crate) const LOAD_TIMEOUT: Duration = Duration::from_secs(15);
-pub(crate) const WAIT_TIMEOUT: Duration = Duration::from_secs(15);
+/// The longest `wait` sleeps or looks for a selector; the MCP `browser_wait` schema says so.
+pub const WAIT_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const POLL: Duration = Duration::from_millis(100);
 
 /// Built with [`crate::chrome::CdpLink::browser`].

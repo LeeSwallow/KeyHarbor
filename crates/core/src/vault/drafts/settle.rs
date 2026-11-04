@@ -241,7 +241,8 @@ mod tests {
                 },
                 "claude",
             )
-            .unwrap();
+            .unwrap()
+            .name;
         assert_eq!(
             vault.login_draft_for(&github(), None).unwrap(),
             Some(generated.clone())

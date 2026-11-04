@@ -159,7 +159,8 @@ mod tests {
                 },
                 "claude",
             )
-            .unwrap();
+            .unwrap()
+            .name;
         assert_eq!(draft.as_str(), "github~draft-1");
         let clock = ManualClock::at_unix_seconds(1_793_232_000);
         let change = |state| SiteChange {

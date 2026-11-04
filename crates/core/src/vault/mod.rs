@@ -14,7 +14,7 @@ mod resolve;
 mod signing;
 mod summary;
 
-pub use drafts::{DraftItem, GeneratedLogin, MAX_DRAFTS, generate_password};
+pub use drafts::{DraftItem, GeneratedDraft, GeneratedLogin, MAX_DRAFTS, generate_password};
 pub use item::{
     ExpiryChoice, ItemChange, ItemDetails, ItemSource, ItemStatus, ItemSummary, NewItem,
 };

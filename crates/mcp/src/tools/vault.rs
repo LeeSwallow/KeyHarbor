@@ -1,15 +1,15 @@
 //! Vault tools: metadata and placeholders only, never a value. Agents add items only as
 //! drafts that never replace an existing item (08 §8.2–§8.3).
 
-use crate::server::{Server, fail, outcome};
-use anyhow::{Context, Result, anyhow, bail};
+use crate::server::{Server, fail, invalid, outcome};
+use anyhow::{Context, Result, bail};
 use keyharbor_core::{
     CatalogEntry, DraftItem, GeneratedLogin, ItemFilter, ItemSource, ItemSummary, catalog,
 };
 use keyharbor_domain::{
     password::{DEFAULT_LENGTH, PasswordRule},
     tag::Tag,
-    vault::{FieldName, InvalidValue, ItemKind, ItemName, Origin, placeholder},
+    vault::{FieldName, ItemKind, ItemName, Origin, placeholder},
 };
 use rmcp::{
     handler::server::wrapper::Parameters, model::CallToolResult, schemars, tool, tool_router,
@@ -66,10 +66,6 @@ struct Put {
 fn draft_json(name: &ItemName, fields: impl Iterator<Item = String>) -> Value {
     let placeholders: Vec<String> = fields.map(|f| placeholder(name.as_str(), &f)).collect();
     json!({"name": name.as_str(), "draft": true, "placeholders": placeholders})
-}
-
-fn invalid(error: InvalidValue) -> anyhow::Error {
-    anyhow!("{error}")
 }
 
 fn rule(args: Option<PasswordRuleArgs>) -> Result<PasswordRule> {
@@ -163,13 +159,7 @@ impl Server {
         outcome(
             self.blocking(move |inner| {
                 let entries = catalog(&**inner.store()?, || (inner.open_vault)())?;
-                let kept = entries.iter().filter(|entry| match entry {
-                    CatalogEntry::Verified(item) => filter.keeps(item),
-                    // A tampered item's tags are not trusted; it shows unless the prefix excludes it.
-                    CatalogEntry::Tampered { name } => {
-                        filter.prefix.as_deref().is_none_or(|p| name.starts_with(p))
-                    }
-                });
+                let kept = entries.iter().filter(|entry| filter.keeps_entry(entry));
                 Ok(Value::Array(kept.map(entry_json).collect()))
             })
             .await,
@@ -191,16 +181,12 @@ impl Server {
             Ok(login) => login,
             Err(error) => return fail(error.to_string()),
         };
-        let fields = ["username", "password"]
-            .into_iter()
-            .filter(|f| *f == "password" || login.username.is_some())
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
         outcome(
             self.blocking(move |inner| {
                 let vault = (inner.open_vault)()?;
-                let name = vault.generate_login(login, inner.agent())?;
-                Ok(draft_json(&name, fields.into_iter()))
+                let draft = vault.generate_login(login, inner.agent())?;
+                let fields = draft.fields.iter().map(|f| f.as_str().to_owned());
+                Ok(draft_json(&draft.name, fields))
             })
             .await,
         )

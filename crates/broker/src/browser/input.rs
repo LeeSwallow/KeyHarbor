@@ -5,6 +5,51 @@ use anyhow::{Context, Result, anyhow, bail};
 use keyharbor_domain::ports::browser::Target;
 use serde_json::{Value, json};
 
+/// A key an agent may press: its name (also the CDP `code`), its virtual key code and the
+/// text it types, if any.
+struct KeySpec {
+    name: &'static str,
+    key_code: i64,
+    text: Option<&'static str>,
+}
+
+const fn key(name: &'static str, key_code: i64) -> KeySpec {
+    KeySpec {
+        name,
+        key_code,
+        text: None,
+    }
+}
+
+/// Every key `press_key` knows. The MCP `browser_press` schema lists the same names.
+static KEYS: &[KeySpec] = &[
+    KeySpec {
+        text: Some("\r"),
+        ..key("Enter", 13)
+    },
+    key("Tab", 9),
+    key("Escape", 27),
+    key("Backspace", 8),
+    key("Delete", 46),
+    KeySpec {
+        text: Some(" "),
+        ..key("Space", 32)
+    },
+    key("ArrowUp", 38),
+    key("ArrowDown", 40),
+    key("ArrowLeft", 37),
+    key("ArrowRight", 39),
+    key("Home", 36),
+    key("End", 35),
+    key("PageUp", 33),
+    key("PageDown", 34),
+];
+
+/// The names of the keys an agent may press (`" "` also means `Space`).
+pub fn key_names() -> impl Iterator<Item = &'static str> {
+    KEYS.iter().map(|spec| spec.name)
+}
+
 impl CdpBrowser {
     /// The backend DOM node id a target names: a ref from a snapshot, or a CSS selector.
     async fn resolve(&mut self, session: &str, target: &Target) -> Result<u64> {
@@ -107,25 +152,13 @@ impl CdpBrowser {
     }
 
     pub(super) async fn press_key(&mut self, key: &str) -> Result<Value> {
-        let (code, key_code, text) = match key {
-            "Enter" => ("Enter", 13, Some("\r")),
-            "Tab" => ("Tab", 9, None),
-            "Escape" => ("Escape", 27, None),
-            "Backspace" => ("Backspace", 8, None),
-            "Delete" => ("Delete", 46, None),
-            "Space" | " " => ("Space", 32, Some(" ")),
-            "ArrowUp" => ("ArrowUp", 38, None),
-            "ArrowDown" => ("ArrowDown", 40, None),
-            "ArrowLeft" => ("ArrowLeft", 37, None),
-            "ArrowRight" => ("ArrowRight", 39, None),
-            "Home" => ("Home", 36, None),
-            "End" => ("End", 35, None),
-            "PageUp" => ("PageUp", 33, None),
-            "PageDown" => ("PageDown", 34, None),
-            _ => bail!(
+        let name = if key == " " { "Space" } else { key };
+        let Some(spec) = KEYS.iter().find(|spec| spec.name == name) else {
+            bail!(
                 "unsupported key; use Enter, Tab, Escape, Backspace, Delete, Space, arrows, Home, End, PageUp or PageDown"
-            ),
+            );
         };
+        let (code, key_code, text) = (spec.name, spec.key_code, spec.text);
         let key = if code == "Space" { " " } else { code };
         let session = self.active_page().await?;
         self.note_input();

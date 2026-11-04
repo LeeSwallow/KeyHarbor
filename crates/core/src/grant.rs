@@ -1,7 +1,10 @@
 //! Grants (R-43): adding (a weakening, so a person confirms), listing, revoking, and the
 //! rule a supervisor applies to every document its browser loads.
 
-use crate::{session::session, weaken};
+use crate::{
+    session::{ResumeWait, poll, session},
+    weaken,
+};
 use anyhow::{Context, Result};
 use keyharbor_crypto::random;
 use keyharbor_domain::{
@@ -12,6 +15,7 @@ use keyharbor_domain::{
     ports::{Clock, Confirm, Store},
     vault::{Description, Origin},
 };
+use std::{ops::Deref, time::Duration};
 
 /// What a person grants.
 #[derive(Clone, Debug)]
@@ -120,6 +124,26 @@ pub fn handed_off(
         .filter(|g| g.created_by == HANDOFF && g.created_at >= since && g.revoked_at.is_none())
         .filter(|g| origin.is_none_or(|o| &g.origin == o))
         .max_by_key(|g| g.created_at))
+}
+
+/// Waits up to `wait` for a site to be handed over to session `id` from now on, for `origin`
+/// if given ([`handed_off`]), sleeping with `sleep` between looks: `None` when the wait ran
+/// out. `store` is called once per look, so a shared store is held for one look at a time and
+/// not for the whole wait. `session receive` and `session_wait_site` both wait with this.
+pub fn wait_handed_off<G, S>(
+    store: impl Fn() -> Result<G>,
+    clock: &dyn Clock,
+    id: SessionId,
+    origin: Option<&Origin>,
+    wait: ResumeWait,
+    sleep: impl FnMut(Duration),
+) -> Result<Option<Grant>>
+where
+    G: Deref<Target = S>,
+    S: Deref<Target = dyn Store> + ?Sized,
+{
+    let since = clock.unix_seconds();
+    poll(wait, || handed_off(&**store()?, id, since, origin), sleep)
 }
 
 pub fn list(store: &dyn Store, id: SessionId) -> Result<Vec<Grant>> {
@@ -266,6 +290,34 @@ mod tests {
                 .is_none(),
             "bank was handed off before"
         );
+    }
+
+    #[test]
+    fn waiting_for_a_handoff_counts_only_sites_handed_over_after_it_began() {
+        let (_tmp, store, id) = setup();
+        let clock = ManualClock::at_unix_seconds(1_000);
+        let github = Origin::parse("https://github.com").unwrap();
+        add_for_handoff(&store, &clock, id, github.clone(), 600).unwrap();
+        clock.advance(Duration::from_secs(1));
+        let store: Box<dyn Store> = Box::new(store);
+        let looks = std::cell::Cell::new(0);
+        let look = || {
+            looks.set(looks.get() + 1);
+            Ok(&store)
+        };
+        let wait = ResumeWait::seconds(Some(1)).unwrap();
+        let none = wait_handed_off(look, &clock, id, None, wait, |_| {}).unwrap();
+        assert!(none.is_none(), "handed over before the wait began");
+        assert!(looks.get() > 1, "looked again until the wait ran out");
+        let mut handed = false;
+        let sleep = |_| {
+            if !handed {
+                handed = true;
+                add_for_handoff(&*store, &clock, id, github.clone(), 600).unwrap();
+            }
+        };
+        let got = wait_handed_off(|| Ok(&store), &clock, id, Some(&github), wait, sleep);
+        assert_eq!(got.unwrap().map(|g| g.origin), Some(github));
     }
 
     #[test]
