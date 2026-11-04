@@ -63,21 +63,37 @@ pub fn find(timeout: Duration) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
 
+    /// Writes an executable script through a child shell. If this (multithreaded) test
+    /// process opened the file for writing itself, another test forking at that moment would
+    /// hold the descriptor and exec could fail with ETXTBSY ("text file busy"), which
+    /// `answers` would report as no answer.
     fn script(dir: &Path, body: &str) -> PathBuf {
         let path = dir.join("ego-browser");
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut sh = Command::new("/bin/sh")
+            .args(["-c", "cat > \"$1\" && chmod 700 \"$1\"", "sh"])
+            .arg(&path)
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = sh.stdin.take().unwrap();
+        write!(stdin, "#!/bin/sh\n{body}\n").unwrap();
+        drop(stdin);
+        assert!(sh.wait().unwrap().success(), "script written");
         path
     }
 
     #[test]
     fn a_command_that_runs_answers() {
         let tmp = super::super::test_dir("probe");
-        assert!(answers(&script(&tmp, "exit 0"), Duration::from_secs(5)));
-        assert!(!answers(&script(&tmp, "exit 3"), Duration::from_secs(5)));
-        assert!(!answers(&tmp.join("missing"), Duration::from_secs(5)));
+        // `answers` returns as soon as the command ends, so a long limit costs nothing; a short
+        // one failed on a loaded machine where starting a shell took over five seconds.
+        let limit = Duration::from_secs(30);
+        assert!(answers(&script(&tmp, "exit 0"), limit));
+        assert!(!answers(&script(&tmp, "exit 3"), limit));
+        assert!(!answers(&tmp.join("missing"), limit));
     }
 
     #[test]
