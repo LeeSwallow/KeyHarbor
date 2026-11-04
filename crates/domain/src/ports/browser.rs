@@ -210,6 +210,14 @@ pub trait PageInput: Send {
         &mut self,
         hidden: &BTreeSet<u64>,
     ) -> impl Future<Output = Result<Value>> + Send;
+    /// A screenshot like `BrowserPort::screenshot` taken while the elements in `hidden` draw
+    /// their text as discs (a `<select>` draws none). Takes no screenshot if an element still
+    /// in the page cannot be hidden; restores the elements afterwards. A page script that
+    /// undoes the hiding while the screenshot is taken is not prevented (03 §3.11).
+    fn redacted_screenshot(
+        &mut self,
+        hidden: &BTreeSet<u64>,
+    ) -> impl Future<Output = Result<Value>> + Send;
     /// The username and password inputs of the page's top document or a same-origin frame:
     /// username by `autocomplete=username`, then `type=email`, then a name or id with
     /// user/email/login; password as [`Element::is_password`].
