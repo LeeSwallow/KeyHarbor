@@ -3,9 +3,9 @@
 
 use std::collections::BTreeSet;
 
-use super::Rule;
 use crate::model::DesignSet;
 use crate::report::Violation;
+use crate::rules::Rule;
 use crate::scanner;
 
 pub struct DefinedVars;
@@ -19,12 +19,12 @@ impl Rule for DefinedVars {
         let defined: BTreeSet<&str> = ds
             .sheets
             .iter()
-            .flat_map(|f| f.sheet.blocks.iter().flat_map(|b| b.custom_properties()))
+            .flat_map(|f| f.sheet.custom_properties())
             .map(|d| d.name.as_str())
             .collect();
         let mut out = Vec::new();
         for file in &ds.sheets {
-            for decl in file.sheet.blocks.iter().flat_map(|b| &b.decls) {
+            for decl in file.sheet.decls() {
                 for name in scanner::var_refs(&decl.value) {
                     if !defined.contains(name.as_str()) {
                         out.push(
