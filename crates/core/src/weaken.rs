@@ -345,6 +345,9 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect();
-        assert_eq!(shown, vec!["letting agents type the one-time codes of github"]);
+        assert_eq!(
+            shown,
+            vec!["letting agents type the one-time codes of github"]
+        );
     }
 }

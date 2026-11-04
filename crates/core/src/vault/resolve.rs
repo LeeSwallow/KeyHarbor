@@ -226,15 +226,22 @@ mod tests {
         let code = v.one_time_code(&bank, 59).unwrap();
         assert_eq!(*code.code, "287082");
         assert_eq!(code.period, 30);
-        assert_eq!(*code.neighbours[0], *v.one_time_code(&bank, 29).unwrap().code);
-        assert_eq!(*code.neighbours[1], *v.one_time_code(&bank, 89).unwrap().code);
+        assert_eq!(
+            *code.neighbours[0],
+            *v.one_time_code(&bank, 29).unwrap().code
+        );
+        assert_eq!(
+            *code.neighbours[1],
+            *v.one_time_code(&bank, 89).unwrap().code
+        );
         // Placeholders of both namespaces fill in order.
-        let out = fill_placeholders("{{secret:bank.username}} {{otp:bank}}.", |found| {
-            match found {
+        let out = fill_placeholders(
+            "{{secret:bank.username}} {{otp:bank}}.",
+            |found| match found {
                 Placeholder::Secret(r) => v.resolve(r),
                 Placeholder::Otp(item) => Ok(v.one_time_code(item, 59)?.code),
-            }
-        })
+            },
+        )
         .unwrap();
         assert_eq!(&*out, "me@x.com 287082.");
         // An item without a seed has no code.
@@ -249,8 +256,14 @@ mod tests {
     fn a_seed_that_is_not_one_is_refused_without_its_value() {
         let e = env();
         let v = init(&e);
-        let error = v.add(with_seed("KH-SYNTH-not a seed!")).unwrap_err().to_string();
-        assert!(error.starts_with("field totp_seed: not a one-time code seed"), "{error}");
+        let error = v
+            .add(with_seed("KH-SYNTH-not a seed!"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.starts_with("field totp_seed: not a one-time code seed"),
+            "{error}"
+        );
         assert!(!error.contains("KH-SYNTH"), "{error}");
         let uri = format!("otpauth://totp/Bank:me?secret={RFC_SEED}&issuer=Bank");
         v.add(with_seed(&uri)).unwrap();

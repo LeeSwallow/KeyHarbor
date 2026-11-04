@@ -146,9 +146,10 @@ mod tests {
     }
     #[test]
     fn placeholders_parse_and_reject_malformed() {
-        let refs =
-            parse_secret_placeholders("id={{secret:github.username}} pw={{secret:github.password}}")
-                .unwrap();
+        let refs = parse_secret_placeholders(
+            "id={{secret:github.username}} pw={{secret:github.password}}",
+        )
+        .unwrap();
         assert_eq!(refs.len(), 2);
         assert_eq!(refs[1].item.as_str(), "github");
         assert_eq!(refs[1].field.as_str(), "password");

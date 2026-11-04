@@ -148,7 +148,10 @@ fn the_code_of_the_moment_is_typed_masked_and_never_recorded() {
     type_code(&guard, &mut fake).unwrap();
     let after = CLOCK.unix_seconds();
     let typed = fake.typed.join("");
-    let expected = [seed.code_at(before).to_string(), seed.code_at(after).to_string()];
+    let expected = [
+        seed.code_at(before).to_string(),
+        seed.code_at(after).to_string(),
+    ];
     assert!(expected.contains(&typed), "typed the code of now");
     assert_eq!(
         probe.kinds(),
@@ -159,7 +162,11 @@ fn the_code_of_the_moment_is_typed_masked_and_never_recorded() {
     let snapshot = block(guard.browser(&mut fake, "claude").snapshot()).unwrap();
     assert_eq!(snapshot["text"], "{{otp:bank}}");
     fake.echo = format!("code {typed}");
-    let title = block(guard.browser(&mut fake, "claude").navigate("https://github.com"));
+    let title = block(
+        guard
+            .browser(&mut fake, "claude")
+            .navigate("https://github.com"),
+    );
     assert_eq!(title.unwrap()["title"], "code {{otp:bank}}");
     let err = block(guard.browser(&mut fake, "claude").click(&Target::Ref(1))).unwrap_err();
     assert_eq!(err.to_string(), "no element code {{otp:bank}}");

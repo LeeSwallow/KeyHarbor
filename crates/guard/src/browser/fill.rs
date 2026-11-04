@@ -24,7 +24,12 @@ const FOCUS_MOVED: &str = "substitution locked for this session: the focus moved
 /// The first item `template` names: refusals are recorded against it.
 fn first_item(template: &str) -> Result<ItemName> {
     let refs = parse_placeholders(template).map_err(|e| anyhow!("{e}"))?;
-    Ok(refs.into_iter().next().context("no placeholder")?.item().clone())
+    Ok(refs
+        .into_iter()
+        .next()
+        .context("no placeholder")?
+        .item()
+        .clone())
 }
 
 impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {

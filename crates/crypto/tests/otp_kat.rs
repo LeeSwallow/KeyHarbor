@@ -1,4 +1,4 @@
-//! RFC 6238 Appendix B test vectors (docs/design/07 §7.9): the seed of each hash, as an
+//! RFC 6238 Appendix B test vectors (docs/design/07 §7.4.4): the seed of each hash, as an
 //! `otpauth://` URI with 8 digits, gives the published code at each time.
 
 use keyharbor_crypto::otp::OtpSeed;

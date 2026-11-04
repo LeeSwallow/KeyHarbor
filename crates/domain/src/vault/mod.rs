@@ -23,8 +23,8 @@ pub use origin::Origin;
 pub(crate) use origin::is_https_or_local_http;
 pub use placeholder::{
     OTP_PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN, Placeholder, PlaceholderRef,
-    has_placeholder, otp_placeholder, parse_placeholders, parse_secret_placeholders,
-    placeholder, placeholder_spans,
+    has_placeholder, otp_placeholder, parse_placeholders, parse_secret_placeholders, placeholder,
+    placeholder_spans,
 };
 
 use std::{error::Error, fmt};

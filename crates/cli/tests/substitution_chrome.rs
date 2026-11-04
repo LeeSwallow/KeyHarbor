@@ -436,7 +436,10 @@ fn a_one_time_code_reaches_only_the_bound_page_once_turned_on() {
     h.ok_call(json!({"op": "click", "target": {"selector": "#go"}}));
     h.ok_call(json!({"op": "wait", "selector": "#done"}));
     let seed = keyharbor_crypto::otp::OtpSeed::parse(SEED).unwrap();
-    let expected = [seed.code_at(before).to_string(), seed.code_at(after).to_string()];
+    let expected = [
+        seed.code_at(before).to_string(),
+        seed.code_at(after).to_string(),
+    ];
     let typed = {
         let posted = shop.posted.lock().unwrap();
         posted
@@ -445,7 +448,10 @@ fn a_one_time_code_reaches_only_the_bound_page_once_turned_on() {
             .map(|(_, v)| v.clone())
             .expect("the page received a user value")
     };
-    assert!(expected.contains(&typed), "the page received the code of now");
+    assert!(
+        expected.contains(&typed),
+        "the page received the code of now"
+    );
 
     let audit: Value = serde_json::from_str(&h.ok(&["audit", "--json"], None)).unwrap();
     let events = audit.as_array().unwrap();
@@ -453,7 +459,11 @@ fn a_one_time_code_reaches_only_the_bound_page_once_turned_on() {
         && e["item_name"] == "bank"
         && e["result"] == "ok"
         && e["origin"] == shop.base.as_str()));
-    assert!(events.iter().any(|e| e["kind"] == "secret_denied" && e["result"] == "otp-off"));
+    assert!(
+        events
+            .iter()
+            .any(|e| e["kind"] == "secret_denied" && e["result"] == "otp-off")
+    );
     for event in events {
         for key in ["item_name", "origin", "result"] {
             let text = event[key].as_str().unwrap_or_default();

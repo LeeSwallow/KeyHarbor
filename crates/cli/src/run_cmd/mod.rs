@@ -70,7 +70,8 @@ fn assignment(text: &str) -> Result<(String, &str)> {
 /// `--file VAR=item.field`.
 fn secret_file(text: &str) -> Result<(String, PlaceholderRef)> {
     let (var, reference) = assignment(text)?;
-    let refs = parse_secret_placeholders(&placeholder_text(reference)).map_err(|e| anyhow!("{e}"))?;
+    let refs =
+        parse_secret_placeholders(&placeholder_text(reference)).map_err(|e| anyhow!("{e}"))?;
     let [reference] = <[PlaceholderRef; 1]>::try_from(refs)
         .map_err(|_| anyhow!("--file expects VAR=ITEM.FIELD"))?;
     Ok((var, reference))

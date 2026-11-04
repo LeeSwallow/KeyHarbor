@@ -17,6 +17,11 @@ description: Use when a task needs the browser signed in to a website (GitHub, a
 7. Record it: `site_state_set {session, origin, state: "logged_in", item}`.
    If the site asked to sign in again, record `expired` instead.
 
-- A CAPTCHA, 2FA code or "is this you?" page: handing-off-to-the-user.
+- A two-step code (authenticator app): if `vault_list` shows `otp.usable: true` for the item,
+  focus the code input and `browser_fill`/`browser_type` `{{otp:<item>}}`; KeyHarbor types the
+  code of the moment, only on the item's own site. If `otp` is `null`, `usable` is false, or you
+  get `denied: <item> (otp-off)` (the user has not let agents type codes) or
+  `(otp-not-allowed)`: handing-off-to-the-user. Never ask for the seed or the code.
+- A CAPTCHA, SMS/email code or "is this you?" page: handing-off-to-the-user.
 - `denied: <item> (origin)`: the page is not the item's site. Do not retry elsewhere.
 - No login in the vault: asking-for-a-secret, or signing-up-for-a-site for a new account.

@@ -1,4 +1,4 @@
-//! Time-based one-time codes (RFC 6238) for a login's `totp_seed` (#206, docs/design/07 §7.9).
+//! Time-based one-time codes (RFC 6238) for a login's `totp_seed` (#206, docs/design/07 §7.4.4).
 //! The HMAC, the dynamic truncation and the base32 decoding are totp-rs's; this module only
 //! reads the seed's text (base32, or an `otpauth://totp/` URI with its `algorithm`, `digits`
 //! and `period`) and asks for the code at a given time. The clock is the caller's.
@@ -196,7 +196,10 @@ mod tests {
         assert_eq!(seed.period(), 60);
         assert_eq!(seed.code_at(0).len(), 8);
         let upper = OtpSeed::parse(&format!("OTPAUTH://TOTP/x?SECRET={SEED}")).unwrap();
-        assert_eq!(*upper.code_at(59), *OtpSeed::parse(SEED).unwrap().code_at(59));
+        assert_eq!(
+            *upper.code_at(59),
+            *OtpSeed::parse(SEED).unwrap().code_at(59)
+        );
     }
 
     #[test]
