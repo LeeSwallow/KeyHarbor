@@ -100,6 +100,8 @@ Codex와 다른 MCP 클라이언트는 [docs/plugin.md](docs/plugin.md)에 있�
 
 ### 대기 시간과 상한
 
+2단계 인증 앱의 코드도 맡길 수 있습니다. 로그인 항목에 OTP 시드(base32 또는 `otpauth://` URI)를 넣고 관리 앱 [설정] → 보안의 "에이전트가 OTP 코드 입력"(또는 `keyharbor settings set agent_otp true`)을 켜면, 에이전트가 `{{otp:github}}`을 쓸 때 KeyHarbor가 그 순간의 코드를 **그 항목의 사이트에만** 넣습니다. 기본은 꺼져 있고 켤 때 확인합니다: 비밀번호와 시드가 한 금고에 있으면 2단계 인증이 사실상 1단계가 되기 때문입니다([보안 백서 §3.8.1](docs/design/03-security-whitepaper.md#381-일회용-코드-otp항목-206-r-483)). 항목마다 `keyharbor vault edit <항목> --otp-allowed off`로 끌 수 있습니다.
+
 느린 Mac에서 Chrome 첫 실행이 오래 걸리면 대기 시간을 늘립니다. 관리 앱 [설정] → 고급, 또는 `keyharbor settings set <이름> <값>`으로 바꿉니다.
 
 | 설정 | 무엇 | 기본 | 범위 | 늘리면 확인 |

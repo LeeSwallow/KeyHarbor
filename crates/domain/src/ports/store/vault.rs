@@ -36,6 +36,8 @@ pub struct ItemRow {
     pub tags: Vec<String>,
     /// Fields that are not secret (signed), sorted: shown in listings, not masked.
     pub plain_fields: Vec<String>,
+    /// Agents may type the item's one-time codes when `agent_otp` is on (signed, #206).
+    pub otp_allowed: bool,
     pub status: String,
     pub source: String,
     pub meta_mac: Vec<u8>,

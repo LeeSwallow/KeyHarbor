@@ -26,8 +26,9 @@ pub use name::{DRAFT_MARK, FieldName, ItemName};
 pub use origin::Origin;
 pub(crate) use origin::is_https_or_local_http;
 pub use placeholder::{
-    PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN, PlaceholderRef, has_placeholder, parse_placeholders,
-    placeholder,
+    OTP_PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN, Placeholder, PlaceholderRef,
+    has_placeholder, otp_placeholder, parse_placeholders, parse_secret_placeholders, placeholder,
+    placeholder_spans,
 };
 pub use template::{CredentialTemplate, TemplateField, TemplateName};
 

@@ -50,9 +50,12 @@ pub enum AuditKind {
     /// The person filled a login into a page of their own browser after confirming with
     /// Touch ID (ADR-0017); the result is `filled`.
     ValueAutofilled,
+    /// An agent typed an item's one-time code into a page (`{{otp:item}}`, #206). Like every
+    /// event it names the item and origin, never the code.
+    OtpUsed,
 }
 impl AuditKind {
-    pub const ALL: [AuditKind; 25] = [
+    pub const ALL: [AuditKind; 26] = [
         Self::SecretUsed,
         Self::SecretDenied,
         Self::OriginChangedAfterFill,
@@ -78,6 +81,7 @@ impl AuditKind {
         Self::SiteHandedOff,
         Self::ValueRevealed,
         Self::ValueAutofilled,
+        Self::OtpUsed,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -106,6 +110,7 @@ impl AuditKind {
             Self::SiteHandedOff => "site_handed_off",
             Self::ValueRevealed => "value_revealed",
             Self::ValueAutofilled => "value_autofilled",
+            Self::OtpUsed => "otp_used",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {

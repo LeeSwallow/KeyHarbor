@@ -1,6 +1,8 @@
 //! The checks an item use must pass, as a chain of small objects (Chain of Responsibility).
 //! Each check looks at one thing and either passes or names a [`DenialReason`]; the first
-//! refusal stops the chain. A new check is one file here plus one line in a chain.
+//! refusal stops the chain. A new check is one file here plus one line in a chain. Eight
+//! checks and this file pass the folder line by one: each check is the one-file extension
+//! point writing-code.md names, and none groups with another.
 //!
 //! Existence and metadata verification come first and are not checks: they produce the
 //! [`ItemUse`] every check reads.
@@ -9,6 +11,7 @@ mod expiry;
 mod fields;
 mod focus;
 mod origin;
+pub mod otp;
 mod policy;
 mod run;
 mod status;
@@ -26,6 +29,14 @@ pub enum Target<'a> {
     Process,
 }
 
+/// Whether a use asks for the item's one-time code (`{{otp:item}}`), and if so whether the
+/// person lets agents type codes at all (`agent_otp`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CodeUse {
+    NotAsked,
+    Asked { agent_otp: bool },
+}
+
 /// One use of one item, as the checks see it.
 pub struct UseContext<'a> {
     pub agent: &'a str,
@@ -34,6 +45,8 @@ pub struct UseContext<'a> {
     pub rules: &'a [Rule],
     /// The fields the use names (empty for a whole-item use, `run --env`).
     pub fields: &'a [&'a str],
+    /// The one-time code, which names no field: the item's seed field is never typed itself.
+    pub code: CodeUse,
     pub to: Target<'a>,
 }
 
@@ -46,6 +59,7 @@ pub static BROWSER: &[&dyn Check] = &[
     &status::NotDiscarded,
     &expiry::NotExpired,
     &policy::Allowed,
+    &otp::OtpAllowed,
     &origin::BrowserOrigin,
     &fields::Exist,
     &fields::SuitTheElement,

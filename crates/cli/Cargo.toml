@@ -24,6 +24,8 @@ zeroize.workspace = true
 
 [dev-dependencies]
 tungstenite.workspace = true
+# Tests only: the expected one-time code a page receives (#206).
+keyharbor-crypto = { path = "../crypto" }
 keyharbor-sqlite = { path = "../sqlite", features = ["test-support"] }
 keyharbor-keystore = { path = "../keystore", features = ["insecure-test-keystore"] }
 tempfile.workspace = true

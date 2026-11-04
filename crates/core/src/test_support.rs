@@ -12,6 +12,14 @@ impl TestVault {
     pub fn resolve(&self, reference: &PlaceholderRef) -> Result<Zeroizing<String>> {
         self.0.resolve(&PlaintextAccess::issue(), reference)
     }
+    pub fn one_time_code(
+        &self,
+        item: &keyharbor_domain::vault::ItemName,
+        unix_seconds: u64,
+    ) -> Result<crate::OneTimeCode> {
+        self.0
+            .one_time_code(&PlaintextAccess::issue(), item, unix_seconds)
+    }
     pub fn mask_values(&self) -> Result<crate::MaskValues> {
         self.0.mask_values(&PlaintextAccess::issue())
     }

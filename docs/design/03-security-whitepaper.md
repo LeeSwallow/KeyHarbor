@@ -212,6 +212,7 @@ flowchart TD
 - raw CDP를 켠 세션은 모두 우회된다(N5).
 - **엔트로피가 낮은 값(4–6자리 PIN, 짧은 코드)은 S1 보장이 약하다.** I1 차단은 세션마다 세 번의 예/아니오 답을 남긴다(세 번째에 잠긴다). 새 세션마다 몇 비트씩 새어 나갈 수 있으므로 4자리 PIN은 수 개 세션이면 맞힐 수 있다. 짧은 값은 금고에 두되 에이전트 정책으로 막는 편이 안전하다.
 - **흔한 말을 비밀 필드에 두면 오탐이 난다.** "해당없음"·"none" 같은 값은 페이지의 같은 글자까지 가리고, 에이전트가 그 말을 치면 I1 차단으로 거부되며 세 번이면 잠긴다. 그래서 비밀 필드(plain이 아닌 것)에 흔한 말, 너무 단순한 값(한 글자 반복, 4자리 이하 숫자), 4자 미만 값을 저장하면 CLI(`vault add`·`edit`·`fulfill`)와 관리 앱(편집기, 보안 입력 창)이 **항목·필드·이유만** 담은 경고를 낸다. 값은 경고에 넣지 않고 저장은 막지 않는다. 비밀이 아닌 값은 `--plain`으로 두면 가리지 않는다. 판정은 `CommonValueReason::of` 한 곳이다(J-230).
+- **일회용 코드(#206)는 입력한 뒤 잠깐만 가린다.** 금고 마스커는 금고 버전마다 한 번 만들어 30초마다 바뀌는 코드를 담지 못한다. 그래서 guard가 `{{otp:<항목>}}`으로 코드를 넣을 때 그 주기와 직전·다음 주기의 코드 세 개를 세션의 작은 마스커(`guard::codes`)에 더하고, 입력한 때부터 두 주기 동안 응답에서 `{{otp:<항목>}}`으로 바꾼다. 금고 값을 먼저 가리고 코드를 다음에 가린다(코드가 긴 값 안에 있어도 그 값의 일치를 깨지 않게). 6자리 숫자라 그 1분 동안 페이지의 같은 숫자(가격·주문 번호의 일부)도 가려질 수 있다: 오탐이 누출보다 낫다(J-292). 두 주기가 지난 뒤 페이지가 코드를 다시 보이면 가리지 않는다. 그 코드는 이미 쓸 수 없다.
 - 치환받은 요소를 가리는 것은 그 요소의 snapshot뿐이다. 페이지 스크립트가 편집된 값을 다른 요소·URL로 옮기면 변형이 맞지 않는 한 보인다. 스크린샷에서는 옮겨 그린 값을 가리지 못한다.
 - 3단계 구현: Aho-Corasick 오토마톤은 패턴 사본을 자기 메모리에 두며 해제할 때 지우지 않는다(`Zeroizing`은 패턴을 만드는 동안만). `keyharbor run`은 조각 단위로 가리며 값의 앞부분일 수 있는 끝 조각은 더 오거나 스트림이 끝날 때까지 붙잡는다(J-83). 그래서 마스커는 패턴 접두사의 키 있는 해시도 메모리에 둔다(오토마톤이 이미 값을 두므로 새 노출은 아니다). 자식이 값의 앞부분만 찍고 끝나면 그 조각은 가려지지 않는다. 값을 읽지 못하거나 오토마톤을 만들지 못하면 응답을 보내지 않는다(J-36, J-150).
 
@@ -246,7 +247,7 @@ flowchart TD
   sel --> st["탐색 정착 대기 (I4): 메인 frame 탐색 중이면 최대 3초, 클릭·키 뒤 250ms"]
   st --> f["포커스 찾기 (C2): activeElement → 열린 shadowRoot.activeElement →<br/>frameId가 있는 요소(iframe·frame·object·embed·fencedframe)면 그 문서로<br/>닫힌 shadow root·들어갈 수 없는 frame은 거부"]
   f --> e["요소 정보 (DOM.describeNode): 태그·type·autocomplete·contenteditable"]
-  e --> ch["항목별 검사 체인: 폐기 → 만료 → 정책 → origin/no-origin → 필드 존재 → 필드 종류(password는 password 칸에만) → 텍스트를 받는 요소"]
+  e --> ch["항목별 검사 체인: 폐기 → 만료 → 정책 → 일회용 코드(otp) → origin/no-origin → 필드 존재 → 필드 종류(password는 password 칸에만) → 텍스트를 받는 요소"]
   ch --> nav["탐색 횟수가 그대로인가 (I4) → 아니면 거부"]
   nav --> ins["요소 표시(taint, C1) → Input.insertText"]
   ins --> re["포커스 재확인 (C2): 다르면 세션 치환 잠금 + substitution_locked"]
@@ -276,6 +277,35 @@ sequenceDiagram
 - **개인정보 항목(`identity`·`address`)은 어디든 입력되지만**, 처음 쓰이는 origin이면 `first_use_origin`을 기록한다.
 - **남는 TOCTOU**: 탐색 이벤트는 CDP에서 비동기로 온다. 확인과 `Input.insertText` 사이에 시작된 탐색은 거의 다 잡지만, 이벤트가 입력 뒤에 도착하는 경우까지 없애지는 못한다. 다른 frame의 탐색도 페이지 전체 탐색 횟수를 올리므로 드물게 정상 입력이 거부될 수 있다(재시도하면 된다).
 - **카드와 결제사 iframe**: 결제 폼은 대개 결제사 도메인의 iframe 안에 있다(예: Stripe Elements는 `https://js.stripe.com`). 그래서 `card` 항목의 origin 목록에는 상점 origin과 결제사 origin을 **함께** 등록한다. 관리 앱은 카드를 처음 쓸 때 거부된 origin을 사용 기록에 보여 주고, 사용자가 한 번에 추가할 수 있게 한다.
+
+
+### 3.8.1 일회용 코드 `{{otp:<항목>}}` (#206, R-48(3))
+
+로그인 항목의 `totp_seed`(base32 또는 `otpauth://totp/` URI)로 그 순간의 RFC 6238 코드를 만들어 입력한다. 코드 계산은 `keyharbor-crypto::otp`(totp-rs)만 한다(07 §7.4.4). placeholder는 `{{secret:…}}`과 같은 치환 경로를 지나고, 검사 체인에 `pdp/checks/otp.rs` 한 칸이 더해진다.
+
+```mermaid
+flowchart TD
+  t["fill / type: {{otp:bank}}"] --> c1{"설정 agent_otp<br/>(기본 꺼짐)"}
+  c1 -- 꺼짐 --> d1["거부 otp-off · audit<br/>에이전트는 사람에게 넘긴다"]
+  c1 -- 켜짐 --> c2{"항목 otp_allowed<br/>(기본 켜짐)"}
+  c2 -- 꺼짐 --> d2["거부 otp-not-allowed"]
+  c2 -- 켜짐 --> c3{"origin 바인딩 켜짐<br/>그리고 origin 있음"}
+  c3 -- 아니오 --> d3["거부 no-origin"]
+  c3 -- 예 --> c4{"시드 있음"}
+  c4 -- 아니오 --> d4["거부 not_found"]
+  c4 -- 예 --> c5{"포커스 frame origin ∈ 항목 origins<br/>(정확 일치)"}
+  c5 -- 아니오 --> d5["거부 origin"]
+  c5 -- 예 --> ok["guard가 PlaintextAccess로 시드를 열어<br/>지금 코드 계산 → 입력<br/>코드 3개를 두 주기 동안 마스킹 · otp_used(값 없음)"]
+  style d1 fill:#fde
+  style ok fill:#dfd
+```
+
+- **한계: 같은 금고의 비밀번호와 시드는 2단계 인증을 사실상 1단계로 만든다.** 금고와 그 키를 가진 사람(또는 에이전트를 조종하는 프롬프트 주입)은 두 요소를 모두 쓸 수 있다. 그래서 설정 `agent_otp`는 **기본 꺼짐**이고 켜는 것은 약화 작업(사람 확인, §3.12.1), 끄는 것은 확인 없이 된다. 켠 뒤에도 항목마다 `vault edit <항목> --otp-allowed off`로 끌 수 있고, 다시 켜는 것은 약화 작업이다.
+- 코드는 **origin에 묶인 항목**에서만, 포커스된 frame의 origin이 항목 origin과 정확히 같을 때만 나간다. 묶이지 않은 로그인은 코드를 주지 않는다(`no-origin`). 피싱 페이지로 코드를 넘기는 길은 비밀번호와 같은 방식으로 막힌다.
+- 응답 마스킹은 §3.7, 사용 기록은 `otp_used`(항목·origin·결과만), 거부는 `secret_denied`에 `otp-off`·`otp-not-allowed`. 코드와 시드는 응답·기록·오류 어디에도 쓰지 않는다.
+- `keyharbor run`과 파일·클립보드 경로는 `{{otp:…}}`을 받지 않는다(`parse_secret_placeholders`). 일회용 코드는 페이지로만 간다.
+- 시드는 저장할 때 검사한다: base32(공백·`-`·`=`·대소문자 무시, 10바이트 이상)나 `otpauth://totp/` URI(`algorithm` SHA1·SHA256·SHA512, `digits` 6–8, `period`)가 아니면 값 없이 거부한다. 가져오기는 검사하지 않는다(#206 이전 백업에 아무 글자나 든 시드가 있을 수 있다, J-291).
+- `{{secret:<항목>.totp_seed}}`로 시드 자체를 입력하는 길은 막지 않았다. 묶인 사이트에만 들어가고 에이전트는 그 값을 볼 수 없어 코드를 만들 수 없다(J-293).
 
 ## 3.9 위협 모델 (STRIDE)
 
@@ -392,6 +422,7 @@ sequenceDiagram
 12. ego lite 세션은 셸을 가진 에이전트가 채운 값을 읽을 수 있다(§3.13).
 13. `keyharbor run`이 도는 동안 그 토큰을 아는 같은 사용자 프로세스는 로컬 조회 socket에 `run` 범위 안의 값을 물을 수 있다(T13b).
 14. 세션의 치환 잠금(§3.8)은 사람이 풀 수 있고, 푼 것은 사용 기록에 남는다. 감독자의 제어 socket은 같은 OS 사용자의 요청을 구분하지 못하므로, MCP 서버를 거치지 않고 socket에 `agent` 없는 `unlock`을 직접 쓰는 프로세스는 막지 못한다(1번과 같은 경계, J-220). 풀면 그 세션의 probe 수도 처음부터 다시 세므로 9번의 추측 기회가 늘어난다. 그래서 사람만 푼다.
+15. `agent_otp`를 켜면 같은 금고의 비밀번호와 OTP 시드로 2단계 인증이 사실상 1단계가 된다. 그래서 기본은 꺼짐이고 켤 때 사람이 확인한다(§3.8.1). 입력한 일회용 코드는 두 주기 동안만 가리고, 그동안 같은 6자리 숫자도 가려질 수 있다.
 
 ## 3.12 열린 질문 — 셸을 가진 에이전트와 CLI 평문 경로
 
@@ -411,11 +442,11 @@ Claude Code·Codex 같은 에이전트는 MCP뿐 아니라 **셸**도 쓴다. �
 
 | 작업 | 확인이 필요한 경우 | 필요 없는 경우 |
 |---|---|---|
-| `vault edit` | origin 바인딩 끄기, 지금 목록에 없는 origin 추가, `--run-allowed on`, 만료 연장·제거, 비밀 필드를 `--plain`으로 표시(값이 목록에 보이고 가려지지 않는다) | 바인딩 켜기, origin 빼기, run 끄기, 첫 만료 설정·단축, `--secret`으로 되돌리기 |
+| `vault edit` | origin 바인딩 끄기, 지금 목록에 없는 origin 추가, `--run-allowed on`, `--otp-allowed on`(꺼져 있던 항목), 만료 연장·제거, 비밀 필드를 `--plain`으로 표시(값이 목록에 보이고 가려지지 않는다) | 바인딩 켜기, origin 빼기, run 끄기, `--otp-allowed off`, 첫 만료 설정·단축, `--secret`으로 되돌리기 |
 | `grant add` | 언제나(세션이 그 사이트로 갈 수 있게 된다) | `grant revoke` |
 | `unlock` | 잠긴 세션을 다시 치환하게 할 때(§3.8, J-220). 관리 앱은 [다시 허용] 누름이 확인이다 | 잠기지 않은 세션(묻지 않고 거부) |
 | `policy` | `allow`(어떤 대상이든), deny 규칙 `rm` | `deny`, allow 규칙 `rm` |
-| `settings set` | `audit_enabled false`, `capture_enabled` 변경, `request_ttl_hours`·`max_drafts`를 기본보다 크게(J-273) | `audit_enabled true`, `default_item_ttl`, 대기 시간(`session_start_seconds` 등) |
+| `settings set` | `audit_enabled false`, `capture_enabled` 변경, `agent_otp true`(§3.8.1), `request_ttl_hours`·`max_drafts`를 기본보다 크게(J-273) | `audit_enabled true`, `agent_otp false`, `default_item_ttl`, 대기 시간(`session_start_seconds` 등) |
 
 stdin과 stderr가 모두 터미널이 아니면 `"<작업> needs confirmation from a person at a terminal (or the admin app)"`으로 거부한다. 터미널이면 `/dev/tty`에 묻고 `yes`만 받는다. §3.1에 쓴 대로 이 경계는 pty 흉내로 우회할 수 있다.
 

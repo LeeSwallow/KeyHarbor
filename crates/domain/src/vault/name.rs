@@ -135,7 +135,7 @@ mod tests {
         }
         let draft = ItemName::parse("myapp/db").unwrap().draft(1);
         assert_eq!(ItemName::parse(draft.as_str()), Ok(draft.clone()));
-        let refs = parse_placeholders("{{secret:myapp/prod/db.password}}").unwrap();
+        let refs = parse_secret_placeholders("{{secret:myapp/prod/db.password}}").unwrap();
         assert_eq!(refs[0].item.as_str(), "myapp/prod/db");
     }
 
@@ -159,7 +159,7 @@ mod tests {
         ] {
             assert!(ItemName::parse(bad).is_err(), "{bad:?}");
         }
-        let refs = parse_placeholders("{{secret:github~draft-2.password}}").unwrap();
+        let refs = parse_secret_placeholders("{{secret:github~draft-2.password}}").unwrap();
         assert_eq!(refs[0].item, draft);
     }
 }

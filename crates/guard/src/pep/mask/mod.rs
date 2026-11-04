@@ -1,6 +1,6 @@
 //! Response masking (03 §3.7): every vault value — and the forms it commonly takes in pages
 //! and URLs — is replaced by its `{{secret:item.field}}` placeholder before text reaches an
-//! agent. One Aho-Corasick scan per string, leftmost-longest.
+//! agent; a one-time code the session typed, by `{{otp:item}}` (`guard::codes`). One Aho-Corasick scan per string, leftmost-longest.
 //!
 //! Values shorter than 4 characters are not masked (they would match almost any text). The
 //! automaton keeps its own copy of the patterns, which is not zeroized on drop.
@@ -8,7 +8,6 @@
 use aho_corasick::{AhoCorasick, MatchKind};
 use anyhow::Result;
 use keyharbor_core::{PlaintextAccess, Vault};
-use keyharbor_domain::vault::PlaceholderRef;
 use serde_json::Value;
 use std::{
     collections::HashSet,
@@ -66,10 +65,11 @@ impl Masker {
         }
     }
 
-    /// A masker for `values` and their common forms. Fails when the automaton cannot be built;
-    /// callers then withhold what they would have masked (fail-closed).
-    pub fn build(
-        values: impl IntoIterator<Item = (PlaceholderRef, Zeroizing<String>)>,
+    /// A masker for `values` and their common forms, each replaced by its placeholder (a
+    /// field's `{{secret:…}}`, or a typed code's `{{otp:…}}`). Fails when the automaton cannot
+    /// be built; callers then withhold what they would have masked (fail-closed).
+    pub fn build<P: std::fmt::Display>(
+        values: impl IntoIterator<Item = (P, Zeroizing<String>)>,
     ) -> Result<Self> {
         let mut patterns: Vec<(Zeroizing<String>, String)> = Vec::new();
         for (reference, value) in values {

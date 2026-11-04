@@ -110,8 +110,22 @@ flowchart LR
 | libsodium (`libsodium-sys`) | ✅ | 널리 검토됨 | C 라이브러리 | 빌드 의존성 증가 |
 | Tink (Rust) | 공식 Rust 구현 없음 | — | — | 설계만 참고 |
 | **`age` crate (rage)** | — | age 형식 참조 구현 중 하나 | 순수 Rust | 내보내기에 **채택** |
+| **`totp-rs`** | — | RFC 6238 테스트 벡터로 시험 | 순수 Rust, RustCrypto `hmac`·`sha1`·`sha2` 위 | 일회용 코드에 **채택**(§7.4.4) |
 | `zeroize`, `secrecy` | — | — | — | 메모리 정리 |
 | `security-framework` | — | — | Apple 프레임워크 바인딩 | Keychain |
+
+### 7.4.4 일회용 코드 (RFC 6238)
+
+로그인의 `totp_seed`로 에이전트가 입력할 코드를 만든다(#206, 03 §3.8.1). HMAC과 동적 절단(RFC 4226)은 **`totp-rs`** crate가 하고, `keyharbor-crypto::otp::OtpSeed`가 시드 글자(base32, 또는 `otpauth://totp/…?secret=…&algorithm=&digits=&period=`)를 읽어 그 crate에 넘긴다. 기본은 SHA-1·6자리·30초이고 URI가 정하면 SHA-256·SHA-512, 6–8자리, 1–3600초를 따른다. 시드는 10바이트 이상이어야 한다(J-291). 시각은 호출자의 `Clock`이다. 시드와 코드는 `Zeroizing`/totp-rs `zeroize`로 지운다. KAT는 RFC 6238 부록 B(`crates/crypto/tests/otp_kat.rs`).
+
+```mermaid
+flowchart LR
+  g["guard (검사 통과 뒤)"] -->|PlaintextAccess| c["core Vault::one_time_code"]
+  c -->|봉투 열기| s["totp_seed 평문 (Zeroizing)"]
+  s --> o["crypto::otp::OtpSeed::parse"]
+  o -->|totp-rs| k["code_at(t), t±period"]
+  k --> g
+```
 
 ## 7.5 키 계층 명세
 
@@ -190,7 +204,7 @@ meta_mac = HMAC-SHA256(MK,
   ‖ lp(status) ‖ lp(updated_at))
 ```
 
-v2(3단계)는 태그를 `keyharbor/meta/v2`로 바꾸고 끝에 `run_allowed (1B) ‖ opt(expires_at) ‖ opt(description) ‖ u16be(count) ‖ (lp(field) ‖ lp(text))…`(필드 설명, 정렬·중복 제거)를 더한다. v3(개발자 비밀)는 `keyharbor/meta/v3`로 바꾸고 v2 입력 끝에 `u16be(count) ‖ lp(tag_1) …`(정렬·중복 제거)를 더한다. v4는 `keyharbor/meta/v4`로 바꾸고 v3 입력 끝에 비밀이 아닌 필드 목록 `u16be(count) ‖ lp(field_1) …`(정렬·중복 제거)를 더한다. 쓰기는 언제나 v4로 서명한다. 검증은 v4를 받고, 비밀 아닌 필드가 없는 항목만 이전 MAC을 받는다: v3, 태그도 없으면 v2, v2 속성이 v1 시절 값이면 v1(이전 금고를 다시 서명하지 않고 연다). 그래서 DB에 "이 필드는 비밀 아님"을 써 넣어도 이전 MAC으로는 통과하지 못한다. KAT는 `crates/vault/tests/kat.rs`의 `META_V1_HEX`…`META_V4_HEX` [J-85, J-87].
+v2(3단계)는 태그를 `keyharbor/meta/v2`로 바꾸고 끝에 `run_allowed (1B) ‖ opt(expires_at) ‖ opt(description) ‖ u16be(count) ‖ (lp(field) ‖ lp(text))…`(필드 설명, 정렬·중복 제거)를 더한다. v3(개발자 비밀)는 `keyharbor/meta/v3`로 바꾸고 v2 입력 끝에 `u16be(count) ‖ lp(tag_1) …`(정렬·중복 제거)를 더한다. v4는 `keyharbor/meta/v4`로 바꾸고 v3 입력 끝에 비밀이 아닌 필드 목록 `u16be(count) ‖ lp(field_1) …`(정렬·중복 제거)를 더한다. v5(#206)는 `keyharbor/meta/v5`로 바꾸고 v4 입력 끝에 `otp_allowed (1B)`를 더한다. 쓰기는 언제나 v5로 서명한다. 검증은 v5를 받고, `otp_allowed`가 켜진 항목만 v4를, 그중 비밀 아닌 필드가 없는 항목만 그 이전 MAC을 받는다: v3, 태그도 없으면 v2, v2 속성이 v1 시절 값이면 v1(이전 금고를 다시 서명하지 않고 연다). 그래서 DB에 "이 필드는 비밀 아님"이나 "코드 다시 켬"을 써 넣어도 이전 MAC으로는 통과하지 못한다. KAT는 `crates/vault/tests/kat.rs`의 `META_V1_HEX`…`META_V5_HEX` [J-85, J-87, J-290].
 
 `lp(x)`는 `u16be(길이) ‖ x`다. origin 목록은 정렬하고 중복을 없앤 뒤 넣는다. `status`(draft·active·discarded)도 포함해 확정 상태를 몰래 바꾸지 못하게 한다. [구현 J-27] 감독자는 치환 입력 전에 이 MAC을 검증한다. **DB 쓰기 권한은 있지만 Keychain 키를 꺼낼 수 없는 프로세스**가 origin 목록을 바꿔 피싱 origin을 추가하면 검증에 실패한다. 03의 T6을 부분적으로 완화한다(§7.9).
 
@@ -297,6 +311,7 @@ sequenceDiagram
 | §7.6.1–§7.6.2 AD 내용(필드·도메인 키) | `vault::record` | — |
 | §7.6.3 메타 MAC 입력 | `vault::meta` | `crypto::mac` (HMAC-SHA256) |
 | §7.7 내보내기 | `crypto::export` | age scrypt |
+| §7.4.4 일회용 코드 | `crypto::otp` | totp-rs (HMAC-SHA1·256·512) |
 | 키·nonce 생성 | `crypto::random` | OS CSPRNG |
 
 ## 7.13 출처

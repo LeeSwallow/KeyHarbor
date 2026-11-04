@@ -5,7 +5,7 @@
 # 1. Normal dependencies (dev-dependencies excluded) between keyharbor crates
 #    follow the allowed table below.
 # 2. Only keyharbor-crypto depends on or names a cryptographic primitive crate
-#    (chacha20poly1305, hkdf, hmac, sha2, age, getrandom; ADR-0016).
+#    (chacha20poly1305, hkdf, hmac, sha2, age, getrandom, totp-rs; ADR-0016, #206).
 # 3. rusqlite is not used anywhere. Production code runs no raw SQL: schema
 #    SQL lives in crates/sqlite/migrations/, and `sql_query(`/`batch_execute(`
 #    appear only in test code (`#[cfg(test)]` items, the `test-support`
@@ -22,9 +22,10 @@
 # 8. (J) Which session operation needs which policy action is the guard's
 #    table (`keyharbor_guard::session`); interfaces never name a session-level
 #    `Action`.
-# 9. (H) The placeholder syntax `{{secret:item.field}}` is written and found
-#    only in keyharbor-domain (`PLACEHOLDER_OPEN`, `Display for PlaceholderRef`);
-#    comments, tool descriptions and tests may show it.
+# 9. (H) The placeholder syntax `{{secret:item.field}}` and `{{otp:item}}` is
+#    written and found only in keyharbor-domain (`PLACEHOLDER_OPEN`,
+#    `OTP_PLACEHOLDER_OPEN`, `Display for Placeholder`); comments, tool
+#    descriptions and tests may show it.
 # 10. (I) The rule "a requester is never `*`" lives in keyharbor-domain
 #    (`AgentName`); nobody else compares a requester with `ANY`.
 # 11. (B) keyharbor-broker is the CDP adapter only: it depends on the domain
@@ -112,7 +113,7 @@ for manifest in */Cargo.toml; do
 		rusqlite)
 			no "$crate depends on rusqlite; persistence goes through Diesel in keyharbor-sqlite"
 			;;
-		chacha20poly1305 | hkdf | hmac | sha2 | age | getrandom)
+		chacha20poly1305 | hkdf | hmac | sha2 | age | getrandom | totp-rs)
 			[ "$crate" = crypto ] || no "$crate depends on $dep; only keyharbor-crypto uses cryptographic primitives"
 			;;
 		diesel | diesel_migrations | libsqlite3-sys)
@@ -126,7 +127,7 @@ if grep -q '^rusqlite' ../Cargo.toml 2>/dev/null; then
 fi
 
 # --- 2. cryptographic primitives ----------------------------------------------
-hits="$(grep -rnE '\b(chacha20poly1305|hkdf|hmac|sha2|age|getrandom)(::|;|\b *as\b)' --include='*.rs' . |
+hits="$(grep -rnE '\b(chacha20poly1305|hkdf|hmac|sha2|age|getrandom|totp_rs)(::|;|\b *as\b)' --include='*.rs' . |
 	grep -E 'use |::' | grep -v '^\./crypto/' || true)"
 [ -n "$hits" ] && no "cryptographic primitives used outside keyharbor-crypto:
 $hits"
@@ -216,7 +217,7 @@ hits="$(grep -rnE 'Action::(OpenSession|CreateSession|RawCdp)' --include='*.rs' 
 $hits"
 
 # --- 9. (H) placeholder syntax in one place ------------------------------------------
-hits="$(outside_tests '[{][{]secret:' |
+hits="$(outside_tests '[{][{](secret|otp):' |
 	grep -v '^\./domain/src/vault/placeholder\.rs:' |
 	grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' |
 	grep -vE 'description = "' || true)"

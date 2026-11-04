@@ -6,7 +6,9 @@ description: Use when a task needs a website login, a password, an API key, an .
 # Using KeyHarbor
 
 KeyHarbor keeps the user's secrets in a local vault and drives a dedicated browser profile.
-You never see a value: you see names and `{{secret:item.field}}` placeholders.
+You never see a value: you see names and `{{secret:item.field}}` placeholders. A login with a
+one-time code seed may also give `{{otp:item}}` (the two-step code of the moment) if the user
+turned agent codes on; `vault_list` says so in `otp`. If it is off, hand the code step to the user.
 
 | You need to | Use |
 |---|---|

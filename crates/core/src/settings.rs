@@ -38,6 +38,15 @@ pub fn seconds(store: &dyn SettingsStore, key: &str) -> Result<Duration> {
     number(store, key).map(Duration::from_secs)
 }
 
+/// Whether agents may type one-time codes (`agent_otp`, #206): off unless set to `true`.
+pub fn agent_otp(store: &dyn SettingsStore) -> Result<bool> {
+    Ok(keyharbor_domain::settings::agent_otp_enabled(
+        store
+            .setting_get(keyharbor_domain::settings::AGENT_OTP)?
+            .as_deref(),
+    ))
+}
+
 /// Checks and stores a value, asking a person first if it weakens a protection.
 pub fn set(store: &dyn SettingsStore, confirm: &dyn Confirm, key: &str, value: &str) -> Result<()> {
     spec(key)?.check(value).map_err(|e| anyhow!("{key} {e}"))?;

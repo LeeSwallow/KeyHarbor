@@ -33,6 +33,10 @@ export const SHOWN: Record<string, Shown> = {
     group: "보안", label: "인계 중 로그인 포착", control: { kind: "switch" },
     help: "브라우저를 넘겨받아 직접 로그인할 때 입력한 계정을 draft로 저장합니다. 바꿀 때는 확인합니다.",
   },
+  agent_otp: {
+    group: "보안", label: "에이전트가 OTP 코드 입력", control: { kind: "switch" },
+    help: "로그인 항목의 OTP 시드로 그 순간의 코드를 만들어 그 항목의 사이트에만 넣습니다. 비밀번호와 시드가 한 금고에 있으면 2단계 인증이 사실상 1단계가 됩니다. 켤 때는 확인합니다.",
+  },
   default_item_ttl: {
     group: "새 항목과 draft", label: "새 항목 만료", control: { kind: "choices", choices: [["none", "없음"], ...DAYS] },
     help: "새로 만든 항목이 이 기간 뒤 만료됩니다.",

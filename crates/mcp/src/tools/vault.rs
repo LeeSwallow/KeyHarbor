@@ -9,8 +9,9 @@ use keyharbor_core::{
 use keyharbor_domain::{
     password::{DEFAULT_LENGTH, PasswordRule},
     tag::Tag,
-    vault::{FieldName, ItemKind, ItemName, Origin, placeholder},
+    vault::{FieldName, ItemKind, ItemName, Origin, otp_placeholder, placeholder},
 };
+use keyharbor_guard::pdp::checks::otp::code_refusal;
 use rmcp::{
     handler::server::wrapper::Parameters, model::CallToolResult, schemars, tool, tool_router,
 };
@@ -108,8 +109,27 @@ fn draft_item(put: Put) -> Result<DraftItem> {
         source: ItemSource::Agent,
     })
 }
+/// Whether the item gives one-time codes, for a login with a seed: its `{{otp:…}}` placeholder
+/// and, when it gives none now, why (`otp-off`: hand the code to the person). Never the seed or
+/// a code. `null` for an item without a seed.
+fn otp_json(item: &ItemSummary, agent_otp: bool) -> Value {
+    let has_seed = item
+        .kind
+        .otp_field()
+        .is_some_and(|seed| item.fields.iter().any(|f| f == seed));
+    if !has_seed {
+        return Value::Null;
+    }
+    let refused = code_refusal(item, agent_otp);
+    json!({
+        "placeholder": otp_placeholder(&item.name),
+        "usable": refused.is_none(),
+        "refused": refused.map(|r| r.as_str()),
+    })
+}
+
 /// A verified item as agents see it.
-fn summary_json(item: &ItemSummary) -> Value {
+fn summary_json(item: &ItemSummary, agent_otp: bool) -> Value {
     let placeholders: Vec<String> = item
         .fields
         .iter()
@@ -128,6 +148,7 @@ fn summary_json(item: &ItemSummary) -> Value {
         "origin_binding": item.origin_binding,
         "description": item.description,
         "run_allowed": item.run_allowed,
+        "otp": otp_json(item, agent_otp),
         "expires_at": item.expires_at.map(|e| e.to_string()),
         "expired": item.expired,
         "status": item.status.as_str(),
@@ -136,9 +157,9 @@ fn summary_json(item: &ItemSummary) -> Value {
     })
 }
 
-fn entry_json(entry: &CatalogEntry) -> Value {
+fn entry_json(entry: &CatalogEntry, agent_otp: bool) -> Value {
     match entry {
-        CatalogEntry::Verified(item) => summary_json(item),
+        CatalogEntry::Verified(item) => summary_json(item, agent_otp),
         CatalogEntry::Tampered { name } => json!({"name": name, "tampered": true}),
     }
 }
@@ -146,7 +167,7 @@ fn entry_json(entry: &CatalogEntry) -> Value {
 #[tool_router(router = vault_tools, vis = "pub(crate)")]
 impl Server {
     #[tool(
-        description = "List vault items: name, kind, domain, field names (fields the user named included), descriptions (what the item and each field is for), tags, origins, run permission, expiry, status and the placeholder for each field; plain_values holds only the values of fields the user marked not secret. Optionally only names starting with prefix (e.g. myapp/) or items with a tag (use it in browser_fill or browser_type). An item whose stored metadata fails verification shows only its name and tampered: true; it cannot be used until the user fixes it. Values are never returned."
+        description = "List vault items: name, kind, domain, field names (fields the user named included), descriptions (what the item and each field is for), tags, origins, run permission, expiry, status and the placeholder for each field. A login with a one-time code seed has otp: {placeholder: \"{{otp:item}}\", usable, refused}; when usable is false (refused otp-off: the user has not let agents type codes) hand the code step to the user instead; plain_values holds only the values of fields the user marked not secret. Optionally only names starting with prefix (e.g. myapp/) or items with a tag (use it in browser_fill or browser_type). An item whose stored metadata fails verification shows only its name and tampered: true; it cannot be used until the user fixes it. Values are never returned."
     )]
     async fn vault_list(&self, Parameters(args): Parameters<ListArgs>) -> CallToolResult {
         let tag = match args.tag.as_deref().map(Tag::parse).transpose() {
@@ -159,9 +180,14 @@ impl Server {
         };
         outcome(
             self.blocking(move |inner| {
-                let entries = catalog(&**inner.store()?, || (inner.open_vault)())?;
+                let store = inner.store()?;
+                let agent_otp = keyharbor_core::settings::agent_otp(&**store)?;
+                let entries = catalog(&**store, || (inner.open_vault)())?;
+                drop(store);
                 let kept = entries.iter().filter(|entry| filter.keeps_entry(entry));
-                Ok(Value::Array(kept.map(entry_json).collect()))
+                Ok(Value::Array(
+                    kept.map(|entry| entry_json(entry, agent_otp)).collect(),
+                ))
             })
             .await,
         )

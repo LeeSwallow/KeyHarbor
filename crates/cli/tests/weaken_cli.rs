@@ -363,3 +363,65 @@ fn secret_and_env_items_live_in_the_developer_domain() {
         "{{secret:openai.OPENAI_API_KEY}}\n"
     );
 }
+
+/// One-time codes (#206, R-48(3)): seeds are checked without echoing them, agents' codes are off
+/// until a person turns them on, and turning an item's codes back on asks too.
+#[test]
+fn one_time_codes_are_off_until_a_person_turns_them_on() {
+    let c = Cli::new();
+    let add = [
+        "vault",
+        "add",
+        "bank",
+        "--kind",
+        "login",
+        "--origin",
+        "https://bank.example",
+        "--stdin",
+    ];
+    let bad = format!("{} not a seed!", c.synth("seed"));
+    let out = c.run(&add, Some(&json!({"totp_seed": bad}).to_string()));
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success());
+    assert!(
+        error.contains("field totp_seed: not a one-time code seed"),
+        "{error}"
+    );
+    assert!(!error.contains(&bad), "{error}");
+    let uri = "otpauth://totp/Bank:me?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Bank";
+    c.ok(
+        &add,
+        Some(&json!({"password": c.synth("pw"), "totp_seed": uri}).to_string()),
+    );
+    assert_eq!(c.item("bank")["otp_allowed"], true);
+    assert_eq!(c.ok(&["settings", "get", "agent_otp"], None), "false\n");
+
+    let error = c.refused(&["settings", "set", "agent_otp", "true"]);
+    assert!(error.contains(NEEDS_PERSON), "{error}");
+    assert_eq!(c.ok(&["settings", "get", "agent_otp"], None), "false\n");
+    c.ok(&["vault", "edit", "bank", "--otp-allowed", "off"], None);
+    assert_eq!(c.item("bank")["otp_allowed"], false);
+    let error = c.refused(&["vault", "edit", "bank", "--otp-allowed", "on"]);
+    assert!(error.contains(NEEDS_PERSON), "{error}");
+    assert_eq!(c.item("bank")["otp_allowed"], false);
+
+    let confirmed = c.terminal(&["vault", "edit", "bank", "--otp-allowed", "on"], "yes");
+    assert!(confirmed.success, "{}", confirmed.output);
+    assert!(
+        confirmed
+            .output
+            .contains("letting agents type the one-time codes of bank"),
+        "{}",
+        confirmed.output
+    );
+    assert_eq!(c.item("bank")["otp_allowed"], true);
+    let confirmed = c.terminal(&["settings", "set", "agent_otp", "true"], "yes");
+    assert!(confirmed.success, "{}", confirmed.output);
+    assert_eq!(c.ok(&["settings", "get", "agent_otp"], None), "true\n");
+    // Turning it off never asks.
+    c.ok(&["settings", "set", "agent_otp", "false"], None);
+    assert_eq!(c.ok(&["settings", "get", "agent_otp"], None), "false\n");
+    // Nothing printed the seed.
+    let listed = c.ok(&["vault", "list", "--json"], None);
+    assert!(!listed.contains("GEZDGNBV"), "{listed}");
+}

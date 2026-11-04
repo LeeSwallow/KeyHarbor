@@ -17,6 +17,8 @@ pub struct ItemUse {
     pub domain: Domain,
     pub origin_binding: bool,
     pub run_allowed: bool,
+    /// The item's own switch for one-time codes (`agent_otp` is the vault-wide one).
+    pub otp_allowed: bool,
     pub expires_at: Option<Expiry>,
     /// The expiry date has passed (as of today, UTC).
     pub expired: bool,
@@ -124,6 +126,7 @@ impl Vault {
             origins: row.origins,
             origin_binding: row.origin_binding,
             run_allowed: row.run_allowed,
+            otp_allowed: row.otp_allowed,
             expires_at,
             expired,
             description: row.description,
@@ -155,6 +158,7 @@ impl Vault {
             domain: kind.domain(),
             origin_binding: row.origin_binding,
             run_allowed: row.run_allowed,
+            otp_allowed: row.otp_allowed,
             expires_at: expiry(&row)?,
             expired: is_expired(&row, self.clock.today())?,
             origins,

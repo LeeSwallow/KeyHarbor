@@ -11,7 +11,7 @@ pub use lookup::{Ask, Lookup, Refusal};
 
 use crate::{
     audit,
-    pdp::checks::{self, Target, UseContext},
+    pdp::checks::{self, CodeUse, Target, UseContext},
     pep::{mask, mask::Masker},
 };
 use anyhow::{Result, anyhow, bail};
@@ -22,7 +22,7 @@ use keyharbor_domain::{
     item_pattern::ItemPattern,
     policy::Rule,
     ports::Store,
-    vault::{FieldName, ItemKind, ItemName, PlaceholderRef, parse_placeholders},
+    vault::{FieldName, ItemKind, ItemName, PlaceholderRef, parse_secret_placeholders},
 };
 use zeroize::Zeroizing;
 
@@ -127,6 +127,7 @@ impl<'a> Checker<'a> {
             info,
             rules: &self.rules,
             fields,
+            code: CodeUse::NotAsked,
             to: Target::Process,
         };
         checks::run(checks::PROCESS, &ctx).map_err(|reason| self.deny(item, reason))?;
@@ -176,14 +177,14 @@ pub fn prepare(store: &dyn Store, vault: &Vault, request: &Request<'_>) -> Resul
     let mut templates = Vec::new();
     for text in request.files {
         for (name, template) in parse_dotenv(text)? {
-            for reference in parse_placeholders(&template).map_err(|e| anyhow!("{e}"))? {
+            for reference in parse_secret_placeholders(&template).map_err(|e| anyhow!("{e}"))? {
                 checker.check(&reference.item, &[reference.field.as_str()], false)?;
             }
             templates.push((name, template));
         }
     }
     let check_refs = |checker: &mut Checker<'_>, text: &str| -> Result<bool> {
-        let refs = parse_placeholders(text).map_err(|e| anyhow!("{e}"))?;
+        let refs = parse_secret_placeholders(text).map_err(|e| anyhow!("{e}"))?;
         for reference in &refs {
             checker.check(&reference.item, &[reference.field.as_str()], false)?;
         }

@@ -75,6 +75,7 @@ impl Vault {
             field_descriptions: &row.field_descriptions,
             tags: &row.tags,
             plain_fields: &row.plain_fields,
+            otp_allowed: row.otp_allowed,
         }
     }
 

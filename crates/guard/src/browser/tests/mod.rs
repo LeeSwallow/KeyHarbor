@@ -31,6 +31,7 @@ mod fill;
 mod items;
 mod locks;
 mod login;
+mod otp;
 mod redaction;
 mod select;
 mod upload;

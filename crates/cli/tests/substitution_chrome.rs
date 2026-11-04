@@ -402,3 +402,73 @@ fn screenshots_draw_filled_values_as_discs() {
     );
     h.assert_absent(&[&first, &second]);
 }
+
+/// One-time codes (#206): refused while `agent_otp` is off; once a person turns it on, the page
+/// of the item's origin receives the code of the moment, and nothing the caller sees holds it.
+#[test]
+fn a_one_time_code_reaches_only_the_bound_page_once_turned_on() {
+    let Some(browser) = chrome() else { return };
+    let shop = serve_pages();
+    let mut h = Harness::new();
+    const SEED: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    h.add(
+        "bank",
+        "login",
+        &[&shop.base],
+        json!({"username": h.synth("user"), "totp_seed": SEED}),
+    );
+    h.open(&browser);
+    h.ok_call(json!({"op": "navigate", "url": format!("{}/", shop.base)}));
+    let error =
+        h.denied(json!({"op": "fill", "target": {"selector": "#user"}, "text": "{{otp:bank}}"}));
+    assert_eq!(error, "denied: bank (otp-off)");
+
+    h.confirmed(&["settings", "set", "agent_otp", "true"]);
+    let now = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    };
+    let before = now();
+    assert_eq!(h.fill("#user", "{{otp:bank}}").unwrap(), json!({}));
+    let after = now();
+    h.ok_call(json!({"op": "click", "target": {"selector": "#go"}}));
+    h.ok_call(json!({"op": "wait", "selector": "#done"}));
+    let seed = keyharbor_crypto::otp::OtpSeed::parse(SEED).unwrap();
+    let expected = [
+        seed.code_at(before).to_string(),
+        seed.code_at(after).to_string(),
+    ];
+    let typed = {
+        let posted = shop.posted.lock().unwrap();
+        posted
+            .iter()
+            .find(|(k, _)| k == "user")
+            .map(|(_, v)| v.clone())
+            .expect("the page received a user value")
+    };
+    assert!(
+        expected.contains(&typed),
+        "the page received the code of now"
+    );
+
+    let audit: Value = serde_json::from_str(&h.ok(&["audit", "--json"], None)).unwrap();
+    let events = audit.as_array().unwrap();
+    assert!(events.iter().any(|e| e["kind"] == "otp_used"
+        && e["item_name"] == "bank"
+        && e["result"] == "ok"
+        && e["origin"] == shop.base.as_str()));
+    assert!(
+        events
+            .iter()
+            .any(|e| e["kind"] == "secret_denied" && e["result"] == "otp-off")
+    );
+    for event in events {
+        for key in ["item_name", "origin", "result"] {
+            let text = event[key].as_str().unwrap_or_default();
+            assert!(!text.contains(&typed), "{event}");
+        }
+    }
+    h.assert_absent(&[SEED]);
+}

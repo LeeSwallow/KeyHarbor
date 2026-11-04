@@ -28,6 +28,9 @@ sha2 = "0.11"
 zeroize = "1.9"
 getrandom = "0.4"
 age = "0.12"
+# RFC 6238 one-time codes (#206): HOTP/TOTP come from here, never hand-written. No `otpauth`
+# feature (it pulls in url); keyharbor-crypto reads otpauth:// URIs itself.
+totp-rs = { version = "6", default-features = false, features = ["alloc", "zeroize"] }
 security-framework = "3.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -469,7 +469,7 @@ flowchart TB
 
 | 도메인 | 종류 | 필드 | 주 사용처 | origin 바인딩 기본 |
 |---|---|---|---|---|
-| 자격 증명 | `login` | `username`, `password`, `totp_seed`(선택, 저장만), `note` | 로그인 폼 | 켜짐 |
+| 자격 증명 | `login` | `username`, `password`, `totp_seed`(선택, base32·`otpauth://`, `{{otp:항목}}`의 시드), `note` | 로그인 폼 | 켜짐 |
 | 개발자 | `secret` | `value`, `note` | API 키 등 단일 값 | 꺼짐 (브라우저 입력은 origin 목록 필요, R-36) |
 | 개발자 | `env` | 사용자가 정한 변수 이름들 (`DATABASE_URL`, `OPENAI_API_KEY` …), `note` | `keyharbor run` | 해당 없음 |
 | 결제 | `card` | `holder`, `number`, `exp_month`, `exp_year`, `cvc`, `billing_address`(address ID), `note` | 결제 폼 (대개 결제사 iframe) | 켜짐 — 결제사 origin을 함께 등록 |
@@ -481,7 +481,7 @@ flowchart TB
 - **자격 증명 틀**(R-48, J-281): 이름 + 필드 목록(필드마다 비밀/일반)이다. config 컨텍스트의 `credential_templates`에 저장하고 `KINDS`는 정적으로 둔다. 새 `credential`을 만들 때 틀을 고르면 필드 이름과 plain 표시가 채워진다. 틀에는 값이 없어 추가·제거는 약화 작업이 아니고, 틀을 지워도 항목은 남는다.
 - 브라우저 입력에 origin 목록이 있어야 하는 종류(`KindSpec.browser_needs_origin`: `secret`·`env`·`credential`)는 목록이 비면 어떤 페이지에도 들어가지 않는다(R-36, J-58, J-280).
 - `identity`·`address`의 origin 바인딩 기본값을 끈 이유는 여러 사이트에서 쓰는 정보이기 때문이다. 켤 수 있다. [설계자 판단]
-- `totp_seed`는 저장만 하고 코드 생성·입력은 하지 않는다. 인증 코드 처리는 범위 밖이다(R-07). [설계자 판단]
+- `totp_seed`는 처음에 저장만 했다(J-25). #206부터 설정 `agent_otp`(기본 꺼짐)를 사람이 켜면 에이전트가 `{{otp:<항목>}}`으로 그 순간의 코드를 그 항목의 묶인 origin에만 넣는다(R-48(3), J-290, 03 §3.8.1). 이메일·SMS 코드 수신은 여전히 범위 밖이다(R-07).
 - `username`도 암호화한다. 계정 이름도 민감한 정보이기 때문이다. [설계자 판단]
 - 항목 이름, 종류, origin, 시각은 정책 판정과 목록 표시를 위해 **평문**이다. 이 메타데이터도 민감하다는 점을 문서와 관리 앱에 적는다. ([03 §3.5](03-security-whitepaper.md#35-저장-데이터-분류))
 - `AUDIT_EVENT`에는 값 컬럼이 **존재하지 않는다**. 스키마 수준에서 값 기록을 막는다.

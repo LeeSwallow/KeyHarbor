@@ -8,6 +8,10 @@ use std::{fmt, ops::RangeInclusive};
 pub const AUDIT_ENABLED: &str = "audit_enabled";
 /// Turns credential capture (phase 4) on or off.
 pub const CAPTURE_ENABLED: &str = "capture_enabled";
+/// Lets agents type a login's one-time code with `{{otp:item}}` (#206, R-48(3)). Off by
+/// default: with the password and the seed in one vault, two-step sign-in becomes one step for
+/// whoever drives the agent (03 §3.8.1). Turning it on asks a person; off never does.
+pub const AGENT_OTP: &str = "agent_otp";
 /// Gives new items an expiry, e.g. `90d` (R-37). `none` (the default): they never expire.
 pub const DEFAULT_ITEM_TTL: &str = "default_item_ttl";
 /// How long an unconfirmed draft is kept before `prune-drafts` removes it (08 §8.3). `none`:
@@ -172,6 +176,12 @@ pub const SETTINGS: &[SettingSpec] = &[
         default: "false",
         format: SettingFormat::Boolean,
         weakening: SettingWeakening::AnyChange,
+    },
+    SettingSpec {
+        key: AGENT_OTP,
+        default: "false",
+        format: SettingFormat::Boolean,
+        weakening: SettingWeakening::WhenSetTo("true"),
     },
     SettingSpec {
         key: DEFAULT_ITEM_TTL,
@@ -371,6 +381,12 @@ pub fn capture_enabled(stored: Option<&str>) -> bool {
     stored == Some("true")
 }
 
+/// Whether agents may type one-time codes for a stored `agent_otp`: only an explicit `true`
+/// (off by default, R-48(3)), so an odd stored value fails safe.
+pub fn agent_otp_enabled(stored: Option<&str>) -> bool {
+    stored == Some("true")
+}
+
 /// Whether the usage record is on for a stored `audit_enabled` (`None` when never set): only
 /// an explicit `false` turns it off, so an odd stored value fails safe (J-73).
 pub fn audit_enabled(stored: Option<&str>) -> bool {
@@ -516,6 +532,16 @@ mod tests {
             );
             assert!(!spec.weakens("false"), "{key}");
         }
+    }
+
+    #[test]
+    fn agent_codes_are_off_until_a_person_turns_them_on() {
+        let otp = SettingSpec::find(AGENT_OTP).unwrap();
+        assert_eq!((otp.default, otp.format), ("false", SettingFormat::Boolean));
+        assert!(otp.weakens("true") && !otp.weakens("false"));
+        assert!(!agent_otp_enabled(None));
+        assert!(!agent_otp_enabled(Some("TRUE")));
+        assert!(agent_otp_enabled(Some("true")));
     }
 
     #[test]

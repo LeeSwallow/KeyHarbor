@@ -24,7 +24,12 @@ const FOCUS_MOVED: &str = "substitution locked for this session: the focus moved
 /// The first item `template` names: refusals are recorded against it.
 fn first_item(template: &str) -> Result<ItemName> {
     let refs = parse_placeholders(template).map_err(|e| anyhow!("{e}"))?;
-    Ok(refs.into_iter().next().context("no placeholder")?.item)
+    Ok(refs
+        .into_iter()
+        .next()
+        .context("no placeholder")?
+        .item()
+        .clone())
 }
 
 impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
@@ -86,8 +91,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         let after = self.inner.frame_origin(page, &focus.frame).await;
         let changed = after != origin;
         self.note_used(
-            &prepared.items,
-            &prepared.domains,
+            (&prepared.items, &prepared.domains, &prepared.codes),
             origin.as_ref(),
             after.as_ref(),
         );
@@ -101,17 +105,22 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
     }
 
     /// Records that `prepared`'s values went into a frame of `origin` (and, if the frame is
-    /// now at `after`, that it moved).
+    /// now at `after`, that it moved). An item whose one-time code went in is recorded as
+    /// `otp_used`, never with the code.
     pub(crate) fn note_used(
         &self,
-        items: &[ItemName],
-        domains: &[Domain],
+        (items, domains, codes): (&[ItemName], &[Domain], &[ItemName]),
         origin: Option<&Origin>,
         after: Option<&Origin>,
     ) {
         let session = self.guard.session();
         for (item, domain) in items.iter().zip(domains) {
-            let used = AuditEvent::new(self.agent, AuditKind::SecretUsed, "ok")
+            let kind = if codes.contains(item) {
+                AuditKind::OtpUsed
+            } else {
+                AuditKind::SecretUsed
+            };
+            let used = AuditEvent::new(self.agent, kind, "ok")
                 .session(session)
                 .item(item.as_str())
                 .origin(origin.map(Origin::as_str));

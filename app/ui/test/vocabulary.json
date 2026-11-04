@@ -7,11 +7,11 @@
     "vault_item_changed", "env_injected", "substitution_locked", "mask_probe", "secret_denied_suppressed",
     "first_use_origin", "site_state_changed", "vault_requested", "vault_request_answered",
     "credential_captured", "grant_changed", "navigation_denied", "site_handed_off", "value_revealed",
-    "value_autofilled"
+    "value_autofilled", "otp_used"
   ],
   "value_warnings": ["too_short_to_mask", "common_word", "too_simple"],
   "settings": [
-    "audit_enabled", "capture_enabled", "default_item_ttl", "draft_ttl", "clipboard_clear_seconds",
+    "audit_enabled", "capture_enabled", "agent_otp", "default_item_ttl", "draft_ttl", "clipboard_clear_seconds",
     "upload_dirs", "upload_max_files", "browser", "ego_probe_seconds", "ego_poll_ms",
     "session_start_seconds", "session_stop_seconds", "browser_endpoint_seconds", "browser_call_seconds",
     "request_ttl_hours", "max_drafts", "notify_requests", "notify_handoffs", "notify_drafts",

@@ -13,6 +13,9 @@ const field = (name: string, secret: boolean, hint = "") =>
   `<label class="kh-field"><span class="kh-label">${esc(fieldWord(name))}</span>
     <input class="kh-input" name="v:${esc(name)}" type="${secret ? "password" : "text"}" placeholder="${esc(hint)}" ${quiet}></label>`;
 
+/// What a field takes, shown in its empty input (a seed comes as base32 or a URI, #206).
+const HINTS: Record<string, string> = { totp_seed: "base32 또는 otpauth:// URI" };
+
 /// How a kind's fields are grouped on screen (#123); fields not named here come last, alone.
 const FIELD_GROUPS: Record<string, [title: string, fields: string[]][]> = {
   identity: [
@@ -77,7 +80,7 @@ function newItem(kinds: KindForm[], e: Extract<Editor, { mode: "new" }>, templat
   const inputs = spec.free_fields
     ? `<label class="kh-field"><span class="kh-label">KEY=VALUE (한 줄에 하나)</span><textarea class="kh-textarea" name="__env" rows="5" ${quiet}></textarea></label>`
     : (fromTemplate ? templatePicker(templates, e.template) : "") +
-      grouped(spec.kind, spec.fields.map((f) => f.name), (name) => field(name, secret.get(name) ?? true)) +
+      grouped(spec.kind, spec.fields.map((f) => f.name), (name) => field(name, secret.get(name) ?? true, HINTS[name])) +
       (spec.custom_fields ? customFields("", rows) : "");
   const generate = spec.generates ? `<label><input type="checkbox" name="generate"> ${esc(fieldWord(spec.generates))} 생성</label>` : "";
   return `<form class="kh-dialog" data-editor="new" data-kind="${esc(spec.kind)}"><div class="body">
@@ -101,7 +104,7 @@ function ownField(item: Item, name: string): string {
 }
 
 function change(item: Item, spec: KindForm | undefined): string {
-  const input = (f: string) => field(f, !(f in item.plain_values), "비우면 그대로");
+  const input = (f: string) => field(f, !(f in item.plain_values), HINTS[f] ? `${HINTS[f]}, 비우면 그대로` : "비우면 그대로");
   const declared = new Set((spec?.fields ?? []).map((f) => f.name));
   const own = spec?.custom_fields ? item.fields.filter((f) => !declared.has(f)) : [];
   const inputs = grouped(item.kind, item.fields.filter((f) => !own.includes(f)), input) +
