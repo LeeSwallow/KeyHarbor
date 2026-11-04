@@ -3,9 +3,9 @@
 //! are identical. CSS cannot share one block between a media query and an attribute selector,
 //! so it is written twice and kept equal here.
 
-use super::Rule;
 use crate::model::DesignSet;
 use crate::report::Violation;
+use crate::rules::Rule;
 use crate::theme::{self, SEMANTIC};
 
 pub struct ThemeParity;

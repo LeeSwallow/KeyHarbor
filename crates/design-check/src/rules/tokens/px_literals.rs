@@ -1,9 +1,8 @@
 //! Components take every size from a token. Only `0` and a `1px` hairline may be written as is.
 
-use super::Rule;
-use crate::layers;
 use crate::model::DesignSet;
 use crate::report::Violation;
+use crate::rules::Rule;
 use crate::scanner;
 
 pub struct PxLiterals;
@@ -16,10 +15,10 @@ impl Rule for PxLiterals {
     fn check(&self, ds: &DesignSet) -> Vec<Violation> {
         let mut out = Vec::new();
         for file in &ds.sheets {
-            if layers::layer_of(&file.path).is_none_or(|s| s.px_literals) {
+            if file.spec.px_literals {
                 continue;
             }
-            for decl in file.sheet.blocks.iter().flat_map(|b| &b.decls) {
+            for decl in file.sheet.decls() {
                 for px in scanner::px_literals(&decl.value) {
                     out.push(
                         Violation::new(

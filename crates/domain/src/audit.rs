@@ -143,6 +143,18 @@ impl AuditEvent {
     }
 }
 
+/// The `result` of a [`AuditKind::GrantChanged`] record. Stored, so the text never changes.
+pub mod grant_change {
+    pub const ADDED: &str = "added";
+    pub const REVOKED: &str = "revoked";
+    /// The cookies of an ended grant were removed.
+    pub const CLEARED: &str = "cleared";
+}
+
+/// The `result` of a [`AuditKind::NavigationDenied`] record: no grant covers the document's
+/// origin. Stored, so the text never changes.
+pub const OUT_OF_GRANT: &str = "out-of-grant";
+
 /// A stored event with its sequence number and UTC time (RFC 3339).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuditRecord {
@@ -164,5 +176,13 @@ mod tests {
             .origin(Some("https://github.com"));
         assert_eq!(event.item_name.as_deref(), Some("github"));
         assert_eq!(event.session_id, None);
+    }
+
+    #[test]
+    fn stored_results_keep_their_text() {
+        assert_eq!(grant_change::ADDED, "added");
+        assert_eq!(grant_change::REVOKED, "revoked");
+        assert_eq!(grant_change::CLEARED, "cleared");
+        assert_eq!(OUT_OF_GRANT, "out-of-grant");
     }
 }

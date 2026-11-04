@@ -3,14 +3,21 @@
 // browser: nothing goes over unless they press the notification. Asks for sites the extension has
 // no access to yet are answered without asking (access can only be granted inside a click).
 
-import { handOffRequest } from "../domain/handoff.js";
+import { TTL_CHOICES, handOffRequest } from "../domain/handoff.js";
+import type { ErrorCode } from "../domain/result.js";
 import { hostPatterns, scopeOf } from "../domain/scope.js";
 import type { SiteRequestOutcome } from "../domain/site-request.js";
 import type { Ports } from "../ports/index.js";
 import { makeHandOffScope } from "./hand-off-site.js";
 
-/** A dragged site is handed over for one hour, the popup's shortest choice. */
-const DRAG_TTL_SECONDS = 3600;
+/** A dragged site is handed over for the popup's shortest choice (one hour). */
+const DRAG_TTL_SECONDS = TTL_CHOICES[0];
+
+/** How a failed hand-off reads to the app; any other error is "failed". */
+const OUTCOME_OF_ERROR: Partial<Record<ErrorCode, Exclude<SiteRequestOutcome, { outcome: "handed_off" }>["outcome"]>> = {
+  no_permission: "no_permission",
+  host_refused: "no_session",
+};
 
 export function makeAnswerSiteRequest(ports: Ports) {
   const handOffScope = makeHandOffScope(ports);
@@ -23,6 +30,6 @@ export function makeAnswerSiteRequest(ports: Ports) {
     if (!(await ports.notifier.askHandOff(scope.value.origin, request.value.session).catch(() => false))) return { outcome: "declined" };
     const handed = await handOffScope(scope.value, request.value);
     if (handed.ok) return { outcome: "handed_off", cookies: handed.value.cookies };
-    return { outcome: handed.error === "no_permission" ? "no_permission" : handed.error === "host_refused" ? "no_session" : "failed" };
+    return { outcome: OUTCOME_OF_ERROR[handed.error] ?? "failed" };
   };
 }

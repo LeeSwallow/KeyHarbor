@@ -2,7 +2,7 @@
 //! these, so the weakening check and the usage record cannot be skipped.
 
 use crate::{LOCAL_AGENT, weaken};
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
     policy::{Resource, Rule, normalize_target, parse_agent},
@@ -44,8 +44,8 @@ pub fn remove<S: PolicyStore + AuditStore + ?Sized>(
     resource: Resource,
     target: &str,
 ) -> Result<Rule> {
-    let agent = parse_agent(agent).map_err(|e| anyhow!("{e}"))?;
-    let target = normalize_target(resource, target).map_err(|e| anyhow!("{e}"))?;
+    let agent = parse_agent(agent)?;
+    let target = normalize_target(resource, target)?;
     let existing = store
         .policy_rules()?
         .into_iter()

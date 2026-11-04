@@ -25,9 +25,13 @@ pub fn wait_auth(
     let origin = origin.and_then(|o| Origin::parse(o).ok());
     note_event(
         store,
-        AuditEvent::new(agent, AuditKind::HandoffRequested, "awaiting_user")
-            .session(id)
-            .origin(origin.as_ref().map(Origin::as_str)),
+        AuditEvent::new(
+            agent,
+            AuditKind::HandoffRequested,
+            State::AwaitingUser.as_str(),
+        )
+        .session(id)
+        .origin(origin.as_ref().map(Origin::as_str)),
     );
     Ok(request)
 }
@@ -57,7 +61,13 @@ pub fn resume(
     require_supervisor(runtime, id)?;
     let generation = row.generation.context("session is not running")?;
     store.resume_handoff(id, generation, request)?;
-    note(store, agent, AuditKind::HandoffResumed, id, "running");
+    note(
+        store,
+        agent,
+        AuditKind::HandoffResumed,
+        id,
+        State::Running.as_str(),
+    );
     Ok(())
 }
 
