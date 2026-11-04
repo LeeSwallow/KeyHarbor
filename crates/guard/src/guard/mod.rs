@@ -118,11 +118,7 @@ impl Guard {
     /// initialized. The root key is read only here, the first time a placeholder or a response
     /// needs it.
     pub(crate) fn with_vault<T>(&self, work: impl FnOnce(Option<&mut Loaded>) -> T) -> Result<T> {
-        let row = self
-            .store
-            .lock()
-            .map_err(|_| anyhow!("store lock poisoned"))?
-            .vault_get()?;
+        let row = lock_store(&self.store)?.vault_get()?;
         let mut slot = self
             .vault
             .lock()
@@ -252,11 +248,7 @@ impl Guard {
         if self.is_locked() {
             return Err(deny(&first, DenialReason::Locked));
         }
-        let rules = self
-            .store
-            .lock()
-            .map_err(|_| anyhow!("store lock poisoned"))?
-            .policy_rules()?;
+        let rules = lock_store(&self.store)?.policy_rules()?;
         let checked = self.with_vault(|loaded| {
             resolve_checked(
                 loaded.map(|l| &l.vault),
