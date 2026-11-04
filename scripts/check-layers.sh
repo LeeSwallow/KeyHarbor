@@ -138,7 +138,9 @@ $hits"
 # Prints file:line for matches of $1 outside items marked #[cfg(test)] or
 # #[cfg(feature = "test-support")] (the marked item's brace block is skipped).
 # A module file named tests.rs is a test module moved out of its parent
-# (`#[cfg(test)] mod tests;`), so it is skipped like tests/ directories.
+# (`#[cfg(test)] mod tests;`), so it is skipped like tests/ directories. A test
+# module grown into a folder (`browser/tests/mod.rs`, `browser/tests/fill.rs`)
+# is under a tests/ directory and skipped the same way.
 outside_tests() {
 	find . -name '*.rs' -not -name tests.rs -not -path '*/tests/*' -not -path '*/target/*' | while read -r f; do
 		PAT="$1" awk -v file="$f" '

@@ -5,6 +5,7 @@
 //! file names and the origin, never contents.
 
 use super::GuardedBrowser;
+use crate::lock_store;
 use anyhow::{Result, anyhow, bail};
 use keyharbor_domain::{
     audit::{AuditEvent, AuditKind},
@@ -71,11 +72,7 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
 
     /// Whether the session's grants allow a document at `origin` (no grants: every site).
     fn in_grants(&self, origin: &Origin) -> Result<bool> {
-        let store = self
-            .guard
-            .store()
-            .lock()
-            .map_err(|_| anyhow!("store lock poisoned"))?;
+        let store = lock_store(self.guard.store())?;
         let grants = store.grants_for(self.guard.session())?;
         Ok(allows_document(
             &grants,
