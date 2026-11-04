@@ -1,50 +1,29 @@
 // Wires the window: loads data through the Tauri port, keeps one State, re-renders on change.
 // A revealed value is hidden again after 30 seconds (09 §9.9's clipboard limit, applied to
 // the screen too). A change that weakens a protection comes back as a question; only the
-// dialog's confirm button sends it again, confirmed.
+// dialog's confirm button sends it again, confirmed. What a click or a form does lives in the
+// tables under events/ (#182); what carries a value stays here.
 
-import { type Api, type Outcome, tauriApi } from "./api.js";
-import {
-  type State, type View, alone, asking, closeForm, closePalette, edit, fail, go, hide, initial, openForm, openPalette,
-  query, removing, removingSession, search, select, show, undoRemove, undoRemoveSession,
-} from "./state.js";
+import { type Api, tauriApi } from "./api.js";
+import { type State, alone, fail, hide, initial, show } from "./state.js";
 import { render } from "./view.js";
-import { droppedUrl } from "./drop.js";
-import { handOffWord } from "./words.js";
-import { customRow, editorValues } from "./views/editor.js";
 import { formValues } from "./views/form.js";
-import { type Run, paletteCommands } from "./views/palette.js";
+import { type Actions, windowActions } from "./events/actions.js";
+import { type FormHandler, windowForms } from "./events/forms.js";
+import { listenClicks, listenDrops, listenInput, listenKeys, listenPicks, listenSubmits } from "./events/listeners.js";
+import { type Win, finishRequest, load, refocus } from "./events/window.js";
 
 const HIDE_AFTER_MS = 30_000;
-/// How long a removed item can be brought back (09 §9.4 "실행 취소 10초"). Quitting before it
-/// runs out keeps the item: the safe way to fail.
-const UNDO_MS = 10_000;
 
 /// `request` set: this is the secure input window (09 §9.4.5) for that request, showing its form only.
 export function mount(root: HTMLElement, api: Api, request: string | null = null): { state: () => State } {
   let state = initial;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
-  let removeTimer: ReturnType<typeof setTimeout> | undefined;
-  let sessionTimer: ReturnType<typeof setTimeout> | undefined;
-  /// Whether the person is typing in the item search, so a re-render gives it focus back.
-  let typing = false;
   const set = (next: State) => {
     state = next;
     root.innerHTML = render(state);
-    // Re-rendering replaces the palette and search inputs; keep typing where it was.
-    const input = root.querySelector<HTMLInputElement>("[data-palette]") ?? (typing ? root.querySelector<HTMLInputElement>("[data-search]") : null);
-    if (input) {
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    }
+    refocus(root, w.typing);
   };
-  const run = (r: Run) => {
-    const closed = closePalette(state);
-    if (r.kind === "go") set(go(closed, r.view));
-    if (r.kind === "select") set(select(go(closed, "items"), r.name));
-    if (r.kind === "new-item") set(edit(go(closed, "items"), { mode: "new", kind: state.kinds[0]?.kind ?? "login" }));
-  };
-  const matches = () => (state.palette ? paletteCommands(state, state.palette.query) : []);
   const guard = async (work: () => Promise<unknown>) => {
     try {
       await work();
@@ -52,227 +31,46 @@ export function mount(root: HTMLElement, api: Api, request: string | null = null
       set(fail(state, String(error)));
     }
   };
-  const load = () =>
-    guard(async () => {
-      const [overview, inbox, sessions, items, audit, handoffs, settings, policies, kinds] = await Promise.all([
-        api.overview(), api.inbox(), api.sessions(), api.items(), api.audit(50),
-        api.handoffs(), api.settings(), api.policies(), api.kinds(),
-      ]);
-      set({ ...state, overview, inbox, sessions, items, audit, handoffs, settings, policies, kinds });
-    });
-  /// Deletes the item waiting in `state.removing`, if any.
-  const commitRemoval = () => {
-    clearTimeout(removeTimer);
-    const name = state.removing;
-    if (!name) return;
-    set(undoRemove(state));
-    void guard(() => api.removeItem(name).then(load));
-  };
-  /// Removes the session waiting in `state.removingSession`, if any (same rule as items).
-  const commitSessionRemoval = () => {
-    clearTimeout(sessionTimer);
-    const waiting = state.removingSession;
-    if (!waiting) return;
-    set(undoRemoveSession(state));
-    void guard(() => api.removeSession(waiting.id).then(load));
-  };
-  /// After a request is answered: the secure input window closes, the main window reloads.
-  const answered = () => (state.alone ? api.closeRequestWindow() : (set(closeForm(state)), load()));
-  /// Sends a change; if it needs a person, asks first and resends it confirmed on "확인".
-  const change = (send: (confirmed: boolean) => Promise<Outcome>) =>
-    guard(async () => {
-      const outcome = await send(false);
-      if (outcome.outcome === "ask") {
-        set(asking(state, { question: outcome.question, retry: () => send(true).then(load) }));
-      } else {
-        await load();
-      }
-    });
-
-  root.addEventListener("click", (event) => {
-    typing = false;
-    const button = (event.target as HTMLElement).closest<HTMLElement>("[data-action]");
-    if (!button) return;
-    const { action, view, name, field, id, session, agent, resource, target } = button.dataset;
-    if (action === "go" && view) set(go(state, view as View));
-    if (action === "select" && name) set(select(state, name));
-    if (action === "hide") set(hide(state));
-    if (action === "reveal" && name && field) {
+  const w: Win = { root, api, get state() { return state; }, set, guard, typing: false };
+  const answered = () => finishRequest(w);
+  // What carries a value (09 §9.12) stays here as it was; #182 only moved it into the tables.
+  const valueActions: Actions = {
+    reveal: ({ name, field }) => {
+      if (!name || !field) return;
       void guard(async () => {
         const value = await api.reveal(name, field);
         set(show(state, { item: name, field, value }));
         clearTimeout(hideTimer);
         hideTimer = setTimeout(() => set(hide(state)), HIDE_AFTER_MS);
       });
-    }
-    const { text } = button.dataset;
-    if (action === "copy" && name && field) void guard(() => api.copyValue(name, field));
-    if (action === "copy-placeholder" && text) void guard(() => api.copyPlaceholder(text));
-    if (action === "open-session" && id) void guard(() => api.openSession(id, button.dataset.browser).then(load));
-    if (action === "remove-session" && id) {
-      commitSessionRemoval();
-      set(removingSession(state, id, name ?? id));
-      sessionTimer = setTimeout(commitSessionRemoval, UNDO_MS);
-    }
-    if (action === "undo-remove-session") {
-      clearTimeout(sessionTimer);
-      set(undoRemoveSession(state));
-    }
-    if (action === "stop-session" && id) void guard(() => api.stopSession(id).then(load));
-    if (action === "recover" && id) {
-      const box = root.querySelector<HTMLInputElement>(`[data-closed="${CSS.escape(id)}"]`);
-      void guard(() => api.recoverSession(id, box?.checked ?? false).then(load));
-    }
-    if (action === "open-form" && id) void guard(async () => set(openForm(state, await api.requestForm(id))));
-    if (action === "decline" && id) void guard(() => api.declineRequest(id).then(answered));
-    if (action === "open-window" && id) void guard(() => api.openRequestWindow(id));
-    if (action === "resume" && session && id) void guard(() => api.resumeHandoff(session, id).then(load));
-    if (action === "confirm" && name) void guard(() => api.confirmDraft(name).then(load));
-    if (action === "discard" && name) void guard(() => api.discardDraft(name).then(load));
-    if (action === "remove-rule" && agent && resource && target) {
-      void change((confirmed) => api.removePolicy({ agent, resource, target, effect: "" }, confirmed));
-    }
-    if (action === "new-item") set(edit(state, { mode: "new", kind: state.kinds[0]?.kind ?? "login" }));
-    if (action === "edit-item" && name) set(edit(state, { mode: "edit", name }));
-    if (action === "rename-item" && name) set(edit(state, { mode: "rename", name }));
-    if (action === "close-editor") set(edit(state, null));
-    if (action === "add-custom-field") {
-      // Added in place, not by re-rendering: what is typed in the form stays.
-      const rows = button.closest("fieldset")?.querySelector(".custom-rows");
-      rows?.insertAdjacentHTML("beforeend", customRow(rows.children.length));
-    }
-    if (action === "remove-item" && name) {
-      // Another removal still waiting is carried out now; this one waits its own time.
-      commitRemoval();
-      set(removing(state, name));
-      removeTimer = setTimeout(commitRemoval, UNDO_MS);
-    }
-    if (action === "undo-remove") {
-      clearTimeout(removeTimer);
-      set(undoRemove(state));
-    }
-    const { index } = button.dataset;
-    if (action === "run" && index !== undefined) {
-      const picked = matches()[Number(index)];
-      if (picked) run(picked.run);
-    }
-    const { key, value } = button.dataset;
-    if (action === "set-setting" && key && value !== undefined) {
-      void change((confirmed) => api.setSetting(key, value, confirmed));
-    }
-    if (action === "filter-kind") set(search(state, { kind: button.dataset.kind || null }));
-    if (action === "filter-drafts") set(search(state, { drafts: !state.filter.drafts }));
-    if (action === "ask-cancel") set(asking(state, null));
-    if (action === "ask-confirm" && state.ask) {
-      const { retry } = state.ask;
-      set(asking(state, null));
-      void guard(retry);
-    }
-  });
-
-  // A tab dragged from the browser onto a session card (spec 2026-10-31): the extension asks the
-  // person in their browser, so the answer may take a while.
-  root.addEventListener("dragover", (event) => {
-    if ((event.target as HTMLElement).closest("[data-session-drop]")) event.preventDefault();
-  });
-  root.addEventListener("drop", (event) => {
-    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-session-drop]");
-    if (!card) return;
-    event.preventDefault();
-    const session = card.dataset.sessionDrop ?? "";
-    const url = droppedUrl(event.dataTransfer?.getData("text/uri-list") || event.dataTransfer?.getData("text/plain") || "");
-    if (!url) return set(fail(state, "브라우저의 탭이나 주소를 끌어다 놓으세요"));
-    set({ ...state, notice: `${session} 세션에 넘길지 브라우저에서 확인하세요…`, error: null });
-    void guard(() => api.requestSite(session, url).then((answer) => set({ ...state, notice: handOffWord(answer, session) })).then(load));
-  });
-
-  root.addEventListener("input", (event) => {
-    const input = event.target as HTMLInputElement;
-    if (input.dataset.palette !== undefined) set(query(state, input.value));
-    if (input.dataset.search !== undefined) {
-      typing = true;
-      set(search(state, { text: input.value }));
-    }
-  });
-
-  // 09 U6: ⌘K opens and closes the palette, ⌘N starts a new item, Esc closes what is open.
-  root.ownerDocument.addEventListener("keydown", (event) => {
-    const command = event.metaKey || event.ctrlKey;
-    if (command && event.key === "k") {
-      event.preventDefault();
-      set(state.palette ? closePalette(state) : openPalette(state));
-    } else if (command && event.key === "f") {
-      event.preventDefault();
-      if (state.view !== "items") set(go(state, "items"));
-      typing = true;
-      root.querySelector<HTMLInputElement>("[data-search]")?.focus();
-    } else if (command && event.key === "n") {
-      event.preventDefault();
-      run({ kind: "new-item" });
-    } else if (event.key === "Escape" && state.palette) {
-      set(closePalette(state));
-    } else if (event.key === "Enter" && state.palette) {
-      event.preventDefault();
-      const first = matches()[0];
-      if (first) run(first.run);
-    }
-  });
-
-  root.addEventListener("change", (event) => {
-    const picker = event.target as HTMLSelectElement;
-    if (picker.dataset.action === "pick-kind") set(edit(state, { mode: "new", kind: picker.value }));
-  });
-
-  root.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const el = event.target as HTMLFormElement;
-    const data = new FormData(el);
+    },
+    hide: () => set(hide(state)),
+    copy: ({ name, field }) => {
+      if (name && field) void guard(() => api.copyValue(name, field));
+    },
+  };
+  const requestForm: FormHandler = (el, data) => {
     if (el.dataset.form) {
       const id = el.dataset.form;
       const values = formValues(data);
       el.reset();
       void guard(() => api.fulfillRequest(id, values).then(answered));
-    } else if (el.dataset.editor === "new") {
-      const { values, origins } = editorValues(data);
-      const item = {
-        name: String(data.get("name") ?? ""), kind: String(data.get("kind") ?? el.dataset.kind),
-        origins, values, generate_password: data.get("generate") === "on",
-      };
-      el.reset();
-      void guard(() => api.addItem(item).then((name) => load().then(() => set(select(state, name)))));
-    } else if (el.dataset.editor === "edit" && el.dataset.name) {
-      const name = el.dataset.name;
-      const { values, origins } = editorValues(data);
-      el.reset();
-      void change((confirmed) => api.editItem(name, { values, origins }, confirmed)).then(() => set(edit(state, null)));
-    } else if (el.dataset.editor === "rename" && el.dataset.name) {
-      const from = el.dataset.name;
-      const to = String(data.get("to") ?? "").trim();
-      void guard(() => api.renameItem(from, to).then((name) => load().then(() => set(select(state, name)))));
-    } else if (el.dataset.setting) {
-      const key = el.dataset.setting;
-      const typed = String(data.get("value") ?? "").trim();
-      // A list setting (upload_dirs) adds the typed entry to what it has.
-      const value = el.dataset.append !== undefined
-        ? [...el.dataset.append.split(":").filter(Boolean), typed].filter(Boolean).join(":")
-        : typed;
-      void change((confirmed) => api.setSetting(key, value, confirmed));
-    } else if (el.dataset.rule !== undefined) {
-      const rule = {
-        agent: String(data.get("agent") || "*"),
-        resource: String(data.get("resource")),
-        target: String(data.get("target") || "*"),
-        effect: String(data.get("effect")),
-      };
-      void change((confirmed) => api.setPolicy(rule, confirmed));
     }
-  });
+  };
+  listenClicks(w, { ...windowActions(w), ...valueActions });
+  listenDrops(w);
+  listenInput(w);
+  listenKeys(w);
+  listenPicks(w);
+  listenSubmits(w, { ...windowForms(w), request: requestForm });
   set(state);
   if (request) {
     void api.requestForm(request).then((f) => set(alone(state, f)), () => set(alone(state, null)));
   } else {
-    void load();
+    void load(w);
     // Asking ego lite takes a few seconds and starts a process: once per window, not per reload.
+    // No answer is not an error to show: `browsers` stays as it starts (no ego lite), so the
+    // session buttons offer Chrome only.
     void api.browsers().then((browsers) => set({ ...state, browsers }), () => undefined);
   }
   return { state: () => state };

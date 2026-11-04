@@ -133,8 +133,8 @@ describe("copying and sessions", () => {
 
 describe("the item forms", () => {
   const kinds = [
-    { kind: "login", domain: "credentials", fields: [["username", false], ["password", true]] as [string, boolean][], free_fields: false, custom_fields: false, generates: "password" },
-    { kind: "env", domain: "developer", fields: [] as [string, boolean][], free_fields: true, custom_fields: false, generates: null },
+    { kind: "login", domain: "credentials", fields: [{ name: "username", secret: false }, { name: "password", secret: true }], free_fields: false, custom_fields: false, generates: "password" },
+    { kind: "env", domain: "developer", fields: [], free_fields: true, custom_fields: false, generates: null },
   ];
 
   it("offer the kind's fields, password inputs for secrets, and generation for logins", () => {
@@ -179,7 +179,7 @@ describe("what Rust decides, the window only shows", () => {
   });
 
   it("offers generation only for the field a kind names", () => {
-    const kinds = [{ kind: "secret", domain: "developer", fields: [["value", true]] as [string, boolean][], free_fields: false, custom_fields: false, generates: "value" }];
+    const kinds = [{ kind: "secret", domain: "developer", fields: [{ name: "value", secret: true }], free_fields: false, custom_fields: false, generates: "value" }];
     expect(render(edit({ ...initial, view: "items", kinds }, { mode: "new", kind: "secret" }))).toContain("값 생성");
   });
 });

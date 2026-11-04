@@ -65,12 +65,12 @@ describe("the sessions screen", () => {
 const identity: KindForm = {
   kind: "identity", domain: "personal", free_fields: false, custom_fields: true, generates: null,
   fields: [
-    ["full_name", false], ["given_name", false], ["family_name", false], ["email", false], ["phone", false],
-    ["birth_date", false], ["english_name", false], ["hanja_name", false], ["gender", false], ["nationality", false],
-    ["emergency_phone", false], ["military_service", true], ["disability", true], ["veterans", true], ["note", true],
+    { name: "full_name", secret: false }, { name: "given_name", secret: false }, { name: "family_name", secret: false }, { name: "email", secret: false }, { name: "phone", secret: false },
+    { name: "birth_date", secret: false }, { name: "english_name", secret: false }, { name: "hanja_name", secret: false }, { name: "gender", secret: false }, { name: "nationality", secret: false },
+    { name: "emergency_phone", secret: false }, { name: "military_service", secret: true }, { name: "disability", secret: true }, { name: "veterans", secret: true }, { name: "note", secret: true },
   ],
 };
-const login: KindForm = { kind: "login", domain: "credentials", free_fields: false, custom_fields: false, generates: "password", fields: [["username", false], ["password", true]] };
+const login: KindForm = { kind: "login", domain: "credentials", free_fields: false, custom_fields: false, generates: "password", fields: [{ name: "username", secret: false }, { name: "password", secret: true }] };
 
 describe("the identity form", () => {
   it("identity_editor_groups_fields_and_adds_custom", () => {

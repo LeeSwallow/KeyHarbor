@@ -5,8 +5,7 @@ import type { Item, KindForm } from "../api.js";
 import { esc } from "../html.js";
 import { fieldWord, kindWord } from "../words.js";
 import type { Editor } from "../state.js";
-
-const quiet = 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"';
+import { quiet } from "./parts.js";
 
 const field = (name: string, secret: boolean, hint = "") =>
   `<label class="kh-field"><span class="kh-label">${esc(fieldWord(name))}</span>
@@ -47,13 +46,13 @@ function customFields(existing = ""): string {
 function newItem(kinds: KindForm[], kind: string): string {
   const spec = kinds.find((k) => k.kind === kind) ?? kinds[0];
   if (!spec) return "";
-  const secret = new Map(spec.fields);
+  const secret = new Map(spec.fields.map((f) => [f.name, f.secret]));
   const picker = kinds
     .map((k) => `<option value="${esc(k.kind)}"${k.kind === spec.kind ? " selected" : ""}>${esc(kindWord(k.kind))}</option>`)
     .join("");
   const inputs = spec.free_fields
     ? `<label class="kh-field"><span class="kh-label">KEY=VALUE (한 줄에 하나)</span><textarea class="kh-textarea" name="__env" rows="5" ${quiet}></textarea></label>`
-    : grouped(spec.kind, spec.fields.map(([name]) => name), (name) => field(name, secret.get(name) ?? true)) +
+    : grouped(spec.kind, spec.fields.map((f) => f.name), (name) => field(name, secret.get(name) ?? true)) +
       (spec.custom_fields ? customFields() : "");
   const generate = spec.generates ? `<label><input type="checkbox" name="generate"> ${esc(fieldWord(spec.generates))} 생성</label>` : "";
   return `<form class="kh-dialog" data-editor="new" data-kind="${esc(spec.kind)}"><div class="body">
@@ -68,7 +67,7 @@ function newItem(kinds: KindForm[], kind: string): string {
 
 function change(item: Item, spec: KindForm | undefined): string {
   const input = (f: string) => field(f, !(f in item.plain_values), "비우면 그대로");
-  const declared = new Set((spec?.fields ?? []).map(([name]) => name));
+  const declared = new Set((spec?.fields ?? []).map((f) => f.name));
   const own = spec?.custom_fields ? item.fields.filter((f) => !declared.has(f)) : [];
   const inputs = grouped(item.kind, item.fields.filter((f) => !own.includes(f)), input) +
     (spec?.custom_fields ? customFields(own.map(input).join("")) : "");
