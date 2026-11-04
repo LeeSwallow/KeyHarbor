@@ -11,8 +11,9 @@ use keyharbor_domain::{
     tag::Tag,
     vault::{Description, FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
+use std::io;
 use zeroize::Zeroizing;
 
 pub const EXPORT_FORMAT: &str = "keyharbor-export/v1";
@@ -73,7 +74,58 @@ struct ItemIn {
     #[serde(default)]
     plain_fields: Vec<String>,
     status: String,
-    fields: BTreeMap<String, String>,
+    /// Wiped on drop from the moment it is parsed, so no early return frees a value unwiped
+    /// (#154, J-190).
+    #[serde(deserialize_with = "wiped_values")]
+    fields: BTreeMap<String, Zeroizing<String>>,
+}
+
+/// One field value, moved into `Zeroizing` as soon as serde hands it over: a map that fails
+/// halfway drops the values it already holds wiped.
+struct WipedValue(Zeroizing<String>);
+
+impl<'de> Deserialize<'de> for WipedValue {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        String::deserialize(d).map(|v| Self(Zeroizing::new(v)))
+    }
+}
+
+fn wiped_values<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<BTreeMap<String, Zeroizing<String>>, D::Error> {
+    // Moving a `String` moves its heap buffer; nothing is copied.
+    BTreeMap::<String, WipedValue>::deserialize(d)
+        .map(|m| m.into_iter().map(|(k, WipedValue(v))| (k, v)).collect())
+}
+
+/// The serialized export while it is built. A growing `Vec` frees its old buffer without
+/// wiping it, so this moves to a bigger `Zeroizing` buffer itself and the old one is wiped
+/// as it drops (J-190).
+struct WipingBuffer(Zeroizing<Vec<u8>>);
+
+/// First allocation; most exports are a few KiB.
+const WIPING_BUFFER_START: usize = 4096;
+
+impl WipingBuffer {
+    fn new() -> Self {
+        Self(Zeroizing::new(Vec::with_capacity(WIPING_BUFFER_START)))
+    }
+}
+
+impl io::Write for WipingBuffer {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let needed = self.0.len() + buf.len();
+        if needed > self.0.capacity() {
+            let mut bigger = Zeroizing::new(Vec::with_capacity(needed.max(self.0.capacity() * 2)));
+            bigger.extend_from_slice(&self.0);
+            self.0 = bigger;
+        }
+        self.0.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 impl<'a> ItemOut<'a> {
@@ -118,7 +170,7 @@ impl ItemIn {
         let fields = self
             .fields
             .into_iter()
-            .map(|(k, v)| Ok((FieldName::parse(&k)?, Zeroizing::new(v))))
+            .map(|(k, v)| Ok((FieldName::parse(&k)?, v)))
             .collect::<Result<Vec<_>>>()?;
         Ok(NewItem {
             name: ItemName::parse(&self.name)?,
@@ -195,8 +247,9 @@ impl Vault {
                 .map(|(s, fields)| ItemOut::from_summary(s, fields))
                 .collect(),
         };
-        let plaintext = Zeroizing::new(serde_json::to_vec(&doc)?);
-        encrypt_age(passphrase, &plaintext)
+        let mut plaintext = WipingBuffer::new();
+        serde_json::to_writer(&mut plaintext, &doc)?;
+        encrypt_age(passphrase, &plaintext.0)
     }
 
     /// Adds every item of the age file `encrypted` whose name is free; existing names are left
@@ -229,10 +282,14 @@ impl Vault {
 
 #[cfg(test)]
 mod tests {
+    use super::{ItemIn, WipingBuffer};
     use crate::tests::{contains, env, field, init, login, pref, reopen, uuid_like};
     use crate::{ItemSource, ItemStatus, NewItem};
-    use keyharbor_crypto::export::{Passphrase, decrypt_age};
+    use keyharbor_crypto::export::{Passphrase, decrypt_age, encrypt_age};
     use keyharbor_domain::vault::{ItemKind, ItemName};
+    use std::collections::BTreeMap;
+    use std::io::Write;
+    use zeroize::Zeroizing;
 
     fn pass(p: &str) -> Passphrase {
         Passphrase::new(p.to_owned())
@@ -316,5 +373,55 @@ mod tests {
         let w = init(&other);
         assert!(w.import_age(pass("wrong"), &out).is_err());
         assert!(w.list().unwrap().is_empty());
+    }
+
+    /// An export holding one item whose `fields` is `fields_json`.
+    fn export_with_fields(fields_json: &str) -> Vec<u8> {
+        let doc = format!(
+            r#"{{"format":"keyharbor-export/v1","exported_at":"2026-01-01T00:00:00Z","items":[{{"name":"github","kind":"login","origins":[],"origin_binding":false,"status":"active","source":"user","fields":{fields_json}}}]}}"#
+        );
+        encrypt_age(pass("pw"), doc.as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn imported_field_values_are_wiped_types_from_parsing_on() {
+        let item: ItemIn = serde_json::from_str(
+            r#"{"name":"a","kind":"login","origins":[],"origin_binding":false,"status":"active","fields":{"password":"pw!"}}"#,
+        )
+        .unwrap();
+        // Compile-time check (#154): changing the field type back to `String` breaks this.
+        let fields: &BTreeMap<String, Zeroizing<String>> = &item.fields;
+        assert_eq!(fields["password"].as_str(), "pw!");
+    }
+
+    #[test]
+    fn malformed_field_name_returns_early_without_adding() {
+        let e = env();
+        let v = init(&e);
+        let out = export_with_fields(r#"{"password":"pw","bad name":"KH-SYNTH-x"}"#);
+        let err = v.import_age(pass("pw"), &out).unwrap_err();
+        assert!(!format!("{err:#}").contains("KH-SYNTH"));
+        assert!(v.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn non_string_field_value_fails_parsing_without_echoing_values() {
+        let e = env();
+        let v = init(&e);
+        let out = export_with_fields(r#"{"password":"KH-SYNTH-y","otp":7}"#);
+        let err = v.import_age(pass("pw"), &out).unwrap_err();
+        assert_eq!(format!("{err:#}"), "export content is not valid");
+        assert!(v.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn wiping_buffer_keeps_every_byte_across_growth() {
+        let mut buf = WipingBuffer::new();
+        let chunk = [7u8; 1000];
+        for _ in 0..50 {
+            buf.write_all(&chunk).unwrap();
+        }
+        assert_eq!(buf.0.len(), 50_000);
+        assert!(buf.0.iter().all(|&b| b == 7));
     }
 }

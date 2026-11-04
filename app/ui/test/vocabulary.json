@@ -1,0 +1,11 @@
+{
+  "resources": ["session", "item", "domain", "create_session", "raw_cdp", "browser"],
+  "audit_kinds": [
+    "secret_used", "secret_denied", "origin_changed_after_fill", "session_opened", "session_stopped",
+    "session_removed", "file_uploaded", "handoff_requested", "handoff_resumed", "policy_changed",
+    "vault_item_changed", "env_injected", "substitution_locked", "mask_probe", "secret_denied_suppressed",
+    "first_use_origin", "site_state_changed", "vault_requested", "vault_request_answered",
+    "credential_captured", "grant_changed", "navigation_denied", "site_handed_off", "value_revealed",
+    "value_autofilled"
+  ]
+}
