@@ -1,14 +1,12 @@
 // CookieSource over `cookies.getAll`. Each browser says which queries cover a site.
 
-import type { SiteCookie } from "../../domain/cookie.js";
-import type { SiteScope } from "../../domain/scope.js";
-import type { CookieSource } from "../../ports/index.js";
-import type { CookieWire, WebExtApi } from "./api.js";
+import { type SiteCookie, isSameSite } from "../../../domain/cookie.js";
+import type { SiteScope } from "../../../domain/scope.js";
+import type { CookieSource } from "../../../ports/index.js";
+import type { CookieWire, WebExtApi } from "../api.js";
 
 /** The `getAll` queries that together return every cookie of a site. */
 export type CookieQueries = (scope: SiteScope) => Array<Record<string, unknown>>;
-
-const SAME_SITE = new Set(["no_restriction", "lax", "strict"]);
 
 /** Translates the browser's cookie into ours. */
 export function toSiteCookie(c: CookieWire): SiteCookie {
@@ -20,7 +18,7 @@ export function toSiteCookie(c: CookieWire): SiteCookie {
     path: c.path,
     secure: c.secure,
     httpOnly: c.httpOnly,
-    sameSite: SAME_SITE.has(c.sameSite ?? "") ? (c.sameSite as SiteCookie["sameSite"]) : "unspecified",
+    sameSite: isSameSite(c.sameSite) ? c.sameSite : "unspecified",
     session: c.session,
   };
   if (c.expirationDate !== undefined) cookie.expirationDate = c.expirationDate;

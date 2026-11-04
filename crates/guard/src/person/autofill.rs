@@ -4,10 +4,11 @@
 //! through the `Confirm` port) for this one fill, and every fill is recorded. Agents never
 //! reach it: only the native host (`keyharbor browser host`) calls it, for the extension.
 
-use crate::{
-    audit,
+use super::{
+    PERSON,
     capture::{CaptureOutcome, store_login},
 };
+use crate::audit;
 use anyhow::{Result, bail};
 use keyharbor_core::{ItemStatus, PlaintextAccess, Vault};
 use keyharbor_domain::{
@@ -16,9 +17,6 @@ use keyharbor_domain::{
     vault::{FieldName, ItemKind, ItemName, Origin, PlaceholderRef},
 };
 use zeroize::Zeroizing;
-
-/// Who the usage record names for a fill: the person at their browser.
-pub const FILLER: &str = "user";
 
 /// What goes into the page. No `Debug`: it holds values.
 pub struct Fill {
@@ -50,7 +48,7 @@ pub fn save(
     };
     audit::record(
         store,
-        &AuditEvent::new(FILLER, AuditKind::CredentialCaptured, result)
+        &AuditEvent::new(PERSON, AuditKind::CredentialCaptured, result)
             .item(item.as_str())
             .origin(Some(origin.as_str())),
     );
@@ -106,7 +104,7 @@ pub fn fill(
     let username = read("username").ok();
     audit::record(
         store,
-        &AuditEvent::new(FILLER, AuditKind::ValueAutofilled, "filled")
+        &AuditEvent::new(PERSON, AuditKind::ValueAutofilled, "filled")
             .item(item.as_str())
             .origin(Some(origin.as_str())),
     );

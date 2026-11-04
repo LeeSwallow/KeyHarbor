@@ -3,12 +3,16 @@
 //! policy, expiry, field kind, navigation — so it opens no new way for a value to leave.
 //! Nothing is typed unless every field the item needs was found.
 
-use crate::GuardedBrowser;
-use anyhow::{Result, bail};
+use super::GuardedBrowser;
+use anyhow::{Result, anyhow, bail};
 use keyharbor_domain::{
     ports::{BrowserPort, FrameInspector, PageInput, browser::Target},
     vault::{ItemKind, ItemName, placeholder},
 };
+
+/// The refusals when the page lacks an input the item needs.
+const NO_PASSWORD_FIELD: &str = "not found: password field";
+const NO_USERNAME_FIELD: &str = "not found: username field";
 
 /// What `login` did: which fields it filled, whether it pressed Enter, and the page's URL
 /// afterwards (masked). Never a value.
@@ -36,14 +40,10 @@ impl<B: BrowserPort + PageInput + FrameInspector> GuardedBrowser<'_, B> {
         }
         let page = self.inner.page().await?;
         let found = self.inner.login_fields(&page).await?;
-        let password = found
-            .password
-            .ok_or_else(|| anyhow::anyhow!("not found: password field"))?;
+        let password = found.password.ok_or_else(|| anyhow!(NO_PASSWORD_FIELD))?;
         let mut steps = Vec::new();
         if info.fields.iter().any(|f| f == "username") {
-            let username = found
-                .username
-                .ok_or_else(|| anyhow::anyhow!("not found: username field"))?;
+            let username = found.username.ok_or_else(|| anyhow!(NO_USERNAME_FIELD))?;
             steps.push(("username", username));
         }
         steps.push(("password", password));

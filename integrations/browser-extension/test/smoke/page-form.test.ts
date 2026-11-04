@@ -3,7 +3,7 @@
 
 import { type Server, createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { fillPageLogin, readPageLogin } from "../../src/adapters/webext/page-form.js";
+import { fillPageLogin, readPageLogin } from "../../src/adapters/webext/sources/page-form.js";
 import { type Browser, CHROME, launchChrome } from "../support/chrome.js";
 
 if (!CHROME) console.info("skipped: set KEYHARBOR_TEST_CHROME to a Chrome executable to run");

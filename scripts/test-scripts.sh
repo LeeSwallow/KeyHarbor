@@ -58,7 +58,7 @@ planted "a-cli-command-opening-the-store" cli/src/policy_cmd.rs 'fn x() { let _ 
 	"interfaces build adapters outside the composition root"
 planted "an-mcp-tool-calling-a-storage-port" mcp/src/tools/vault.rs 'fn x(s: &dyn S) { let _ = s.policy_rules(); }' \
 	"interfaces call storage ports directly"
-planted "a-placeholder-literal-outside-domain" guard/src/login.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
+planted "a-placeholder-literal-outside-domain" guard/src/browser/login.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
 	"placeholder syntax outside keyharbor-domain"
 planted "a-placeholder-literal-outside-its-module" domain/src/vault/kind.rs 'fn x() -> String { format!("{{{{secret:{}.{}}}}}", "a", "b") }' \
 	"placeholder syntax outside keyharbor-domain"
